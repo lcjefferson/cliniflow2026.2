@@ -123,16 +123,15 @@ export default function LeadsPage() {
               </div>
               <div>
                 <Label>Origem</Label>
-                <Select value={formData.source} onValueChange={(value) => setFormData({...formData, source: value})}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                    <SelectItem value="instagram">Instagram</SelectItem>
-                    <SelectItem value="messenger">Messenger</SelectItem>
-                  </SelectContent>
-                </Select>
+                <select
+                  className="input-field"
+                  value={formData.source}
+                  onChange={(e) => setFormData({...formData, source: e.target.value})}
+                >
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="instagram">Instagram</option>
+                  <option value="messenger">Messenger</option>
+                </select>
               </div>
               <div>
                 <Label>Observações</Label>
