@@ -1,0 +1,143 @@
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+import { toast } from "sonner";
+import { Eye, EyeOff } from "lucide-react";
+
+export default function LoginPage() {
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  
+  const navigate = useNavigate();
+  const { login, register } = useAuth();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      if (isLogin) {
+        await login(email, password);
+        toast.success("Login realizado com sucesso!");
+      } else {
+        await register(name, email, password, isAdmin);
+        toast.success("Cadastro realizado com sucesso!");
+      }
+      navigate("/");
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Erro ao processar requisição");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-100 via-sky-100 to-blue-200 opacity-60"></div>
+      
+      <div className="relative w-full max-w-md">
+        <div className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-white/20">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold text-blue-600 mb-2">CliniFlow</h1>
+            <p className="text-gray-600">Sistema de Gestão de Clínicas</p>
+          </div>
+
+          <form onSubmit={handleSubmit} data-testid="login-form" className="space-y-6">
+            {!isLogin && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Nome Completo
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  data-testid="name-input"
+                  className="input-field"
+                  required
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                data-testid="email-input"
+                className="input-field"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Senha
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  data-testid="password-input"
+                  className="input-field pr-12"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+            </div>
+
+            {!isLogin && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="isAdmin"
+                  checked={isAdmin}
+                  onChange={(e) => setIsAdmin(e.target.checked)}
+                  data-testid="admin-checkbox"
+                  className="w-4 h-4 text-blue-600 rounded"
+                />
+                <label htmlFor="isAdmin" className="text-sm text-gray-700">
+                  Cadastrar como Administrador
+                </label>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              data-testid="submit-button"
+              className="btn-primary w-full disabled:opacity-50"
+            >
+              {loading ? "Processando..." : isLogin ? "Entrar" : "Cadastrar"}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => setIsLogin(!isLogin)}
+              data-testid="toggle-mode-button"
+              className="text-blue-600 hover:text-blue-700 font-medium"
+            >
+              {isLogin ? "Não tem conta? Cadastre-se" : "Já tem conta? Faça login"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
