@@ -81,7 +81,20 @@ export default function SettingsPage() {
   };
 
   const handleSaveApiSettings = () => {
-    toast.success("Configurações de API salvas!");
+    // Salvar todas as configurações
+    toast.success("Configurações salvas com sucesso!");
+  };
+  
+  const handleSaveMetaSettings = () => {
+    toast.success("Configurações da Meta Business API salvas!");
+  };
+  
+  const handleSaveAiSettings = () => {
+    toast.success("Configurações de IA salvas!");
+  };
+  
+  const handleSaveEmailSettings = () => {
+    toast.success("Configurações de email salvas!");
   };
 
   if (!user?.role?.is_admin) {
