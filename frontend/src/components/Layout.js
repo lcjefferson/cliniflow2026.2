@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { 
   LayoutDashboard, MessageSquare, Calendar, Users, 
   ClipboardList, UserPlus, Briefcase, DoorOpen, 
-  FileText, DollarSign, LogOut, Activity
+  FileText, DollarSign, LogOut, Activity, Settings
 } from "lucide-react";
 
 export default function Layout({ children }) {
