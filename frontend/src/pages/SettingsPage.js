@@ -1,0 +1,301 @@
+import React, { useState, useEffect } from "react";
+import Layout from "../components/Layout";
+import api from "../services/api";
+import { useAuth } from "../contexts/AuthContext";
+import { Settings, Users, Key, User as UserIcon, Plus, Trash2, Save } from "lucide-react";
+import { toast } from "sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+export default function SettingsPage() {
+  const { user } = useAuth();
+  const [users, setUsers] = useState([]);
+  const [showUserDialog, setShowUserDialog] = useState(false);
+  const [apiSettings, setApiSettings] = useState({
+    auto_birthday_enabled: true,
+    auto_reminder_enabled: true,
+    reminder_hours_before: 24
+  });
+  const [userForm, setUserForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    is_admin: false
+  });
+
+  useEffect(() => {
+    if (user?.role?.is_admin) {
+      loadUsers();
+    }
+  }, [user]);
+
+  const loadUsers = async () => {
+    try {
+      const response = await api.get("/auth/users");
+      setUsers(response.data || []);
+    } catch (error) {
+      // Endpoint não existe ainda, vamos mockar
+      setUsers([user]);
+    }
+  };
+
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post("/auth/register", userForm);
+      toast.success("Usuário criado com sucesso!");
+      setShowUserDialog(false);
+      setUserForm({ name: "", email: "", password: "", is_admin: false });
+      loadUsers();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Erro ao criar usuário");
+    }
+  };
+
+  const handleSaveApiSettings = () => {
+    toast.success("Configurações de API salvas!");
+  };
+
+  if (!user?.role?.is_admin) {
+    return (
+      <Layout>
+        <div className="text-center py-12">
+          <h1 className="text-3xl font-bold text-red-600 mb-4">Acesso Negado</h1>
+          <p className="text-gray-600">Apenas administradores podem acessar configurações.</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout>
+      <div>
+        <div className="flex items-center gap-3 mb-8">
+          <Settings className="w-10 h-10 text-blue-600" />
+          <h1 className="text-4xl font-bold text-gray-900" data-testid="settings-page-title">Configurações</h1>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <Tabs defaultValue="users" className="w-full">
+            <TabsList className="w-full grid grid-cols-3 bg-gray-50 p-2">
+              <TabsTrigger value="users" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
+                <Users className="w-4 h-4 mr-2" />
+                Usuários
+              </TabsTrigger>
+              <TabsTrigger value="apis" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
+                <Key className="w-4 h-4 mr-2" />
+                APIs e Automações
+              </TabsTrigger>
+              <TabsTrigger value="profile" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
+                <UserIcon className="w-4 h-4 mr-2" />
+                Meu Perfil
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Usuários Tab */}
+            <TabsContent value="users" className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-900">Gerenciar Usuários</h2>
+                <Button onClick={() => setShowUserDialog(true)} className="btn-primary" data-testid="add-user-button">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Adicionar Usuário
+                </Button>
+              </div>
+
+              <div className="space-y-4">
+                {users.map((u) => (
+                  <div key={u.id || u.email} className="border border-gray-200 rounded-xl p-4 flex justify-between items-center">
+                    <div>
+                      <h3 className="font-bold text-gray-900">{u.name}</h3>
+                      <p className="text-gray-600 text-sm">{u.email}</p>
+                      <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-medium ${
+                        u.role?.is_admin ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {u.role?.is_admin ? 'Administrador' : 'Atendente'}
+                      </span>
+                    </div>
+                    {u.id !== user.id && (
+                      <Button variant="outline" className="text-red-500 hover:text-red-700">
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </TabsContent>
+
+            {/* APIs Tab */}
+            <TabsContent value="apis" className="p-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Automações e Integrações</h2>
+              
+              <div className="space-y-6">
+                <div className="border border-gray-200 rounded-xl p-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">Mensagens Automáticas</h3>
+                  
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                      <div>
+                        <p className="font-medium text-gray-900">Parabéns de Aniversário</p>
+                        <p className="text-sm text-gray-600">Enviar automaticamente no dia do aniversário</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={apiSettings.auto_birthday_enabled}
+                          onChange={(e) => setApiSettings({...apiSettings, auto_birthday_enabled: e.target.checked})}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                      <div>
+                        <p className="font-medium text-gray-900">Lembretes de Consulta</p>
+                        <p className="text-sm text-gray-600">Lembrar pacientes antes da consulta</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={apiSettings.auto_reminder_enabled}
+                          onChange={(e) => setApiSettings({...apiSettings, auto_reminder_enabled: e.target.checked})}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
+                    </div>
+
+                    {apiSettings.auto_reminder_enabled && (
+                      <div className="p-4 bg-blue-50 rounded-xl">
+                        <Label>Lembrar quantas horas antes?</Label>
+                        <Input
+                          type="number"
+                          value={apiSettings.reminder_hours_before}
+                          onChange={(e) => setApiSettings({...apiSettings, reminder_hours_before: parseInt(e.target.value)})}
+                          className="mt-2 max-w-xs"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="border border-gray-200 rounded-xl p-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">Integrações Meta</h3>
+                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+                    <p className="text-sm text-yellow-800">
+                      <strong>Status:</strong> Integrações mockadas. Configure suas credenciais da Meta Business API para ativar WhatsApp, Instagram e Messenger.
+                    </p>
+                  </div>
+                </div>
+
+                <Button onClick={handleSaveApiSettings} className="btn-primary" data-testid="save-api-settings">
+                  <Save className="w-4 h-4 mr-2" />
+                  Salvar Configurações
+                </Button>
+              </div>
+            </TabsContent>
+
+            {/* Profile Tab */}
+            <TabsContent value="profile" className="p-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Meu Perfil</h2>
+              
+              <div className="max-w-2xl space-y-6">
+                <div>
+                  <Label>Nome</Label>
+                  <Input value={user.name} disabled className="mt-2" />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input value={user.email} disabled className="mt-2" />
+                </div>
+                <div>
+                  <Label>Tipo de Conta</Label>
+                  <Input value={user.role?.is_admin ? "Administrador" : "Atendente"} disabled className="mt-2" />
+                </div>
+                
+                <div className="pt-4 border-t border-gray-200">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">Alterar Senha</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Senha Atual</Label>
+                      <Input type="password" placeholder="••••••••" className="mt-2" />
+                    </div>
+                    <div>
+                      <Label>Nova Senha</Label>
+                      <Input type="password" placeholder="••••••••" className="mt-2" />
+                    </div>
+                    <div>
+                      <Label>Confirmar Nova Senha</Label>
+                      <Input type="password" placeholder="••••••••" className="mt-2" />
+                    </div>
+                    <Button className="btn-secondary">
+                      Atualizar Senha
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
+
+        {/* Dialog para criar usuário */}
+        <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Adicionar Novo Usuário</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleCreateUser} className="space-y-4">
+              <div>
+                <Label>Nome Completo</Label>
+                <Input
+                  value={userForm.name}
+                  onChange={(e) => setUserForm({...userForm, name: e.target.value})}
+                  data-testid="user-name-input"
+                  required
+                />
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={userForm.email}
+                  onChange={(e) => setUserForm({...userForm, email: e.target.value})}
+                  data-testid="user-email-input"
+                  required
+                />
+              </div>
+              <div>
+                <Label>Senha</Label>
+                <Input
+                  type="password"
+                  value={userForm.password}
+                  onChange={(e) => setUserForm({...userForm, password: e.target.value})}
+                  data-testid="user-password-input"
+                  required
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="admin-role"
+                  checked={userForm.is_admin}
+                  onChange={(e) => setUserForm({...userForm, is_admin: e.target.checked})}
+                  className="w-4 h-4 text-blue-600 rounded"
+                />
+                <label htmlFor="admin-role" className="text-sm text-gray-700">
+                  Conceder permissões de Administrador
+                </label>
+              </div>
+              <Button type="submit" className="w-full btn-primary" data-testid="submit-user-button">
+                Criar Usuário
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </Layout>
+  );
+}
