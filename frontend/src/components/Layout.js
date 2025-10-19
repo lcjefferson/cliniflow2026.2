@@ -33,6 +33,7 @@ export default function Layout({ children }) {
 
   if (isAdmin) {
     menuItems.push({ path: "/revenue", icon: DollarSign, label: "Faturamento" });
+    menuItems.push({ path: "/settings", icon: Settings, label: "Configurações" });
   }
 
   return (
