@@ -171,7 +171,7 @@ export default function SettingsPage() {
 
             {/* APIs Tab */}
             <TabsContent value="apis" className="p-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Automações e Integrações</h2>
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Automações</h2>
               
               <div className="space-y-6">
                 <div className="border border-gray-200 rounded-xl p-6">
@@ -224,19 +224,254 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="border border-gray-200 rounded-xl p-6">
-                  <h3 className="text-lg font-bold text-gray-900 mb-4">Integrações Meta</h3>
-                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
-                    <p className="text-sm text-yellow-800">
-                      <strong>Status:</strong> Integrações mockadas. Configure suas credenciais da Meta Business API para ativar WhatsApp, Instagram e Messenger.
-                    </p>
-                  </div>
-                </div>
-
                 <Button onClick={handleSaveApiSettings} className="btn-primary" data-testid="save-api-settings">
                   <Save className="w-4 h-4 mr-2" />
-                  Salvar Configurações
+                  Salvar Automações
                 </Button>
+              </div>
+            </TabsContent>
+
+            {/* Connections Tab */}
+            <TabsContent value="connections" className="p-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Configurar Conexões</h2>
+              
+              <div className="space-y-8">
+                {/* Meta Business API */}
+                <div className="border border-gray-200 rounded-xl p-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">Meta Business API</h3>
+                  <p className="text-sm text-gray-600 mb-6">Configure suas credenciais para integração com WhatsApp, Instagram e Messenger</p>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <Label>App ID</Label>
+                      <Input
+                        value={metaSettings.app_id}
+                        onChange={(e) => setMetaSettings({...metaSettings, app_id: e.target.value})}
+                        placeholder="Digite o App ID da Meta"
+                        className="mt-2"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label>App Secret</Label>
+                      <Input
+                        type="password"
+                        value={metaSettings.app_secret}
+                        onChange={(e) => setMetaSettings({...metaSettings, app_secret: e.target.value})}
+                        placeholder="Digite o App Secret"
+                        className="mt-2"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label>Access Token</Label>
+                      <Input
+                        type="password"
+                        value={metaSettings.access_token}
+                        onChange={(e) => setMetaSettings({...metaSettings, access_token: e.target.value})}
+                        placeholder="Digite o Access Token"
+                        className="mt-2"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label>Phone Number ID (WhatsApp)</Label>
+                      <Input
+                        value={metaSettings.phone_number_id}
+                        onChange={(e) => setMetaSettings({...metaSettings, phone_number_id: e.target.value})}
+                        placeholder="Digite o Phone Number ID"
+                        className="mt-2"
+                      />
+                    </div>
+                    
+                    <div className="pt-4 space-y-3">
+                      <p className="text-sm font-medium text-gray-700">Canais Ativos:</p>
+                      
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="whatsapp-enabled"
+                          checked={metaSettings.whatsapp_enabled}
+                          onChange={(e) => setMetaSettings({...metaSettings, whatsapp_enabled: e.target.checked})}
+                          className="w-4 h-4 text-blue-600 rounded"
+                        />
+                        <label htmlFor="whatsapp-enabled" className="text-sm text-gray-700">
+                          WhatsApp
+                        </label>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="instagram-enabled"
+                          checked={metaSettings.instagram_enabled}
+                          onChange={(e) => setMetaSettings({...metaSettings, instagram_enabled: e.target.checked})}
+                          className="w-4 h-4 text-blue-600 rounded"
+                        />
+                        <label htmlFor="instagram-enabled" className="text-sm text-gray-700">
+                          Instagram Direct
+                        </label>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="messenger-enabled"
+                          checked={metaSettings.messenger_enabled}
+                          onChange={(e) => setMetaSettings({...metaSettings, messenger_enabled: e.target.checked})}
+                          className="w-4 h-4 text-blue-600 rounded"
+                        />
+                        <label htmlFor="messenger-enabled" className="text-sm text-gray-700">
+                          Messenger
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <p className="text-sm text-blue-800">
+                      <strong>📘 Como obter:</strong> Acesse <a href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer" className="underline">developers.facebook.com</a> e crie um aplicativo Meta Business
+                    </p>
+                  </div>
+                  
+                  <Button onClick={handleSaveMetaSettings} className="btn-primary mt-4">
+                    <Save className="w-4 h-4 mr-2" />
+                    Salvar Configurações Meta
+                  </Button>
+                </div>
+
+                {/* IA Settings */}
+                <div className="border border-gray-200 rounded-xl p-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">Inteligência Artificial</h3>
+                  <p className="text-sm text-gray-600 mb-6">Configurações de IA para geração de documentos e mensagens automáticas</p>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Emergent LLM Key</Label>
+                      <Input
+                        type="password"
+                        value={aiSettings.emergent_llm_key}
+                        onChange={(e) => setAiSettings({...aiSettings, emergent_llm_key: e.target.value})}
+                        className="mt-2"
+                        disabled
+                      />
+                      <p className="text-xs text-gray-500 mt-1">✅ Chave universal já configurada (OpenAI, Anthropic, Google)</p>
+                    </div>
+                    
+                    <div>
+                      <Label>Provedor</Label>
+                      <select
+                        className="input-field mt-2"
+                        value={aiSettings.provider}
+                        onChange={(e) => setAiSettings({...aiSettings, provider: e.target.value})}
+                      >
+                        <option value="openai">OpenAI</option>
+                        <option value="anthropic">Anthropic (Claude)</option>
+                        <option value="google">Google (Gemini)</option>
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <Label>Modelo</Label>
+                      <Input
+                        value={aiSettings.model}
+                        onChange={(e) => setAiSettings({...aiSettings, model: e.target.value})}
+                        placeholder="gpt-4o-mini"
+                        className="mt-2"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Modelo usado para geração de receitas, atestados e mensagens</p>
+                    </div>
+                  </div>
+                  
+                  <Button onClick={handleSaveAiSettings} className="btn-primary mt-4">
+                    <Save className="w-4 h-4 mr-2" />
+                    Salvar Configurações de IA
+                  </Button>
+                </div>
+
+                {/* Email Settings */}
+                <div className="border border-gray-200 rounded-xl p-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">Servidor de Email (SMTP)</h3>
+                  <p className="text-sm text-gray-600 mb-6">Configure o servidor SMTP para envio de emails e relatórios</p>
+                  
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Host SMTP</Label>
+                        <Input
+                          value={emailSettings.smtp_host}
+                          onChange={(e) => setEmailSettings({...emailSettings, smtp_host: e.target.value})}
+                          placeholder="smtp.gmail.com"
+                          className="mt-2"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label>Porta</Label>
+                        <Input
+                          value={emailSettings.smtp_port}
+                          onChange={(e) => setEmailSettings({...emailSettings, smtp_port: e.target.value})}
+                          placeholder="587"
+                          className="mt-2"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <Label>Usuário SMTP</Label>
+                      <Input
+                        value={emailSettings.smtp_user}
+                        onChange={(e) => setEmailSettings({...emailSettings, smtp_user: e.target.value})}
+                        placeholder="seu-email@gmail.com"
+                        className="mt-2"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label>Senha SMTP</Label>
+                      <Input
+                        type="password"
+                        value={emailSettings.smtp_password}
+                        onChange={(e) => setEmailSettings({...emailSettings, smtp_password: e.target.value})}
+                        placeholder="••••••••"
+                        className="mt-2"
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Email Remetente</Label>
+                        <Input
+                          value={emailSettings.from_email}
+                          onChange={(e) => setEmailSettings({...emailSettings, from_email: e.target.value})}
+                          placeholder="noreply@cliniflow.com"
+                          className="mt-2"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label>Nome Remetente</Label>
+                        <Input
+                          value={emailSettings.from_name}
+                          onChange={(e) => setEmailSettings({...emailSettings, from_name: e.target.value})}
+                          placeholder="CliniFlow"
+                          className="mt-2"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+                    <p className="text-sm text-yellow-800">
+                      <strong>⚠️ Gmail:</strong> Use senha de aplicativo, não sua senha normal. Ative autenticação de 2 fatores e gere uma senha de app.
+                    </p>
+                  </div>
+                  
+                  <Button onClick={handleSaveEmailSettings} className="btn-primary mt-4">
+                    <Save className="w-4 h-4 mr-2" />
+                    Salvar Configurações de Email
+                  </Button>
+                </div>
               </div>
             </TabsContent>
 
