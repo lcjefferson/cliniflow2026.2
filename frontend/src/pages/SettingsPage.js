@@ -19,6 +19,31 @@ export default function SettingsPage() {
     auto_reminder_enabled: true,
     reminder_hours_before: 24
   });
+  
+  const [metaSettings, setMetaSettings] = useState({
+    app_id: "",
+    app_secret: "",
+    access_token: "",
+    phone_number_id: "",
+    whatsapp_enabled: false,
+    instagram_enabled: false,
+    messenger_enabled: false
+  });
+  
+  const [aiSettings, setAiSettings] = useState({
+    emergent_llm_key: "sk-emergent-7F30bE56009E3B4EeC",
+    provider: "openai",
+    model: "gpt-4o-mini"
+  });
+  
+  const [emailSettings, setEmailSettings] = useState({
+    smtp_host: "",
+    smtp_port: "587",
+    smtp_user: "",
+    smtp_password: "",
+    from_email: "",
+    from_name: "CliniFlow"
+  });
   const [userForm, setUserForm] = useState({
     name: "",
     email: "",
