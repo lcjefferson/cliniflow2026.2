@@ -118,14 +118,18 @@ export default function SettingsPage() {
 
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
           <Tabs defaultValue="users" className="w-full">
-            <TabsList className="w-full grid grid-cols-3 bg-gray-50 p-2">
+            <TabsList className="w-full grid grid-cols-4 bg-gray-50 p-2">
               <TabsTrigger value="users" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
                 <Users className="w-4 h-4 mr-2" />
                 Usuários
               </TabsTrigger>
               <TabsTrigger value="apis" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
                 <Key className="w-4 h-4 mr-2" />
-                APIs e Automações
+                Integrações
+              </TabsTrigger>
+              <TabsTrigger value="connections" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
+                <Settings className="w-4 h-4 mr-2" />
+                Conexões
               </TabsTrigger>
               <TabsTrigger value="profile" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
                 <UserIcon className="w-4 h-4 mr-2" />
