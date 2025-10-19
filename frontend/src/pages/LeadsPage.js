@@ -66,17 +66,16 @@ export default function LeadsPage() {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900" data-testid="leads-page-title">Leads</h1>
           <div className="flex gap-4">
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filtrar por status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Todos</SelectItem>
-                <SelectItem value="new">Novos</SelectItem>
-                <SelectItem value="hot">Quentes</SelectItem>
-                <SelectItem value="converted">Convertidos</SelectItem>
-              </SelectContent>
-            </Select>
+            <select 
+              className="input-field w-48" 
+              value={filterStatus} 
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
+              <option value="">Todos</option>
+              <option value="new">Novos</option>
+              <option value="hot">Quentes</option>
+              <option value="converted">Convertidos</option>
+            </select>
             <Button onClick={() => setShowDialog(true)} className="btn-primary">
               <Plus className="w-5 h-5 mr-2" />
               Adicionar Lead
