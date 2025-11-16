@@ -658,6 +658,62 @@ export default function CalendarPage() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Modal de Novo Paciente */}
+        <Dialog open={showNewPatientDialog} onOpenChange={setShowNewPatientDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Adicionar Novo Paciente</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleNewPatientSubmit} className="space-y-4">
+              <div>
+                <Label>Nome *</Label>
+                <Input
+                  value={newPatientData.name}
+                  onChange={(e) => setNewPatientData({...newPatientData, name: e.target.value})}
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Email *</Label>
+                  <Input
+                    type="email"
+                    value={newPatientData.email}
+                    onChange={(e) => setNewPatientData({...newPatientData, email: e.target.value})}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Telefone *</Label>
+                  <Input
+                    value={newPatientData.phone}
+                    onChange={(e) => setNewPatientData({...newPatientData, phone: e.target.value})}
+                    required
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>Data de Nascimento *</Label>
+                <Input
+                  type="date"
+                  value={newPatientData.birthdate}
+                  onChange={(e) => setNewPatientData({...newPatientData, birthdate: e.target.value})}
+                  required
+                />
+              </div>
+              <div>
+                <Label>Endereço</Label>
+                <Input
+                  value={newPatientData.address}
+                  onChange={(e) => setNewPatientData({...newPatientData, address: e.target.value})}
+                  placeholder="Rua, Número, Cidade, Estado"
+                />
+              </div>
+              <Button type="submit" className="w-full btn-primary">Adicionar Paciente</Button>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
