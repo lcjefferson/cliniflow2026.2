@@ -136,6 +136,8 @@ class Appointment(BaseModel):
     appointment_date: str
     appointment_time: str
     status: str = "scheduled"  # scheduled, confirmed, completed, cancelled
+    amount: Optional[float] = None  # Valor específico do agendamento
+    paid: bool = False  # Se foi pago
     notes: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
