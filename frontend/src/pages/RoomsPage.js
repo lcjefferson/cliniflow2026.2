@@ -67,13 +67,13 @@ export default function RoomsPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <Label>Nome da Sala</Label>
-                <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+                <Input data-testid="room-name-input" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
               </div>
               <div>
                 <Label>Capacidade</Label>
-                <Input type="number" value={formData.capacity} onChange={(e) => setFormData({...formData, capacity: e.target.value})} required />
+                <Input data-testid="room-capacity-input" type="number" value={formData.capacity} onChange={(e) => setFormData({...formData, capacity: e.target.value})} required />
               </div>
-              <Button type="submit" className="w-full btn-primary">Cadastrar</Button>
+              <Button type="submit" data-testid="submit-room-button" className="w-full btn-primary">Cadastrar</Button>
             </form>
           </DialogContent>
         </Dialog>
