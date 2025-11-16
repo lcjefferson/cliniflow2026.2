@@ -21,6 +21,7 @@ export default function CalendarPage() {
   const [showLeadDialog, setShowLeadDialog] = useState(false);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
+  const [editingAppointment, setEditingAppointment] = useState(null);
   const [leadSearch, setLeadSearch] = useState("");
   
   const [formData, setFormData] = useState({
