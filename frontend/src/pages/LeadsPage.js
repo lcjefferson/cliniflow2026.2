@@ -107,6 +107,9 @@ export default function LeadsPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Adicionar Lead</DialogTitle>
+              <DialogDescription>
+                Cadastre um novo lead que entrou em contato
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
