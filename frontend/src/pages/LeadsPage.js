@@ -111,19 +111,20 @@ export default function LeadsPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <Label>Nome</Label>
-                <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+                <Input data-testid="lead-name-input" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
               </div>
               <div>
                 <Label>Telefone</Label>
-                <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
+                <Input data-testid="lead-phone-input" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
               </div>
               <div>
                 <Label>Email</Label>
-                <Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
+                <Input data-testid="lead-email-input" type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
               </div>
               <div>
                 <Label>Origem</Label>
                 <select
+                  data-testid="lead-source-select"
                   className="input-field"
                   value={formData.source}
                   onChange={(e) => setFormData({...formData, source: e.target.value})}
@@ -135,9 +136,9 @@ export default function LeadsPage() {
               </div>
               <div>
                 <Label>Observações</Label>
-                <Input value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} />
+                <Input data-testid="lead-notes-input" value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} />
               </div>
-              <Button type="submit" className="w-full btn-primary">Cadastrar</Button>
+              <Button type="submit" data-testid="submit-lead-button" className="w-full btn-primary">Cadastrar</Button>
             </form>
           </DialogContent>
         </Dialog>
