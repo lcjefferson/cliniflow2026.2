@@ -55,8 +55,10 @@ export default function CalendarPage() {
       setPatients(pat.data);
       setServices(serv.data);
       setRooms(room.data);
-    } catch (error) {      if (error.response?.status !== 401) {
-    } catch (error) {      if (error.response?.status !== 401) {
+    } catch (error) {
+      if (error.response?.status !== 401) {
+        console.error("Erro ao carregar dados");
+      }
     }
   };
 
