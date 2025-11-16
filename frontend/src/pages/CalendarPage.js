@@ -168,6 +168,9 @@ export default function CalendarPage() {
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Novo Agendamento</DialogTitle>
+              <DialogDescription>
+                Agende uma consulta selecionando paciente, profissional e horário
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
