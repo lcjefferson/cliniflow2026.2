@@ -576,6 +576,49 @@ async def delete_appointment(appointment_id: str, current_user: dict = Depends(g
         raise HTTPException(status_code=404, detail="Appointment not found")
     return {"message": "Appointment deleted successfully"}
 
+# Transaction/Payment Routes
+@api_router.post("/transactions", response_model=Transaction)
+async def create_transaction(data: TransactionCreate, current_user: dict = Depends(get_current_user)):
+    transaction = Transaction(**data.model_dump())
+    doc = transaction.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.transactions.insert_one(doc)
+    
+    # Se vinculado a um agendamento, marcar como pago
+    if data.appointment_id:
+        await db.appointments.update_one(
+            {"id": data.appointment_id},
+            {"$set": {"paid": True, "amount": data.amount}}
+        )
+    
+    return transaction
+
+@api_router.get("/transactions", response_model=List[Transaction])
+async def get_transactions(patient_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    query = {}
+    if patient_id:
+        query["patient_id"] = patient_id
+    
+    transactions = await db.transactions.find(query, {"_id": 0}).to_list(1000)
+    for trans in transactions:
+        if isinstance(trans['created_at'], str):
+            trans['created_at'] = datetime.fromisoformat(trans['created_at'])
+    return transactions
+
+@api_router.get("/revenue/total")
+async def get_total_revenue(current_user: dict = Depends(get_current_user)):
+    # Only admins can see revenue
+    if not current_user["role"]["is_admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    transactions = await db.transactions.find({}, {"_id": 0}).to_list(10000)
+    total = sum(t.get('amount', 0) for t in transactions)
+    
+    return {
+        "total_revenue": total,
+        "transaction_count": len(transactions)
+    }
+
 # Medical Record Routes
 @api_router.post("/medical-records", response_model=MedicalRecord)
 async def create_medical_record(data: MedicalRecordCreate, current_user: dict = Depends(get_current_user)):
