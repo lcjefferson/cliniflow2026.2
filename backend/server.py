@@ -47,6 +47,8 @@ class User(BaseModel):
     email: EmailStr
     password_hash: str
     role: UserRole
+    user_type: str = "consultor"  # admin, consultor, profissional
+    professional_id: Optional[str] = None  # ID do profissional vinculado (se user_type == profissional)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class UserRegister(BaseModel):
@@ -54,6 +56,8 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str
     is_admin: bool = False
+    user_type: str = "consultor"  # admin, consultor, profissional
+    professional_id: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: EmailStr
