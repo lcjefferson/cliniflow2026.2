@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
-import { Plus, Edit, Trash2, Filter, UserPlus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Edit, Trash2, Filter } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -11,24 +11,9 @@ import { Label } from "@/components/ui/label";
 export default function LeadsPage() {
   const [leads, setLeads] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
-  const [showConvertDialog, setShowConvertDialog] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [convertingLead, setConvertingLead] = useState(null);
   const [filterStatus, setFilterStatus] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
-  const [formData, setFormData] = useState({ 
-    name: "", 
-    phone: "", 
-    email: "", 
-    source: "whatsapp", 
-    status: "new", 
-    notes: "" 
-  });
-  const [convertData, setConvertData] = useState({
-    birthdate: "",
-    address: ""
-  });
+  const [formData, setFormData] = useState({ name: "", phone: "", email: "", source: "whatsapp", status: "new", notes: "" });
 
   useEffect(() => {
     loadLeads();
@@ -39,7 +24,6 @@ export default function LeadsPage() {
       const params = filterStatus ? `?status=${filterStatus}` : "";
       const response = await api.get(`/leads${params}`);
       setLeads(response.data);
-      setCurrentPage(1);
     } catch (error) {
       toast.error("Erro ao carregar leads");
     }
@@ -79,36 +63,12 @@ export default function LeadsPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Tem certeza que deseja deletar este lead?")) return;
-    
     try {
       await api.delete(`/leads/${id}`);
       toast.success("Lead removido!");
       loadLeads();
     } catch (error) {
       toast.error("Erro ao remover lead");
-    }
-  };
-
-  const handleConvertToPatient = (lead) => {
-    setConvertingLead(lead);
-    setConvertData({
-      birthdate: "",
-      address: ""
-    });
-    setShowConvertDialog(true);
-  };
-
-  const handleConvertSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      await api.post(`/leads/${convertingLead.id}/convert-to-patient?birthdate=${convertData.birthdate}&address=${convertData.address || ""}`);
-      toast.success("Lead convertido em paciente com sucesso!");
-      setShowConvertDialog(false);
-      setConvertingLead(null);
-      loadLeads();
-    } catch (error) {
-      toast.error(error.response?.data?.detail || "Erro ao converter lead");
     }
   };
 
@@ -136,14 +96,6 @@ export default function LeadsPage() {
     return <span className={`status-badge ${styles[status]}`}>{labels[status]}</span>;
   };
 
-  // Paginação
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentLeads = leads.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(leads.length / itemsPerPage);
-
-  const paginate = (pageNumber) => setCurrentPage(pageNumber);
-
   return (
     <Layout>
       <div>
@@ -168,7 +120,7 @@ export default function LeadsPage() {
         </div>
 
         <div className="grid gap-6">
-          {currentLeads.map((lead) => (
+          {leads.map((lead) => (
             <div key={lead.id} className="bg-white rounded-2xl p-6 shadow-lg">
               <div className="flex justify-between items-start">
                 <div className="flex-1">
@@ -184,15 +136,6 @@ export default function LeadsPage() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  {lead.status !== "converted" && (
-                    <button
-                      onClick={() => handleConvertToPatient(lead)}
-                      className="text-green-500 hover:text-green-700 p-2"
-                      title="Converter em Paciente"
-                    >
-                      <UserPlus className="w-5 h-5" />
-                    </button>
-                  )}
                   <button
                     onClick={() => handleEdit(lead)}
                     className="text-blue-500 hover:text-blue-700"
@@ -211,32 +154,6 @@ export default function LeadsPage() {
           ))}
         </div>
 
-        {/* Paginação */}
-        {totalPages > 1 && (
-          <div className="flex justify-center items-center gap-4 mt-8">
-            <Button
-              onClick={() => paginate(currentPage - 1)}
-              disabled={currentPage === 1}
-              variant="outline"
-              className="btn-secondary"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </Button>
-            <span className="text-gray-700">
-              Página {currentPage} de {totalPages}
-            </span>
-            <Button
-              onClick={() => paginate(currentPage + 1)}
-              disabled={currentPage === totalPages}
-              variant="outline"
-              className="btn-secondary"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </Button>
-          </div>
-        )}
-
-        {/* Modal de Editar/Adicionar Lead */}
         <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
           <DialogContent>
             <DialogHeader>
@@ -287,44 +204,6 @@ export default function LeadsPage() {
               </div>
               <Button type="submit" className="w-full btn-primary">
                 {editingId ? "Atualizar" : "Cadastrar"}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-
-        {/* Modal de Converter Lead em Paciente */}
-        <Dialog open={showConvertDialog} onOpenChange={setShowConvertDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Converter Lead em Paciente</DialogTitle>
-            </DialogHeader>
-            {convertingLead && (
-              <div className="mb-4 p-4 bg-blue-50 rounded-lg">
-                <p className="font-semibold">{convertingLead.name}</p>
-                <p className="text-sm text-gray-600">{convertingLead.phone}</p>
-                <p className="text-sm text-gray-600">{convertingLead.email}</p>
-              </div>
-            )}
-            <form onSubmit={handleConvertSubmit} className="space-y-4">
-              <div>
-                <Label>Data de Nascimento *</Label>
-                <Input 
-                  type="date" 
-                  value={convertData.birthdate} 
-                  onChange={(e) => setConvertData({...convertData, birthdate: e.target.value})} 
-                  required 
-                />
-              </div>
-              <div>
-                <Label>Endereço (opcional)</Label>
-                <Input 
-                  value={convertData.address} 
-                  onChange={(e) => setConvertData({...convertData, address: e.target.value})} 
-                  placeholder="Rua, Número, Cidade, Estado"
-                />
-              </div>
-              <Button type="submit" className="w-full btn-primary">
-                Converter em Paciente
               </Button>
             </form>
           </DialogContent>
