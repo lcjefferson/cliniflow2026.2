@@ -158,6 +158,31 @@ export default function ServicesPage() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Paginação */}
+        {Math.ceil(services.length / itemsPerPage) > 1 && (
+          <div className="flex justify-center items-center gap-4 mt-8">
+            <Button
+              onClick={() => setCurrentPage(currentPage - 1)}
+              disabled={currentPage === 1}
+              variant="outline"
+              className="btn-secondary"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </Button>
+            <span className="text-gray-700">
+              Página {currentPage} de {Math.ceil(services.length / itemsPerPage)}
+            </span>
+            <Button
+              onClick={() => setCurrentPage(currentPage + 1)}
+              disabled={currentPage === Math.ceil(services.length / itemsPerPage)}
+              variant="outline"
+              className="btn-secondary"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </Button>
+          </div>
+        )}
       </div>
     </Layout>
   );
