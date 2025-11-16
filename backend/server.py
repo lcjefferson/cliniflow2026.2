@@ -531,10 +531,12 @@ async def get_appointments(
     return appointments
 
 @api_router.put("/appointments/{appointment_id}", response_model=Appointment)
-async def update_appointment_status(appointment_id: str, status: str, current_user: dict = Depends(get_current_user)):
+async def update_appointment(appointment_id: str, data: AppointmentCreate, current_user: dict = Depends(get_current_user)):
+    update_data = data.model_dump()
+    
     result = await db.appointments.update_one(
         {"id": appointment_id},
-        {"$set": {"status": status}}
+        {"$set": update_data}
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Appointment not found")
@@ -543,6 +545,13 @@ async def update_appointment_status(appointment_id: str, status: str, current_us
     if isinstance(updated['created_at'], str):
         updated['created_at'] = datetime.fromisoformat(updated['created_at'])
     return Appointment(**updated)
+
+@api_router.delete("/appointments/{appointment_id}")
+async def delete_appointment(appointment_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.appointments.delete_one({"id": appointment_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    return {"message": "Appointment deleted successfully"}
 
 # Medical Record Routes
 @api_router.post("/medical-records", response_model=MedicalRecord)
