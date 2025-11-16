@@ -63,6 +63,9 @@ export default function RoomsPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Adicionar Sala</DialogTitle>
+              <DialogDescription>
+                Cadastre uma nova sala ou consultório da clínica
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
