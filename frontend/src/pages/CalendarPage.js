@@ -188,6 +188,36 @@ export default function CalendarPage() {
     }
   };
 
+  const handleNewPatientSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await api.post("/patients", newPatientData);
+      toast.success("Paciente criado com sucesso!");
+      setShowNewPatientDialog(false);
+      setNewPatientData({
+        name: "",
+        email: "",
+        phone: "",
+        birthdate: "",
+        address: ""
+      });
+      loadData();
+      // Automaticamente selecionar o novo paciente no formulário
+      setFormData({...formData, patient_id: response.data.id});
+    } catch (error) {
+      toast.error("Erro ao criar paciente");
+    }
+  };
+
+  const handleDayDoubleClick = (date) => {
+    if (!date) return;
+    setFormData({
+      ...formData,
+      appointment_date: date
+    });
+    setShowDialog(true);
+  };
+
   const getProfessionalColor = (professionalId) => {
     const index = professionals.findIndex(p => p.id === professionalId);
     return professionalColors[index % professionalColors.length];
