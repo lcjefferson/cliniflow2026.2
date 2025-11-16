@@ -282,7 +282,7 @@ def main():
     tester = CliniFlowAPITester()
     
     # Test authentication first
-    if not tester.test_login():
+    if not tester.test_register_and_login():
         print("❌ Authentication failed, stopping tests")
         return 1
     
