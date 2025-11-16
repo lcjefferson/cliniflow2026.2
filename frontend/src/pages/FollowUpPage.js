@@ -52,11 +52,9 @@ export default function FollowUpPage() {
       setFormData({ lead_id: "", assigned_to: "", scheduled_date: "", notes: "" });
       loadFollowups();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao agendar follow-up");
+        toast.error("Erro ao agendar follow-up");
       }
-    }
     }
   };
 
