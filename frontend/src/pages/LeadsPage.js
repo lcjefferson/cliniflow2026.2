@@ -24,7 +24,10 @@ export default function LeadsPage() {
       const response = await api.get(`/leads${params}`);
       setLeads(response.data);
     } catch (error) {
-      toast.error("Erro ao carregar leads");
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
+        toast.error("Erro ao carregar leads");
+      }
     }
   };
 
