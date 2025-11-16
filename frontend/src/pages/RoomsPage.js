@@ -88,7 +88,7 @@ export default function RoomsPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {rooms.map((room) => (
+          {rooms.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((room) => (
             <div key={room.id} className="bg-white rounded-2xl p-6 shadow-lg card-hover">
               <div className="flex justify-between items-start">
                 <div>
