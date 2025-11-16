@@ -32,6 +32,7 @@ export default function Layout({ children }) {
     { path: "/services", icon: Activity, label: "Serviços", roles: ["admin"] },
     { path: "/rooms", icon: DoorOpen, label: "Salas", roles: ["admin"] },
     { path: "/revenue", icon: DollarSign, label: "Faturamento", roles: ["admin"] },
+    { path: "/users", icon: Users, label: "Usuários", roles: ["admin"] },
     { path: "/settings", icon: Settings, label: "Configurações", roles: ["admin"] },
   ];
 
