@@ -12,6 +12,8 @@ export default function RoomsPage() {
   const [rooms, setRooms] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(12);
   const [formData, setFormData] = useState({ name: "", capacity: "" });
 
   useEffect(() => {
