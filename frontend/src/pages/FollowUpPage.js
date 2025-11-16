@@ -24,11 +24,9 @@ export default function FollowUpPage() {
       const response = await api.get("/followups");
       setFollowups(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao carregar follow-ups");
+        toast.error("Erro ao carregar follow-ups");
       }
-    }
     }
   };
 
@@ -36,10 +34,8 @@ export default function FollowUpPage() {
     try {
       const response = await api.get("/leads");
       setLeads(response.data);
-    } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
-      console.error("Erro ao carregar leads");
+    } catch (error) {      if (error.response?.status !== 401) {
+    } catch (error) {      if (error.response?.status !== 401) {
     }
   };
 
@@ -56,7 +52,6 @@ export default function FollowUpPage() {
         toast.error("Erro ao agendar follow-up");
       }
     }
-  };
 
   const handleComplete = async (id) => {
     try {
@@ -68,7 +63,6 @@ export default function FollowUpPage() {
         toast.error("Erro ao completar follow-up");
       }
     }
-  };
 
   return (
     <Layout>

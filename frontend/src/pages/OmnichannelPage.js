@@ -21,11 +21,9 @@ export default function OmnichannelPage() {
       const response = await api.get("/conversations");
       setConversations(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao carregar conversas");
+        toast.error("Erro ao carregar conversas");
       }
-    }
     }
   };
 
@@ -35,11 +33,9 @@ export default function OmnichannelPage() {
       setMessages(response.data);
       setSelectedConv(convId);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao carregar mensagens");
+        toast.error("Erro ao carregar mensagens");
       }
-    }
     }
   };
 
@@ -56,11 +52,9 @@ export default function OmnichannelPage() {
       loadMessages(selectedConv);
       toast.success("Mensagem enviada (mockado)");
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao enviar mensagem");
+        toast.error("Erro ao enviar mensagem");
       }
-    }
     }
   };
 

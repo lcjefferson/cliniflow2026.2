@@ -24,11 +24,9 @@ export default function LeadsPage() {
       const response = await api.get(`/leads${params}`);
       setLeads(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
         toast.error("Erro ao carregar leads");
       }
-    }
     }
   };
 
@@ -45,7 +43,6 @@ export default function LeadsPage() {
         toast.error("Erro ao cadastrar lead");
       }
     }
-  };
 
   const getStatusBadge = (status) => {
     const styles = {

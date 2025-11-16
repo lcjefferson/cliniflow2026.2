@@ -20,11 +20,9 @@ export default function MedicalRecordsPage() {
       const response = await api.get("/patients");
       setPatients(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao carregar pacientes");
+        toast.error("Erro ao carregar pacientes");
       }
-    }
     }
   };
 
@@ -34,11 +32,9 @@ export default function MedicalRecordsPage() {
       setRecords(response.data);
       setSelectedPatient(patientId);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao carregar prontuários");
+        toast.error("Erro ao carregar prontuários");
       }
-    }
     }
   };
 
@@ -52,9 +48,8 @@ export default function MedicalRecordsPage() {
       toast.success(`${type === 'prescription' ? 'Receita' : 'Atestado'} gerado com IA!`);
       loadRecords(selectedPatient);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao gerar documento");
+        toast.error("Erro ao gerar documento");
       }
     }
     } finally {

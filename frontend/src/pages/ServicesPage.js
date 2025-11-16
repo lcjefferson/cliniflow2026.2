@@ -22,11 +22,9 @@ export default function ServicesPage() {
       const response = await api.get("/services");
       setServices(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao carregar serviços");
+        toast.error("Erro ao carregar serviços");
       }
-    }
     }
   };
 
@@ -43,11 +41,9 @@ export default function ServicesPage() {
       setFormData({ name: "", description: "", duration_minutes: "", price: "" });
       loadServices();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao cadastrar serviço");
+        toast.error("Erro ao cadastrar serviço");
       }
-    }
     }
   };
 
@@ -57,11 +53,9 @@ export default function ServicesPage() {
       toast.success("Serviço removido!");
       loadServices();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao remover serviço");
+        toast.error("Erro ao remover serviço");
       }
-    }
     }
   };
 

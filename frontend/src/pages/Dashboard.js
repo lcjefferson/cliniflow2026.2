@@ -23,7 +23,6 @@ export default function Dashboard() {
         console.error("Erro ao carregar estatísticas", error);
       }
     }
-  };
 
   return (
     <Layout>

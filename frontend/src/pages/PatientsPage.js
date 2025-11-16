@@ -22,11 +22,9 @@ export default function PatientsPage() {
       const response = await api.get("/patients");
       setPatients(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao carregar pacientes");
+        toast.error("Erro ao carregar pacientes");
       }
-    }
     }
   };
 
@@ -39,11 +37,9 @@ export default function PatientsPage() {
       setFormData({ name: "", email: "", phone: "", birthdate: "", address: "" });
       loadPatients();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao cadastrar paciente");
+        toast.error("Erro ao cadastrar paciente");
       }
-    }
     }
   };
 
