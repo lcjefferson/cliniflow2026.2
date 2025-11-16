@@ -37,8 +37,9 @@ export default function ProfessionalsPage() {
       setFormData({ name: "", specialty: "", email: "", phone: "" });
       loadProfessionals();
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-        toast.error("Erro ao cadastrar profissional");
+      toast.error("Erro ao cadastrar profissional");
       }
     }
   };
