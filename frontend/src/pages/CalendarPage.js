@@ -92,6 +92,26 @@ export default function CalendarPage() {
     }
   };
 
+  const handleLeadSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post("/leads", leadFormData);
+      toast.success("Lead criado com sucesso!");
+      setShowLeadDialog(false);
+      setLeadFormData({
+        name: "",
+        phone: "",
+        email: "",
+        source: "whatsapp",
+        status: "new",
+        notes: ""
+      });
+      loadData(); // Reload leads data
+    } catch (error) {
+      toast.error("Erro ao criar lead");
+    }
+  };
+
   const updateStatus = async (id, status) => {
     try {
       await api.put(`/appointments/${id}?status=${status}`);
