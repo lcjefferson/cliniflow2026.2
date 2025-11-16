@@ -523,6 +523,9 @@ export default function SettingsPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Adicionar Novo Usuário</DialogTitle>
+              <DialogDescription>
+                Crie um novo usuário do sistema (administrador ou atendente)
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreateUser} className="space-y-4">
               <div>
