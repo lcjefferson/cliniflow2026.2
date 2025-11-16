@@ -94,6 +94,9 @@ export default function ServicesPage() {
           <DialogContent data-testid="service-dialog">
             <DialogHeader>
               <DialogTitle>Adicionar Serviço</DialogTitle>
+              <DialogDescription>
+                Cadastre um novo serviço oferecido pela clínica com preço e duração
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
