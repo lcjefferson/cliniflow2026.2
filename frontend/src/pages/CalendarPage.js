@@ -339,7 +339,8 @@ export default function CalendarPage() {
             {generateCalendarDays().map((dayObj, index) => (
               <div
                 key={index}
-                className={`min-h-[120px] border rounded-lg p-2 ${
+                onDoubleClick={() => handleDayDoubleClick(dayObj.date)}
+                className={`min-h-[120px] border rounded-lg p-2 cursor-pointer ${
                   dayObj.day ? 'bg-white hover:bg-gray-50' : 'bg-gray-100'
                 } ${dayObj.isToday ? 'border-blue-500 border-2' : 'border-gray-200'}`}
               >
