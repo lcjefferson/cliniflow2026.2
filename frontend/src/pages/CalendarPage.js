@@ -192,6 +192,7 @@ export default function CalendarPage() {
                   value={formData.notes}
                   onChange={(e) => setFormData({...formData, notes: e.target.value})}
                 />
+              </div>
               <Button type="submit" className="w-full btn-primary">Agendar</Button>
             </form>
           </DialogContent>
