@@ -524,7 +524,9 @@ export default function CalendarPage() {
                   onChange={(e) => setFormData({...formData, notes: e.target.value})}
                 />
               </div>
-              <Button type="submit" className="w-full btn-primary">Agendar</Button>
+              <Button type="submit" className="w-full btn-primary">
+                {editingAppointment ? "Salvar Alterações" : "Agendar"}
+              </Button>
             </form>
           </DialogContent>
         </Dialog>
