@@ -80,25 +80,25 @@ export default function PatientsPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <Label>Nome Completo</Label>
-                <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+                <Input data-testid="patient-name-input" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
               </div>
               <div>
                 <Label>Email</Label>
-                <Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
+                <Input data-testid="patient-email-input" type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
               </div>
               <div>
                 <Label>Telefone</Label>
-                <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
+                <Input data-testid="patient-phone-input" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
               </div>
               <div>
                 <Label>Data de Nascimento</Label>
-                <Input type="date" value={formData.birthdate} onChange={(e) => setFormData({...formData, birthdate: e.target.value})} required />
+                <Input data-testid="patient-birthdate-input" type="date" value={formData.birthdate} onChange={(e) => setFormData({...formData, birthdate: e.target.value})} required />
               </div>
               <div>
                 <Label>Endereço</Label>
-                <Input value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
+                <Input data-testid="patient-address-input" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
               </div>
-              <Button type="submit" className="w-full btn-primary">Cadastrar</Button>
+              <Button type="submit" data-testid="submit-patient-button" className="w-full btn-primary">Cadastrar</Button>
             </form>
           </DialogContent>
         </Dialog>
