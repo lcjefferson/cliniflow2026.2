@@ -95,11 +95,9 @@ export default function CalendarPage() {
       toast.success("Status atualizado!");
       loadAppointments();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao atualizar status");
+        toast.error("Erro ao atualizar status");
       }
-    }
     }
   };
 
