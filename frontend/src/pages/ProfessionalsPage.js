@@ -82,6 +82,9 @@ export default function ProfessionalsPage() {
           <DialogContent data-testid="professional-dialog">
             <DialogHeader>
               <DialogTitle>Adicionar Profissional</DialogTitle>
+              <DialogDescription>
+                Cadastre um novo profissional de saúde na clínica
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
