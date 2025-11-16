@@ -101,6 +101,9 @@ export default function FollowUpPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Agendar Follow-up</DialogTitle>
+              <DialogDescription>
+                Agende um acompanhamento com o lead
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
