@@ -49,9 +49,8 @@ export default function ProfessionalsPage() {
       toast.success("Profissional removido!");
       loadProfessionals();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao remover profissional");
+        toast.error("Erro ao remover profissional");
       }
     }
   };
