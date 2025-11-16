@@ -13,9 +13,12 @@ export default function CalendarPage() {
   const [appointments, setAppointments] = useState([]);
   const [professionals, setProfessionals] = useState([]);
   const [patients, setPatients] = useState([]);
+  const [leads, setLeads] = useState([]);
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
+  const [showLeadDialog, setShowLeadDialog] = useState(false);
+  const [leadSearch, setLeadSearch] = useState("");
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [formData, setFormData] = useState({
     patient_id: "",
@@ -24,6 +27,14 @@ export default function CalendarPage() {
     room_id: "",
     appointment_date: new Date().toISOString().split('T')[0],
     appointment_time: "",
+    notes: ""
+  });
+  const [leadFormData, setLeadFormData] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    source: "whatsapp",
+    status: "new",
     notes: ""
   });
 
