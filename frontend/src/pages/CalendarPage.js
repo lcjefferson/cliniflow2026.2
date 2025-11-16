@@ -133,6 +133,9 @@ export default function CalendarPage() {
                         {apt.status === 'confirmed' && (
                           <Button onClick={() => updateStatus(apt.id, 'completed')} variant="outline" size="sm">
                             Concluir
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
