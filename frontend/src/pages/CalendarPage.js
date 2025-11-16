@@ -486,7 +486,18 @@ export default function CalendarPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Paciente</Label>
+                  <div className="flex justify-between items-center mb-2">
+                    <Label>Paciente</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowNewPatientDialog(true)}
+                      className="text-xs"
+                    >
+                      + Novo Paciente
+                    </Button>
+                  </div>
                   <select
                     className="input-field"
                     value={formData.patient_id}
