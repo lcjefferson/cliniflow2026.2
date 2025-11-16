@@ -66,11 +66,9 @@ export default function FollowUpPage() {
       toast.success("Follow-up concluído!");
       loadFollowups();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-      toast.error("Erro ao completar follow-up");
+        toast.error("Erro ao completar follow-up");
       }
-    }
     }
   };
 
