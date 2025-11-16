@@ -648,6 +648,46 @@ async def update_lead(lead_id: str, data: LeadCreate, current_user: dict = Depen
         updated['created_at'] = datetime.fromisoformat(updated['created_at'])
     return Lead(**updated)
 
+@api_router.delete("/leads/{lead_id}")
+async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.leads.delete_one({"id": lead_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return {"message": "Lead deleted successfully"}
+
+@api_router.post("/leads/{lead_id}/convert-to-patient", response_model=Patient)
+async def convert_lead_to_patient(lead_id: str, birthdate: str, address: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    # Buscar lead
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    
+    # Verificar se já existe paciente com mesmo email
+    existing_patient = await db.patients.find_one({"email": lead["email"]}, {"_id": 0})
+    if existing_patient:
+        raise HTTPException(status_code=400, detail="Patient with this email already exists")
+    
+    # Criar paciente
+    patient = Patient(
+        name=lead["name"],
+        email=lead["email"],
+        phone=lead["phone"],
+        birthdate=birthdate,
+        address=address or ""
+    )
+    
+    doc = patient.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.patients.insert_one(doc)
+    
+    # Atualizar status do lead para convertido
+    await db.leads.update_one(
+        {"id": lead_id},
+        {"$set": {"status": "converted"}}
+    )
+    
+    return patient
+
 # Conversation Routes (Mocked)
 @api_router.get("/conversations", response_model=List[Conversation])
 async def get_conversations(current_user: dict = Depends(get_current_user)):
