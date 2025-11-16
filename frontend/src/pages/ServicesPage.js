@@ -94,7 +94,7 @@ export default function ServicesPage() {
         </div>
 
         <div className="grid gap-6">
-          {services.map((service) => (
+          {services.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((service) => (
             <div key={service.id} className="bg-white rounded-2xl p-6 shadow-lg" data-testid={`service-${service.id}`}>
               <div className="flex justify-between items-start">
                 <div className="flex-1">
