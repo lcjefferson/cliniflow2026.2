@@ -10,35 +10,55 @@ export default function MedicalRecordsPage() {
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [records, setRecords] = useState([]);
   const [generating, setGenerating] = useState(false);
+
   useEffect(() => {
     loadPatients();
   }, []);
+
   const loadPatients = async () => {
     try {
       const response = await api.get("/patients");
       setPatients(response.data);
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-        toast.error("Erro ao carregar pacientes");
+      toast.error("Erro ao carregar pacientes");
       }
     }
   };
+
   const loadRecords = async (patientId) => {
+    try {
       const response = await api.get(`/medical-records/patient/${patientId}`);
       setRecords(response.data);
       setSelectedPatient(patientId);
-        toast.error("Erro ao carregar prontuários");
+    } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
+      toast.error("Erro ao carregar prontuários");
+      }
+    }
+  };
+
   const generateDocument = async (recordId, type) => {
     setGenerating(true);
+    try {
       const response = await api.post("/medical-records/generate-document", {
         record_id: recordId,
         document_type: type
       });
       toast.success(`${type === 'prescription' ? 'Receita' : 'Atestado'} gerado com IA!`);
       loadRecords(selectedPatient);
-        toast.error("Erro ao gerar documento");
+    } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
+      toast.error("Erro ao gerar documento");
+      }
     } finally {
       setGenerating(false);
+    }
+  };
+
   return (
     <Layout>
       <div>
@@ -65,6 +85,7 @@ export default function MedicalRecordsPage() {
               ))}
             </div>
           </div>
+
           {/* Prontuários */}
           <div className="lg:col-span-2 bg-white rounded-2xl shadow-lg p-6">
             {!selectedPatient ? (
@@ -73,7 +94,10 @@ export default function MedicalRecordsPage() {
                 <p>Selecione um paciente para ver os prontuários</p>
               </div>
             ) : records.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                 <p>Nenhum prontuário encontrado</p>
+              </div>
             ) : (
               <div className="space-y-6">
                 <h2 className="text-xl font-bold text-gray-900">Prontuários do Paciente</h2>
@@ -83,8 +107,10 @@ export default function MedicalRecordsPage() {
                       <h3 className="text-lg font-bold text-gray-900 mb-2">Diagnóstico</h3>
                       <p className="text-gray-700">{record.diagnosis}</p>
                     </div>
+                    <div className="mb-4">
                       <h3 className="text-lg font-bold text-gray-900 mb-2">Tratamento</h3>
                       <p className="text-gray-700">{record.treatment}</p>
+                    </div>
                     
                     {record.prescription && (
                       <div className="mb-4 p-4 bg-blue-50 rounded-xl">
@@ -92,10 +118,14 @@ export default function MedicalRecordsPage() {
                         <p className="text-blue-800 whitespace-pre-wrap">{record.prescription}</p>
                       </div>
                     )}
+                    
                     {record.medical_certificate && (
                       <div className="mb-4 p-4 bg-green-50 rounded-xl">
                         <h3 className="text-lg font-bold text-green-900 mb-2">Atestado (Gerado com IA)</h3>
                         <p className="text-green-800 whitespace-pre-wrap">{record.medical_certificate}</p>
+                      </div>
+                    )}
+
                     <div className="flex gap-2 mt-4">
                       {!record.prescription && (
                         <Button
@@ -108,18 +138,29 @@ export default function MedicalRecordsPage() {
                         </Button>
                       )}
                       {!record.medical_certificate && (
+                        <Button
                           onClick={() => generateDocument(record.id, 'certificate')}
+                          disabled={generating}
                           className="btn-secondary"
+                        >
+                          <Sparkles className="w-4 h-4 mr-2" />
                           Gerar Atestado com IA
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ))}
+              </div>
             )}
+          </div>
         </div>
+
         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
           <p className="text-sm text-blue-800">
             <strong>Nota:</strong> Os documentos médicos são gerados automaticamente usando IA (OpenAI GPT-4o-mini) 
             baseados nas informações do diagnóstico e tratamento.
           </p>
+        </div>
       </div>
     </Layout>
   );

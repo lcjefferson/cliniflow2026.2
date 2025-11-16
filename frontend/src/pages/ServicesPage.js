@@ -12,21 +12,26 @@ export default function ServicesPage() {
   const [services, setServices] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
   const [formData, setFormData] = useState({ name: "", description: "", duration_minutes: "", price: "" });
+
   useEffect(() => {
     loadServices();
   }, []);
+
   const loadServices = async () => {
     try {
       const response = await api.get("/services");
       setServices(response.data);
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-        toast.error("Erro ao carregar serviços");
+      toast.error("Erro ao carregar serviços");
       }
     }
   };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    try {
       await api.post("/services", {
         ...formData,
         duration_minutes: parseInt(formData.duration_minutes),
@@ -36,11 +41,27 @@ export default function ServicesPage() {
       setShowDialog(false);
       setFormData({ name: "", description: "", duration_minutes: "", price: "" });
       loadServices();
-        toast.error("Erro ao cadastrar serviço");
+    } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
+      toast.error("Erro ao cadastrar serviço");
+      }
+    }
+  };
+
   const handleDelete = async (id) => {
+    try {
       await api.delete(`/services/${id}`);
       toast.success("Serviço removido!");
-        toast.error("Erro ao remover serviço");
+      loadServices();
+    } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
+      toast.error("Erro ao remover serviço");
+      }
+    }
+  };
+
   return (
     <Layout>
       <div>
@@ -51,6 +72,7 @@ export default function ServicesPage() {
             Adicionar Serviço
           </Button>
         </div>
+
         <div className="grid gap-6">
           {services.map((service) => (
             <div key={service.id} className="bg-white rounded-2xl p-6 shadow-lg" data-testid={`service-${service.id}`}>
@@ -63,8 +85,10 @@ export default function ServicesPage() {
                       <span className="text-sm text-gray-500">Duração:</span>
                       <p className="text-blue-600 font-semibold">{service.duration_minutes} minutos</p>
                     </div>
+                    <div>
                       <span className="text-sm text-gray-500">Preço:</span>
                       <p className="text-green-600 font-semibold">R$ {service.price.toFixed(2)}</p>
+                    </div>
                   </div>
                 </div>
                 <button onClick={() => handleDelete(service.id)} className="text-red-500 hover:text-red-700">
@@ -73,6 +97,8 @@ export default function ServicesPage() {
               </div>
             </div>
           ))}
+        </div>
+
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
           <DialogContent data-testid="service-dialog">
             <DialogHeader>
@@ -85,12 +111,19 @@ export default function ServicesPage() {
               <div>
                 <Label>Nome do Serviço</Label>
                 <Input data-testid="service-name-input" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+              </div>
+              <div>
                 <Label>Descrição</Label>
                 <Input data-testid="service-description-input" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} required />
+              </div>
+              <div>
                 <Label>Duração (minutos)</Label>
                 <Input data-testid="service-duration-input" type="number" value={formData.duration_minutes} onChange={(e) => setFormData({...formData, duration_minutes: e.target.value})} required />
+              </div>
+              <div>
                 <Label>Preço (R$)</Label>
                 <Input data-testid="service-price-input" type="number" step="0.01" value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} required />
+              </div>
               <Button type="submit" data-testid="submit-service-button" className="w-full btn-primary">Cadastrar</Button>
             </form>
           </DialogContent>

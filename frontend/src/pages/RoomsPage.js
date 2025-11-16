@@ -12,27 +12,39 @@ export default function RoomsPage() {
   const [rooms, setRooms] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
   const [formData, setFormData] = useState({ name: "", capacity: "" });
+
   useEffect(() => {
     loadRooms();
   }, []);
+
   const loadRooms = async () => {
     try {
       const response = await api.get("/rooms");
       setRooms(response.data);
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-        toast.error("Erro ao carregar salas");
+      toast.error("Erro ao carregar salas");
       }
     }
   };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    try {
       await api.post("/rooms", { ...formData, capacity: parseInt(formData.capacity) });
       toast.success("Sala cadastrada!");
       setShowDialog(false);
       setFormData({ name: "", capacity: "" });
       loadRooms();
-        toast.error("Erro ao cadastrar sala");
+    } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
+      toast.error("Erro ao cadastrar sala");
+      }
+    }
+  };
+
   return (
     <Layout>
       <div>
@@ -43,6 +55,7 @@ export default function RoomsPage() {
             Adicionar Sala
           </Button>
         </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {rooms.map((room) => (
             <div key={room.id} className="bg-white rounded-2xl p-6 shadow-lg card-hover">
@@ -50,6 +63,8 @@ export default function RoomsPage() {
               <p className="text-gray-600">Capacidade: {room.capacity} pessoas</p>
             </div>
           ))}
+        </div>
+
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
           <DialogContent>
             <DialogHeader>
@@ -63,8 +78,10 @@ export default function RoomsPage() {
                 <Label>Nome da Sala</Label>
                 <Input data-testid="room-name-input" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
               </div>
+              <div>
                 <Label>Capacidade</Label>
                 <Input data-testid="room-capacity-input" type="number" value={formData.capacity} onChange={(e) => setFormData({...formData, capacity: e.target.value})} required />
+              </div>
               <Button type="submit" data-testid="submit-room-button" className="w-full btn-primary">Cadastrar</Button>
             </form>
           </DialogContent>

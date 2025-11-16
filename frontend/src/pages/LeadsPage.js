@@ -13,28 +13,37 @@ export default function LeadsPage() {
   const [showDialog, setShowDialog] = useState(false);
   const [filterStatus, setFilterStatus] = useState("");
   const [formData, setFormData] = useState({ name: "", phone: "", email: "", source: "whatsapp", status: "new", notes: "" });
+
   useEffect(() => {
     loadLeads();
   }, [filterStatus]);
+
   const loadLeads = async () => {
     try {
       const params = filterStatus ? `?status=${filterStatus}` : "";
       const response = await api.get(`/leads${params}`);
       setLeads(response.data);
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
         toast.error("Erro ao carregar leads");
       }
     }
   };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    try {
       await api.post("/leads", formData);
       toast.success("Lead cadastrado!");
       setShowDialog(false);
       setFormData({ name: "", phone: "", email: "", source: "whatsapp", status: "new", notes: "" });
       loadLeads();
-        toast.error("Erro ao cadastrar lead");
+    } catch (error) {
+      toast.error("Erro ao cadastrar lead");
+    }
+  };
+
   const getStatusBadge = (status) => {
     const styles = {
       new: "bg-blue-100 text-blue-700",
@@ -49,7 +58,10 @@ export default function LeadsPage() {
       hot: "Quente",
       cold: "Frio",
       converted: "Convertido"
+    };
     return <span className={`status-badge ${styles[status]}`}>{labels[status]}</span>;
+  };
+
   return (
     <Layout>
       <div>
@@ -72,6 +84,7 @@ export default function LeadsPage() {
             </Button>
           </div>
         </div>
+
         <div className="grid gap-6">
           {leads.map((lead) => (
             <div key={lead.id} className="bg-white rounded-2xl p-6 shadow-lg">
@@ -86,10 +99,13 @@ export default function LeadsPage() {
                     {lead.email && <p className="text-gray-600">{lead.email}</p>}
                     <p className="text-sm text-gray-500">Origem: {lead.source}</p>
                     {lead.notes && <p className="text-gray-600 mt-2">{lead.notes}</p>}
+                  </div>
                 </div>
               </div>
             </div>
           ))}
+        </div>
+
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
           <DialogContent>
             <DialogHeader>
@@ -102,10 +118,16 @@ export default function LeadsPage() {
               <div>
                 <Label>Nome</Label>
                 <Input data-testid="lead-name-input" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+              </div>
+              <div>
                 <Label>Telefone</Label>
                 <Input data-testid="lead-phone-input" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
+              </div>
+              <div>
                 <Label>Email</Label>
                 <Input data-testid="lead-email-input" type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
+              </div>
+              <div>
                 <Label>Origem</Label>
                 <select
                   data-testid="lead-source-select"
@@ -117,8 +139,11 @@ export default function LeadsPage() {
                   <option value="instagram">Instagram</option>
                   <option value="messenger">Messenger</option>
                 </select>
+              </div>
+              <div>
                 <Label>Observações</Label>
                 <Input data-testid="lead-notes-input" value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} />
+              </div>
               <Button type="submit" data-testid="submit-lead-button" className="w-full btn-primary">Cadastrar</Button>
             </form>
           </DialogContent>

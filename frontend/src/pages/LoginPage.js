@@ -15,9 +15,11 @@ export default function LoginPage() {
   
   const navigate = useNavigate();
   const { login, register } = useAuth();
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+
     try {
       if (isLogin) {
         await login(email, password);
@@ -28,12 +30,12 @@ export default function LoginPage() {
       }
       navigate("/");
     } catch (error) {
-      if (error.response?.status !== 401) {
-        toast.error(error.response?.data?.detail || "Erro ao processar requisição");
-    }
+      toast.error(error.response?.data?.detail || "Erro ao processar requisição");
     } finally {
       setLoading(false);
+    }
   };
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-gradient-to-br from-blue-100 via-sky-100 to-blue-200 opacity-60"></div>
@@ -44,6 +46,7 @@ export default function LoginPage() {
             <h1 className="text-4xl font-bold text-blue-600 mb-2">CliniFlow</h1>
             <p className="text-gray-600">Sistema de Gestão de Clínicas</p>
           </div>
+
           <form onSubmit={handleSubmit} data-testid="login-form" className="space-y-6">
             {!isLogin && (
               <div>
@@ -60,6 +63,7 @@ export default function LoginPage() {
                 />
               </div>
             )}
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Email
@@ -73,13 +77,20 @@ export default function LoginPage() {
                 required
               />
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Senha
+              </label>
               <div className="relative">
+                <input
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   data-testid="password-input"
                   className="input-field pr-12"
+                  required
+                />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -87,15 +98,25 @@ export default function LoginPage() {
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
+              </div>
+            </div>
+
+            {!isLogin && (
               <div className="flex items-center gap-2">
+                <input
                   type="checkbox"
                   id="isAdmin"
                   checked={isAdmin}
                   onChange={(e) => setIsAdmin(e.target.checked)}
                   data-testid="admin-checkbox"
                   className="w-4 h-4 text-blue-600 rounded"
+                />
                 <label htmlFor="isAdmin" className="text-sm text-gray-700">
                   Cadastrar como Administrador
+                </label>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -105,11 +126,16 @@ export default function LoginPage() {
               {loading ? "Processando..." : isLogin ? "Entrar" : "Cadastrar"}
             </button>
           </form>
+
           <div className="mt-6 text-center">
+            <button
               onClick={() => setIsLogin(!isLogin)}
               data-testid="toggle-mode-button"
               className="text-blue-600 hover:text-blue-700 font-medium"
+            >
               {isLogin ? "Não tem conta? Cadastre-se" : "Já tem conta? Faça login"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

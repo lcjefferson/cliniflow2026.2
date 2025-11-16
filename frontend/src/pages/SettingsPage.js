@@ -28,10 +28,14 @@ export default function SettingsPage() {
     whatsapp_enabled: false,
     instagram_enabled: false,
     messenger_enabled: false
+  });
+  
   const [aiSettings, setAiSettings] = useState({
     emergent_llm_key: "sk-emergent-7F30bE56009E3B4EeC",
     provider: "openai",
     model: "gpt-4o-mini"
+  });
+  
   const [emailSettings, setEmailSettings] = useState({
     smtp_host: "",
     smtp_port: "587",
@@ -39,42 +43,64 @@ export default function SettingsPage() {
     smtp_password: "",
     from_email: "",
     from_name: "CliniFlow"
+  });
   const [userForm, setUserForm] = useState({
     name: "",
     email: "",
     password: "",
     is_admin: false
+  });
+
   useEffect(() => {
     if (user?.role?.is_admin) {
       loadUsers();
     }
   }, [user]);
+
   const loadUsers = async () => {
     try {
       const response = await api.get("/auth/users");
       setUsers(response.data || []);
-    } catch (error) {      if (error.response?.status !== 401) {
+    } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
+      // Endpoint não existe ainda, vamos mockar
       setUsers([user]);
+    }
   };
+
   const handleCreateUser = async (e) => {
     e.preventDefault();
+    try {
       await api.post("/auth/register", userForm);
       toast.success("Usuário criado com sucesso!");
       setShowUserDialog(false);
       setUserForm({ name: "", email: "", password: "", is_admin: false });
+      loadUsers();
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-        toast.error(error.response?.data?.detail || "Erro ao criar usuário");
-      }
+      toast.error(error.response?.data?.detail || "Erro ao criar usuário");
+    }
+  };
+
   const handleSaveApiSettings = () => {
     // Salvar todas as configurações
     toast.success("Configurações salvas com sucesso!");
+  };
+  
   const handleSaveMetaSettings = () => {
     toast.success("Configurações da Meta Business API salvas!");
+  };
+  
   const handleSaveAiSettings = () => {
     toast.success("Configurações de IA salvas!");
+  };
+  
   const handleSaveEmailSettings = () => {
     toast.success("Configurações de email salvas!");
+  };
+
   if (!user?.role?.is_admin) {
     return (
       <Layout>
@@ -85,12 +111,15 @@ export default function SettingsPage() {
       </Layout>
     );
   }
+
   return (
     <Layout>
       <div>
         <div className="flex items-center gap-3 mb-8">
           <Settings className="w-10 h-10 text-blue-600" />
           <h1 className="text-4xl font-bold text-gray-900" data-testid="settings-page-title">Configurações</h1>
+        </div>
+
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
           <Tabs defaultValue="users" className="w-full">
             <TabsList className="w-full grid grid-cols-4 bg-gray-50 p-2">
@@ -101,13 +130,17 @@ export default function SettingsPage() {
               <TabsTrigger value="apis" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
                 <Key className="w-4 h-4 mr-2" />
                 Integrações
+              </TabsTrigger>
               <TabsTrigger value="connections" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
                 <Settings className="w-4 h-4 mr-2" />
                 Conexões
+              </TabsTrigger>
               <TabsTrigger value="profile" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
                 <UserIcon className="w-4 h-4 mr-2" />
                 Meu Perfil
+              </TabsTrigger>
             </TabsList>
+
             {/* Usuários Tab */}
             <TabsContent value="users" className="p-6">
               <div className="flex justify-between items-center mb-6">
@@ -117,6 +150,7 @@ export default function SettingsPage() {
                   Adicionar Usuário
                 </Button>
               </div>
+
               <div className="space-y-4">
                 {users.map((u) => (
                   <div key={u.id || u.email} className="border border-gray-200 rounded-xl p-4 flex justify-between items-center">
@@ -136,7 +170,9 @@ export default function SettingsPage() {
                     )}
                   </div>
                 ))}
+              </div>
             </TabsContent>
+
             {/* APIs Tab */}
             <TabsContent value="apis" className="p-6">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Automações</h2>
@@ -160,10 +196,24 @@ export default function SettingsPage() {
                         />
                         <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                       </label>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                      <div>
                         <p className="font-medium text-gray-900">Lembretes de Consulta</p>
                         <p className="text-sm text-gray-600">Lembrar pacientes antes da consulta</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
                           checked={apiSettings.auto_reminder_enabled}
                           onChange={(e) => setApiSettings({...apiSettings, auto_reminder_enabled: e.target.checked})}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
+                    </div>
+
                     {apiSettings.auto_reminder_enabled && (
                       <div className="p-4 bg-blue-50 rounded-xl">
                         <Label>Lembrar quantas horas antes?</Label>
@@ -172,17 +222,31 @@ export default function SettingsPage() {
                           value={apiSettings.reminder_hours_before}
                           onChange={(e) => setApiSettings({...apiSettings, reminder_hours_before: parseInt(e.target.value)})}
                           className="mt-2 max-w-xs"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
+
                 <Button onClick={handleSaveApiSettings} className="btn-primary" data-testid="save-api-settings">
                   <Save className="w-4 h-4 mr-2" />
                   Salvar Automações
+                </Button>
+              </div>
+            </TabsContent>
+
             {/* Connections Tab */}
             <TabsContent value="connections" className="p-6">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Configurar Conexões</h2>
+              
               <div className="space-y-8">
                 {/* Meta Business API */}
+                <div className="border border-gray-200 rounded-xl p-6">
                   <h3 className="text-lg font-bold text-gray-900 mb-4">Meta Business API</h3>
                   <p className="text-sm text-gray-600 mb-6">Configure suas credenciais para integração com WhatsApp, Instagram e Messenger</p>
+                  
+                  <div className="space-y-4">
+                    <div>
                       <Label>App ID</Label>
                       <Input
                         value={metaSettings.app_id}
@@ -190,57 +254,115 @@ export default function SettingsPage() {
                         placeholder="Digite o App ID da Meta"
                         className="mt-2"
                       />
+                    </div>
                     
+                    <div>
                       <Label>App Secret</Label>
+                      <Input
                         type="password"
                         value={metaSettings.app_secret}
                         onChange={(e) => setMetaSettings({...metaSettings, app_secret: e.target.value})}
                         placeholder="Digite o App Secret"
+                        className="mt-2"
+                      />
+                    </div>
+                    
+                    <div>
                       <Label>Access Token</Label>
+                      <Input
+                        type="password"
                         value={metaSettings.access_token}
                         onChange={(e) => setMetaSettings({...metaSettings, access_token: e.target.value})}
                         placeholder="Digite o Access Token"
+                        className="mt-2"
+                      />
+                    </div>
+                    
+                    <div>
                       <Label>Phone Number ID (WhatsApp)</Label>
+                      <Input
                         value={metaSettings.phone_number_id}
                         onChange={(e) => setMetaSettings({...metaSettings, phone_number_id: e.target.value})}
                         placeholder="Digite o Phone Number ID"
+                        className="mt-2"
+                      />
+                    </div>
+                    
                     <div className="pt-4 space-y-3">
                       <p className="text-sm font-medium text-gray-700">Canais Ativos:</p>
                       
                       <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
                           id="whatsapp-enabled"
                           checked={metaSettings.whatsapp_enabled}
                           onChange={(e) => setMetaSettings({...metaSettings, whatsapp_enabled: e.target.checked})}
                           className="w-4 h-4 text-blue-600 rounded"
+                        />
                         <label htmlFor="whatsapp-enabled" className="text-sm text-gray-700">
                           WhatsApp
                         </label>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
                           id="instagram-enabled"
                           checked={metaSettings.instagram_enabled}
                           onChange={(e) => setMetaSettings({...metaSettings, instagram_enabled: e.target.checked})}
+                          className="w-4 h-4 text-blue-600 rounded"
+                        />
                         <label htmlFor="instagram-enabled" className="text-sm text-gray-700">
                           Instagram Direct
+                        </label>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
                           id="messenger-enabled"
                           checked={metaSettings.messenger_enabled}
                           onChange={(e) => setMetaSettings({...metaSettings, messenger_enabled: e.target.checked})}
+                          className="w-4 h-4 text-blue-600 rounded"
+                        />
                         <label htmlFor="messenger-enabled" className="text-sm text-gray-700">
                           Messenger
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                  
                   <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
                     <p className="text-sm text-blue-800">
                       <strong>📘 Como obter:</strong> Acesse <a href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer" className="underline">developers.facebook.com</a> e crie um aplicativo Meta Business
                     </p>
+                  </div>
+                  
                   <Button onClick={handleSaveMetaSettings} className="btn-primary mt-4">
                     <Save className="w-4 h-4 mr-2" />
                     Salvar Configurações Meta
                   </Button>
+                </div>
+
                 {/* IA Settings */}
+                <div className="border border-gray-200 rounded-xl p-6">
                   <h3 className="text-lg font-bold text-gray-900 mb-4">Inteligência Artificial</h3>
                   <p className="text-sm text-gray-600 mb-6">Configurações de IA para geração de documentos e mensagens automáticas</p>
+                  
+                  <div className="space-y-4">
+                    <div>
                       <Label>Emergent LLM Key</Label>
+                      <Input
+                        type="password"
                         value={aiSettings.emergent_llm_key}
                         onChange={(e) => setAiSettings({...aiSettings, emergent_llm_key: e.target.value})}
+                        className="mt-2"
                         disabled
+                      />
                       <p className="text-xs text-gray-500 mt-1">✅ Chave universal já configurada (OpenAI, Anthropic, Google)</p>
+                    </div>
+                    
+                    <div>
                       <Label>Provedor</Label>
                       <select
                         className="input-field mt-2"
@@ -251,69 +373,155 @@ export default function SettingsPage() {
                         <option value="anthropic">Anthropic (Claude)</option>
                         <option value="google">Google (Gemini)</option>
                       </select>
+                    </div>
+                    
+                    <div>
                       <Label>Modelo</Label>
+                      <Input
                         value={aiSettings.model}
                         onChange={(e) => setAiSettings({...aiSettings, model: e.target.value})}
                         placeholder="gpt-4o-mini"
+                        className="mt-2"
+                      />
                       <p className="text-xs text-gray-500 mt-1">Modelo usado para geração de receitas, atestados e mensagens</p>
+                    </div>
+                  </div>
+                  
                   <Button onClick={handleSaveAiSettings} className="btn-primary mt-4">
+                    <Save className="w-4 h-4 mr-2" />
                     Salvar Configurações de IA
+                  </Button>
+                </div>
+
                 {/* Email Settings */}
+                <div className="border border-gray-200 rounded-xl p-6">
                   <h3 className="text-lg font-bold text-gray-900 mb-4">Servidor de Email (SMTP)</h3>
                   <p className="text-sm text-gray-600 mb-6">Configure o servidor SMTP para envio de emails e relatórios</p>
+                  
+                  <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
+                      <div>
                         <Label>Host SMTP</Label>
+                        <Input
                           value={emailSettings.smtp_host}
                           onChange={(e) => setEmailSettings({...emailSettings, smtp_host: e.target.value})}
                           placeholder="smtp.gmail.com"
                           className="mt-2"
+                        />
+                      </div>
+                      
+                      <div>
                         <Label>Porta</Label>
+                        <Input
                           value={emailSettings.smtp_port}
                           onChange={(e) => setEmailSettings({...emailSettings, smtp_port: e.target.value})}
                           placeholder="587"
+                          className="mt-2"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
                       <Label>Usuário SMTP</Label>
+                      <Input
                         value={emailSettings.smtp_user}
                         onChange={(e) => setEmailSettings({...emailSettings, smtp_user: e.target.value})}
                         placeholder="seu-email@gmail.com"
+                        className="mt-2"
+                      />
+                    </div>
+                    
+                    <div>
                       <Label>Senha SMTP</Label>
+                      <Input
+                        type="password"
                         value={emailSettings.smtp_password}
                         onChange={(e) => setEmailSettings({...emailSettings, smtp_password: e.target.value})}
                         placeholder="••••••••"
+                        className="mt-2"
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
                         <Label>Email Remetente</Label>
+                        <Input
                           value={emailSettings.from_email}
                           onChange={(e) => setEmailSettings({...emailSettings, from_email: e.target.value})}
                           placeholder="noreply@cliniflow.com"
+                          className="mt-2"
+                        />
+                      </div>
+                      
+                      <div>
                         <Label>Nome Remetente</Label>
+                        <Input
                           value={emailSettings.from_name}
                           onChange={(e) => setEmailSettings({...emailSettings, from_name: e.target.value})}
                           placeholder="CliniFlow"
+                          className="mt-2"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  
                   <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
                     <p className="text-sm text-yellow-800">
                       <strong>⚠️ Gmail:</strong> Use senha de aplicativo, não sua senha normal. Ative autenticação de 2 fatores e gere uma senha de app.
+                    </p>
+                  </div>
+                  
                   <Button onClick={handleSaveEmailSettings} className="btn-primary mt-4">
+                    <Save className="w-4 h-4 mr-2" />
                     Salvar Configurações de Email
+                  </Button>
+                </div>
+              </div>
+            </TabsContent>
+
             {/* Profile Tab */}
             <TabsContent value="profile" className="p-6">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Meu Perfil</h2>
+              
               <div className="max-w-2xl space-y-6">
                 <div>
                   <Label>Nome</Label>
                   <Input value={user.name} disabled className="mt-2" />
+                </div>
+                <div>
                   <Label>Email</Label>
                   <Input value={user.email} disabled className="mt-2" />
+                </div>
+                <div>
                   <Label>Tipo de Conta</Label>
                   <Input value={user.role?.is_admin ? "Administrador" : "Atendente"} disabled className="mt-2" />
+                </div>
                 
                 <div className="pt-4 border-t border-gray-200">
                   <h3 className="text-lg font-bold text-gray-900 mb-4">Alterar Senha</h3>
+                  <div className="space-y-4">
+                    <div>
                       <Label>Senha Atual</Label>
                       <Input type="password" placeholder="••••••••" className="mt-2" />
+                    </div>
+                    <div>
                       <Label>Nova Senha</Label>
+                      <Input type="password" placeholder="••••••••" className="mt-2" />
+                    </div>
+                    <div>
                       <Label>Confirmar Nova Senha</Label>
+                      <Input type="password" placeholder="••••••••" className="mt-2" />
+                    </div>
                     <Button className="btn-secondary">
                       Atualizar Senha
                     </Button>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
           </Tabs>
+        </div>
+
         {/* Dialog para criar usuário */}
         <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
           <DialogContent>
@@ -332,16 +540,27 @@ export default function SettingsPage() {
                   data-testid="user-name-input"
                   required
                 />
+              </div>
+              <div>
                 <Label>Email</Label>
+                <Input
                   type="email"
                   value={userForm.email}
                   onChange={(e) => setUserForm({...userForm, email: e.target.value})}
                   data-testid="user-email-input"
+                  required
+                />
+              </div>
+              <div>
                 <Label>Senha</Label>
+                <Input
                   type="password"
                   value={userForm.password}
                   onChange={(e) => setUserForm({...userForm, password: e.target.value})}
                   data-testid="user-password-input"
+                  required
+                />
+              </div>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -349,9 +568,11 @@ export default function SettingsPage() {
                   checked={userForm.is_admin}
                   onChange={(e) => setUserForm({...userForm, is_admin: e.target.checked})}
                   className="w-4 h-4 text-blue-600 rounded"
+                />
                 <label htmlFor="admin-role" className="text-sm text-gray-700">
                   Conceder permissões de Administrador
                 </label>
+              </div>
               <Button type="submit" className="w-full btn-primary" data-testid="submit-user-button">
                 Criar Usuário
               </Button>

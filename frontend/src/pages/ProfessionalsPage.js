@@ -12,9 +12,11 @@ export default function ProfessionalsPage() {
   const [professionals, setProfessionals] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
   const [formData, setFormData] = useState({ name: "", specialty: "", email: "", phone: "" });
+
   useEffect(() => {
     loadProfessionals();
   }, []);
+
   const loadProfessionals = async () => {
     try {
       const response = await api.get("/professionals");
@@ -25,18 +27,35 @@ export default function ProfessionalsPage() {
       }
     }
   };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    try {
       await api.post("/professionals", formData);
       toast.success("Profissional cadastrado!");
       setShowDialog(false);
       setFormData({ name: "", specialty: "", email: "", phone: "" });
       loadProfessionals();
+    } catch (error) {
+      if (error.response?.status !== 401) {
         toast.error("Erro ao cadastrar profissional");
+      }
+    }
+  };
+
   const handleDelete = async (id) => {
+    try {
       await api.delete(`/professionals/${id}`);
       toast.success("Profissional removido!");
-        toast.error("Erro ao remover profissional");
+      loadProfessionals();
+    } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
+      toast.error("Erro ao remover profissional");
+      }
+    }
+  };
+
   return (
     <Layout>
       <div>
@@ -47,6 +66,7 @@ export default function ProfessionalsPage() {
             Adicionar Profissional
           </Button>
         </div>
+
         <div className="grid gap-6">
           {professionals.map((prof) => (
             <div key={prof.id} className="bg-white rounded-2xl p-6 shadow-lg" data-testid={`professional-${prof.id}`}>
@@ -67,6 +87,8 @@ export default function ProfessionalsPage() {
               </div>
             </div>
           ))}
+        </div>
+
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
           <DialogContent data-testid="professional-dialog">
             <DialogHeader>
@@ -84,19 +106,35 @@ export default function ProfessionalsPage() {
                   data-testid="professional-name-input"
                   required
                 />
+              </div>
+              <div>
                 <Label>Especialidade</Label>
+                <Input
                   value={formData.specialty}
                   onChange={(e) => setFormData({...formData, specialty: e.target.value})}
                   data-testid="professional-specialty-input"
+                  required
+                />
+              </div>
+              <div>
                 <Label>Email</Label>
+                <Input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
                   data-testid="professional-email-input"
+                  required
+                />
+              </div>
+              <div>
                 <Label>Telefone</Label>
+                <Input
                   value={formData.phone}
                   onChange={(e) => setFormData({...formData, phone: e.target.value})}
                   data-testid="professional-phone-input"
+                  required
+                />
+              </div>
               <Button type="submit" data-testid="submit-professional-button" className="w-full btn-primary">Cadastrar</Button>
             </form>
           </DialogContent>

@@ -12,27 +12,39 @@ export default function PatientsPage() {
   const [patients, setPatients] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
   const [formData, setFormData] = useState({ name: "", email: "", phone: "", birthdate: "", address: "" });
+
   useEffect(() => {
     loadPatients();
   }, []);
+
   const loadPatients = async () => {
     try {
       const response = await api.get("/patients");
       setPatients(response.data);
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
-        toast.error("Erro ao carregar pacientes");
+      toast.error("Erro ao carregar pacientes");
       }
     }
   };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    try {
       await api.post("/patients", formData);
       toast.success("Paciente cadastrado!");
       setShowDialog(false);
       setFormData({ name: "", email: "", phone: "", birthdate: "", address: "" });
       loadPatients();
-        toast.error("Erro ao cadastrar paciente");
+    } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
+      toast.error("Erro ao cadastrar paciente");
+      }
+    }
+  };
+
   return (
     <Layout>
       <div>
@@ -43,6 +55,7 @@ export default function PatientsPage() {
             Adicionar Paciente
           </Button>
         </div>
+
         <div className="grid gap-6">
           {patients.map((patient) => (
             <div key={patient.id} className="bg-white rounded-2xl p-6 shadow-lg">
@@ -63,6 +76,8 @@ export default function PatientsPage() {
               </div>
             </div>
           ))}
+        </div>
+
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
           <DialogContent>
             <DialogHeader>
@@ -75,14 +90,23 @@ export default function PatientsPage() {
               <div>
                 <Label>Nome Completo</Label>
                 <Input data-testid="patient-name-input" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+              </div>
+              <div>
                 <Label>Email</Label>
                 <Input data-testid="patient-email-input" type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
+              </div>
+              <div>
                 <Label>Telefone</Label>
                 <Input data-testid="patient-phone-input" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
+              </div>
+              <div>
                 <Label>Data de Nascimento</Label>
                 <Input data-testid="patient-birthdate-input" type="date" value={formData.birthdate} onChange={(e) => setFormData({...formData, birthdate: e.target.value})} required />
+              </div>
+              <div>
                 <Label>Endereço</Label>
                 <Input data-testid="patient-address-input" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
+              </div>
               <Button type="submit" data-testid="submit-patient-button" className="w-full btn-primary">Cadastrar</Button>
             </form>
           </DialogContent>
