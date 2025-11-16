@@ -20,9 +20,17 @@ export default function CalendarPage() {
   const [showDialog, setShowDialog] = useState(false);
   const [showLeadDialog, setShowLeadDialog] = useState(false);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
+  const [showNewPatientDialog, setShowNewPatientDialog] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [editingAppointment, setEditingAppointment] = useState(null);
   const [leadSearch, setLeadSearch] = useState("");
+  const [newPatientData, setNewPatientData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    birthdate: "",
+    address: ""
+  });
   
   const [formData, setFormData] = useState({
     patient_id: "",
