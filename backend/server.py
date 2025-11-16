@@ -152,6 +152,25 @@ class AppointmentCreate(BaseModel):
     paid: bool = False
     notes: Optional[str] = None
 
+class Transaction(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    patient_id: str
+    appointment_id: Optional[str] = None
+    amount: float
+    payment_method: str  # cash, card, pix, etc
+    description: str
+    transaction_date: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class TransactionCreate(BaseModel):
+    patient_id: str
+    appointment_id: Optional[str] = None
+    amount: float
+    payment_method: str
+    description: str
+    transaction_date: str
+
 class MedicalRecord(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
