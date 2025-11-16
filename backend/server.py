@@ -325,6 +325,65 @@ async def login(credentials: UserLogin):
         }
     )
 
+# User Management Routes
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    user_type: Optional[str] = None
+    professional_id: Optional[str] = None
+    is_admin: Optional[bool] = None
+
+@api_router.get("/users", response_model=List[dict])
+async def get_users(current_user: dict = Depends(get_current_user)):
+    # Only admins can list users
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    for user in users:
+        if isinstance(user.get('created_at'), str):
+            user['created_at'] = datetime.fromisoformat(user['created_at'])
+    return users
+
+@api_router.put("/users/{user_id}")
+async def update_user(user_id: str, data: UserUpdate, current_user: dict = Depends(get_current_user)):
+    # Only admins can update users
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    update_data = {}
+    if data.name:
+        update_data["name"] = data.name
+    if data.email:
+        update_data["email"] = data.email
+    if data.user_type:
+        update_data["user_type"] = data.user_type
+    if data.professional_id is not None:
+        update_data["professional_id"] = data.professional_id
+    if data.is_admin is not None:
+        update_data["role.is_admin"] = data.is_admin
+        update_data["role.is_attendant"] = not data.is_admin
+    
+    if update_data:
+        await db.users.update_one({"id": user_id}, {"$set": update_data})
+    
+    return {"message": "User updated successfully"}
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(user_id: str, current_user: dict = Depends(get_current_user)):
+    # Only admins can delete users
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    result = await db.users.delete_one({"id": user_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "User deleted successfully"}
+
 # Professional Routes
 @api_router.post("/professionals", response_model=Professional)
 async def create_professional(data: ProfessionalCreate, current_user: dict = Depends(get_current_user)):
