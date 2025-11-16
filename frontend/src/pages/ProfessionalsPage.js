@@ -111,10 +111,10 @@ export default function ProfessionalsPage() {
           ))}
         </div>
 
-        <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
           <DialogContent data-testid="professional-dialog">
             <DialogHeader>
-              <DialogTitle>Adicionar Profissional</DialogTitle>
+              <DialogTitle>{editingId ? "Editar Profissional" : "Adicionar Profissional"}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
