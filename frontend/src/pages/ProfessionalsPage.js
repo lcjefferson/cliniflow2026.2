@@ -18,8 +18,14 @@ export default function ProfessionalsPage() {
   }, []);
 
   const loadProfessionals = async () => {
-    const response = await api.get("/professionals");
-    setProfessionals(response.data);
+    try {
+      const response = await api.get("/professionals");
+      setProfessionals(response.data);
+    } catch (error) {
+      if (error.response?.status !== 401) {
+        toast.error("Erro ao carregar profissionais");
+      }
+    }
   };
 
   const handleSubmit = async (e) => {
