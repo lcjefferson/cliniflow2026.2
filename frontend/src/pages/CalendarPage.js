@@ -292,6 +292,83 @@ export default function CalendarPage() {
             </form>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={showLeadDialog} onOpenChange={setShowLeadDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Novo Lead</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleLeadSubmit} className="space-y-4">
+              <div>
+                <Label>Nome *</Label>
+                <Input
+                  value={leadFormData.name}
+                  onChange={(e) => setLeadFormData({...leadFormData, name: e.target.value})}
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Telefone *</Label>
+                  <Input
+                    value={leadFormData.phone}
+                    onChange={(e) => setLeadFormData({...leadFormData, phone: e.target.value})}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input
+                    type="email"
+                    value={leadFormData.email}
+                    onChange={(e) => setLeadFormData({...leadFormData, email: e.target.value})}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Origem</Label>
+                  <Select value={leadFormData.source} onValueChange={(value) => setLeadFormData({...leadFormData, source: value})}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                      <SelectItem value="instagram">Instagram</SelectItem>
+                      <SelectItem value="facebook">Facebook</SelectItem>
+                      <SelectItem value="google">Google</SelectItem>
+                      <SelectItem value="indicacao">Indicação</SelectItem>
+                      <SelectItem value="outros">Outros</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <Select value={leadFormData.status} onValueChange={(value) => setLeadFormData({...leadFormData, status: value})}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new">Novo</SelectItem>
+                      <SelectItem value="contacted">Contatado</SelectItem>
+                      <SelectItem value="qualified">Qualificado</SelectItem>
+                      <SelectItem value="converted">Convertido</SelectItem>
+                      <SelectItem value="lost">Perdido</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <Label>Observações</Label>
+                <Input
+                  value={leadFormData.notes}
+                  onChange={(e) => setLeadFormData({...leadFormData, notes: e.target.value})}
+                />
+              </div>
+              <Button type="submit" className="w-full btn-primary">Criar Lead</Button>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
