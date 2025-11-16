@@ -62,6 +62,8 @@ export default function SettingsPage() {
       const response = await api.get("/auth/users");
       setUsers(response.data || []);
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
       // Endpoint não existe ainda, vamos mockar
       setUsers([user]);
     }
@@ -76,6 +78,8 @@ export default function SettingsPage() {
       setUserForm({ name: "", email: "", password: "", is_admin: false });
       loadUsers();
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
       toast.error(error.response?.data?.detail || "Erro ao criar usuário");
     }
   };

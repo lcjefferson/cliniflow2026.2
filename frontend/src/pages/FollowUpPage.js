@@ -24,7 +24,10 @@ export default function FollowUpPage() {
       const response = await api.get("/followups");
       setFollowups(response.data);
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
       toast.error("Erro ao carregar follow-ups");
+      }
     }
   };
 
@@ -33,6 +36,8 @@ export default function FollowUpPage() {
       const response = await api.get("/leads");
       setLeads(response.data);
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
       console.error("Erro ao carregar leads");
     }
   };
@@ -46,7 +51,10 @@ export default function FollowUpPage() {
       setFormData({ lead_id: "", assigned_to: "", scheduled_date: "", notes: "" });
       loadFollowups();
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
       toast.error("Erro ao agendar follow-up");
+      }
     }
   };
 
@@ -56,7 +64,10 @@ export default function FollowUpPage() {
       toast.success("Follow-up concluído!");
       loadFollowups();
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
       toast.error("Erro ao completar follow-up");
+      }
     }
   };
 

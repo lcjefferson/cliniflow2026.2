@@ -22,7 +22,10 @@ export default function RoomsPage() {
       const response = await api.get("/rooms");
       setRooms(response.data);
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
       toast.error("Erro ao carregar salas");
+      }
     }
   };
 
@@ -35,7 +38,10 @@ export default function RoomsPage() {
       setFormData({ name: "", capacity: "" });
       loadRooms();
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
       toast.error("Erro ao cadastrar sala");
+      }
     }
   };
 

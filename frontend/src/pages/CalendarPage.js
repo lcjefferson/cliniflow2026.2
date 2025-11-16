@@ -37,7 +37,10 @@ export default function CalendarPage() {
       const response = await api.get(`/appointments?date=${selectedDate}`);
       setAppointments(response.data);
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
       toast.error("Erro ao carregar agendamentos");
+      }
     }
   };
 
@@ -54,6 +57,8 @@ export default function CalendarPage() {
       setServices(serv.data);
       setRooms(room.data);
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
       console.error("Erro ao carregar dados");
     }
   };
@@ -75,7 +80,10 @@ export default function CalendarPage() {
       });
       loadAppointments();
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
       toast.error("Erro ao criar agendamento");
+      }
     }
   };
 
@@ -85,7 +93,10 @@ export default function CalendarPage() {
       toast.success("Status atualizado!");
       loadAppointments();
     } catch (error) {
+      // Não mostrar erro se for 401 (usuário será redirecionado)
+      if (error.response?.status !== 401) {
       toast.error("Erro ao atualizar status");
+      }
     }
   };
 
