@@ -29,6 +29,7 @@ export default function FollowUpPage() {
       toast.error("Erro ao carregar follow-ups");
       }
     }
+    }
   };
 
   const loadLeads = async () => {
@@ -56,6 +57,7 @@ export default function FollowUpPage() {
       toast.error("Erro ao agendar follow-up");
       }
     }
+    }
   };
 
   const handleComplete = async (id) => {
@@ -68,6 +70,7 @@ export default function FollowUpPage() {
       if (error.response?.status !== 401) {
       toast.error("Erro ao completar follow-up");
       }
+    }
     }
   };
 

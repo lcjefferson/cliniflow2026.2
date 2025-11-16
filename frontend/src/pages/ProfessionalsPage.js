@@ -26,6 +26,7 @@ export default function ProfessionalsPage() {
         toast.error("Erro ao carregar profissionais");
       }
     }
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -41,6 +42,7 @@ export default function ProfessionalsPage() {
         toast.error("Erro ao cadastrar profissional");
       }
     }
+    }
   };
 
   const handleDelete = async (id) => {
@@ -52,6 +54,7 @@ export default function ProfessionalsPage() {
       if (error.response?.status !== 401) {
         toast.error("Erro ao remover profissional");
       }
+    }
     }
   };
 

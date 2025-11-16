@@ -27,6 +27,7 @@ export default function ServicesPage() {
       toast.error("Erro ao carregar serviços");
       }
     }
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -47,6 +48,7 @@ export default function ServicesPage() {
       toast.error("Erro ao cadastrar serviço");
       }
     }
+    }
   };
 
   const handleDelete = async (id) => {
@@ -59,6 +61,7 @@ export default function ServicesPage() {
       if (error.response?.status !== 401) {
       toast.error("Erro ao remover serviço");
       }
+    }
     }
   };
 

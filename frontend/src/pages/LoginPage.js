@@ -30,7 +30,9 @@ export default function LoginPage() {
       }
       navigate("/");
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Erro ao processar requisição");
+      if (error.response?.status !== 401) {
+        toast.error(error.response?.data?.detail || "Erro ao processar requisição");
+      }
     } finally {
       setLoading(false);
     }

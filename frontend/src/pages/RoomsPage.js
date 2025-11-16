@@ -27,6 +27,7 @@ export default function RoomsPage() {
       toast.error("Erro ao carregar salas");
       }
     }
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -42,6 +43,7 @@ export default function RoomsPage() {
       if (error.response?.status !== 401) {
       toast.error("Erro ao cadastrar sala");
       }
+    }
     }
   };
 

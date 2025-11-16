@@ -27,6 +27,7 @@ export default function PatientsPage() {
       toast.error("Erro ao carregar pacientes");
       }
     }
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -42,6 +43,7 @@ export default function PatientsPage() {
       if (error.response?.status !== 401) {
       toast.error("Erro ao cadastrar paciente");
       }
+    }
     }
   };
 

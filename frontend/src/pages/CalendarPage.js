@@ -42,6 +42,7 @@ export default function CalendarPage() {
       toast.error("Erro ao carregar agendamentos");
       }
     }
+    }
   };
 
   const loadData = async () => {
@@ -85,6 +86,7 @@ export default function CalendarPage() {
       toast.error("Erro ao criar agendamento");
       }
     }
+    }
   };
 
   const updateStatus = async (id, status) => {
@@ -97,6 +99,7 @@ export default function CalendarPage() {
       if (error.response?.status !== 401) {
       toast.error("Erro ao atualizar status");
       }
+    }
     }
   };
 

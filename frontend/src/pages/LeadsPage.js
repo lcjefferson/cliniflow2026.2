@@ -29,6 +29,7 @@ export default function LeadsPage() {
         toast.error("Erro ao carregar leads");
       }
     }
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -40,7 +41,9 @@ export default function LeadsPage() {
       setFormData({ name: "", phone: "", email: "", source: "whatsapp", status: "new", notes: "" });
       loadLeads();
     } catch (error) {
-      toast.error("Erro ao cadastrar lead");
+      if (error.response?.status !== 401) {
+        toast.error("Erro ao cadastrar lead");
+      }
     }
   };
 

@@ -25,6 +25,7 @@ export default function RevenuePage() {
       toast.error("Erro ao carregar dados de faturamento");
       }
     }
+    }
   };
 
   if (!user?.role?.is_admin) {

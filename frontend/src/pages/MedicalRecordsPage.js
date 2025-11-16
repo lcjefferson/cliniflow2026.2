@@ -25,6 +25,7 @@ export default function MedicalRecordsPage() {
       toast.error("Erro ao carregar pacientes");
       }
     }
+    }
   };
 
   const loadRecords = async (patientId) => {
@@ -37,6 +38,7 @@ export default function MedicalRecordsPage() {
       if (error.response?.status !== 401) {
       toast.error("Erro ao carregar prontuários");
       }
+    }
     }
   };
 
@@ -54,6 +56,7 @@ export default function MedicalRecordsPage() {
       if (error.response?.status !== 401) {
       toast.error("Erro ao gerar documento");
       }
+    }
     } finally {
       setGenerating(false);
     }

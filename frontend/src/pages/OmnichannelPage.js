@@ -26,6 +26,7 @@ export default function OmnichannelPage() {
       toast.error("Erro ao carregar conversas");
       }
     }
+    }
   };
 
   const loadMessages = async (convId) => {
@@ -38,6 +39,7 @@ export default function OmnichannelPage() {
       if (error.response?.status !== 401) {
       toast.error("Erro ao carregar mensagens");
       }
+    }
     }
   };
 
@@ -58,6 +60,7 @@ export default function OmnichannelPage() {
       if (error.response?.status !== 401) {
       toast.error("Erro ao enviar mensagem");
       }
+    }
     }
   };
 

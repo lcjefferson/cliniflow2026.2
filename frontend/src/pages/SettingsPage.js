@@ -81,6 +81,7 @@ export default function SettingsPage() {
       // Não mostrar erro se for 401 (usuário será redirecionado)
       if (error.response?.status !== 401) {
       toast.error(error.response?.data?.detail || "Erro ao criar usuário");
+      }
     }
   };
 
