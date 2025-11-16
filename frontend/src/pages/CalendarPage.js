@@ -93,9 +93,15 @@ export default function CalendarPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/appointments", formData);
-      toast.success("Agendamento criado!");
+      if (editingAppointment) {
+        await api.put(`/appointments/${editingAppointment.id}`, formData);
+        toast.success("Agendamento atualizado!");
+      } else {
+        await api.post("/appointments", formData);
+        toast.success("Agendamento criado!");
+      }
       setShowDialog(false);
+      setEditingAppointment(null);
       setFormData({
         patient_id: "",
         professional_id: "",
@@ -107,8 +113,51 @@ export default function CalendarPage() {
       });
       loadMonthAppointments();
     } catch (error) {
-      toast.error("Erro ao criar agendamento");
+      toast.error(editingAppointment ? "Erro ao atualizar agendamento" : "Erro ao criar agendamento");
     }
+  };
+
+  const handleEditAppointment = (appointment) => {
+    setEditingAppointment(appointment);
+    setFormData({
+      patient_id: appointment.patient_id,
+      professional_id: appointment.professional_id,
+      service_id: appointment.service_id,
+      room_id: appointment.room_id,
+      appointment_date: appointment.appointment_date,
+      appointment_time: appointment.appointment_time,
+      notes: appointment.notes || ""
+    });
+    setShowDetailsDialog(false);
+    setShowDialog(true);
+  };
+
+  const handleDeleteAppointment = async (appointmentId) => {
+    if (!window.confirm("Tem certeza que deseja deletar este agendamento?")) {
+      return;
+    }
+    try {
+      await api.delete(`/appointments/${appointmentId}`);
+      toast.success("Agendamento deletado!");
+      setShowDetailsDialog(false);
+      loadMonthAppointments();
+    } catch (error) {
+      toast.error("Erro ao deletar agendamento");
+    }
+  };
+
+  const handleCloseDialog = () => {
+    setShowDialog(false);
+    setEditingAppointment(null);
+    setFormData({
+      patient_id: "",
+      professional_id: "",
+      service_id: "",
+      room_id: "",
+      appointment_date: new Date().toISOString().split('T')[0],
+      appointment_time: "",
+      notes: ""
+    });
   };
 
   const handleLeadSubmit = async (e) => {
