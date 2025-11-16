@@ -389,6 +389,23 @@ export default function CalendarPage() {
                   <Label className="text-gray-600">Status</Label>
                   <p className="font-semibold capitalize">{selectedAppointment.status || "Agendado"}</p>
                 </div>
+                
+                {/* Botões de Ação */}
+                <div className="flex gap-3 pt-4 border-t">
+                  <Button 
+                    onClick={() => handleEditAppointment(selectedAppointment)} 
+                    className="flex-1 btn-primary"
+                  >
+                    Editar Agendamento
+                  </Button>
+                  <Button 
+                    onClick={() => handleDeleteAppointment(selectedAppointment.id)} 
+                    variant="destructive"
+                    className="flex-1 bg-red-500 hover:bg-red-600 text-white"
+                  >
+                    Deletar
+                  </Button>
+                </div>
               </div>
             )}
           </DialogContent>
