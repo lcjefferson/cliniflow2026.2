@@ -47,7 +47,9 @@ export default function Layout({ children }) {
             CliniFlow
           </h1>
           <p className="text-sm text-gray-500 mt-1">{user?.name}</p>
-          <p className="text-xs text-gray-400">{isAdmin ? "Administrador" : "Atendente"}</p>
+          <p className="text-xs text-gray-400">
+            {userType === "admin" ? "Super Usuário" : userType === "consultor" ? "Consultor" : "Profissional"}
+          </p>
         </div>
 
         <nav className="flex-1 p-4 space-y-1">
