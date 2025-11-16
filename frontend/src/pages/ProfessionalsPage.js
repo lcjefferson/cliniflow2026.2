@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 export default function ProfessionalsPage() {
   const [professionals, setProfessionals] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({ name: "", specialty: "", email: "", phone: "" });
 
   useEffect(() => {
@@ -25,14 +26,31 @@ export default function ProfessionalsPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/professionals", formData);
-      toast.success("Profissional cadastrado!");
+      if (editingId) {
+        await api.put(`/professionals/${editingId}`, formData);
+        toast.success("Profissional atualizado!");
+      } else {
+        await api.post("/professionals", formData);
+        toast.success("Profissional cadastrado!");
+      }
       setShowDialog(false);
+      setEditingId(null);
       setFormData({ name: "", specialty: "", email: "", phone: "" });
       loadProfessionals();
     } catch (error) {
-      toast.error("Erro ao cadastrar profissional");
+      toast.error(editingId ? "Erro ao atualizar profissional" : "Erro ao cadastrar profissional");
     }
+  };
+
+  const handleEdit = (prof) => {
+    setEditingId(prof.id);
+    setFormData({
+      name: prof.name,
+      specialty: prof.specialty,
+      email: prof.email,
+      phone: prof.phone
+    });
+    setShowDialog(true);
   };
 
   const handleDelete = async (id) => {
@@ -43,6 +61,12 @@ export default function ProfessionalsPage() {
     } catch (error) {
       toast.error("Erro ao remover profissional");
     }
+  };
+
+  const handleCloseDialog = () => {
+    setShowDialog(false);
+    setEditingId(null);
+    setFormData({ name: "", specialty: "", email: "", phone: "" });
   };
 
   return (
