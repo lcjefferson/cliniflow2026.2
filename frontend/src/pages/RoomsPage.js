@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 export default function RoomsPage() {
   const [rooms, setRooms] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({ name: "", capacity: "" });
 
   useEffect(() => {
@@ -29,14 +30,48 @@ export default function RoomsPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/rooms", { ...formData, capacity: parseInt(formData.capacity) });
-      toast.success("Sala cadastrada!");
+      const payload = { ...formData, capacity: parseInt(formData.capacity) };
+      
+      if (editingId) {
+        await api.put(`/rooms/${editingId}`, payload);
+        toast.success("Sala atualizada!");
+      } else {
+        await api.post("/rooms", payload);
+        toast.success("Sala cadastrada!");
+      }
+      
       setShowDialog(false);
+      setEditingId(null);
       setFormData({ name: "", capacity: "" });
       loadRooms();
     } catch (error) {
-      toast.error("Erro ao cadastrar sala");
+      toast.error(editingId ? "Erro ao atualizar sala" : "Erro ao cadastrar sala");
     }
+  };
+
+  const handleEdit = (room) => {
+    setEditingId(room.id);
+    setFormData({
+      name: room.name,
+      capacity: room.capacity.toString()
+    });
+    setShowDialog(true);
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await api.delete(`/rooms/${id}`);
+      toast.success("Sala removida!");
+      loadRooms();
+    } catch (error) {
+      toast.error("Erro ao remover sala");
+    }
+  };
+
+  const handleCloseDialog = () => {
+    setShowDialog(false);
+    setEditingId(null);
+    setFormData({ name: "", capacity: "" });
   };
 
   return (
@@ -53,16 +88,34 @@ export default function RoomsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {rooms.map((room) => (
             <div key={room.id} className="bg-white rounded-2xl p-6 shadow-lg card-hover">
-              <h3 className="text-xl font-bold text-gray-900 mb-2">{room.name}</h3>
-              <p className="text-gray-600">Capacidade: {room.capacity} pessoas</p>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">{room.name}</h3>
+                  <p className="text-gray-600">Capacidade: {room.capacity} pessoas</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleEdit(room)}
+                    className="text-blue-500 hover:text-blue-700"
+                  >
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(room.id)}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           ))}
         </div>
 
-        <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Adicionar Sala</DialogTitle>
+              <DialogTitle>{editingId ? "Editar Sala" : "Adicionar Sala"}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -73,7 +126,9 @@ export default function RoomsPage() {
                 <Label>Capacidade</Label>
                 <Input type="number" value={formData.capacity} onChange={(e) => setFormData({...formData, capacity: e.target.value})} required />
               </div>
-              <Button type="submit" className="w-full btn-primary">Cadastrar</Button>
+              <Button type="submit" className="w-full btn-primary">
+                {editingId ? "Atualizar" : "Cadastrar"}
+              </Button>
             </form>
           </DialogContent>
         </Dialog>
