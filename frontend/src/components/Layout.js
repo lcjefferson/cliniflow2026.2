@@ -12,29 +12,31 @@ export default function Layout({ children }) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const isAdmin = user?.role?.is_admin;
+  const userType = user?.user_type || "consultor"; // admin, consultor, profissional
 
   const handleLogout = () => {
     logout();
     navigate("/login");
   };
 
-  const menuItems = [
-    { path: "/", icon: LayoutDashboard, label: "Dashboard" },
-    { path: "/omnichannel", icon: MessageSquare, label: "Omnichannel" },
-    { path: "/calendar", icon: Calendar, label: "Calendário" },
-    { path: "/leads", icon: Users, label: "Leads" },
-    { path: "/followup", icon: ClipboardList, label: "Follow-up" },
-    { path: "/patients", icon: UserPlus, label: "Pacientes" },
-    { path: "/medical-records", icon: FileText, label: "Prontuários" },
-    { path: "/professionals", icon: Briefcase, label: "Profissionais" },
-    { path: "/services", icon: Activity, label: "Serviços" },
-    { path: "/rooms", icon: DoorOpen, label: "Salas" },
+  // Define menus baseado no tipo de usuário
+  const allMenuItems = [
+    { path: "/", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "consultor"] },
+    { path: "/omnichannel", icon: MessageSquare, label: "Omnichannel", roles: ["admin", "consultor"] },
+    { path: "/calendar", icon: Calendar, label: "Calendário", roles: ["admin", "consultor", "profissional"] },
+    { path: "/leads", icon: Users, label: "Leads", roles: ["admin", "consultor"] },
+    { path: "/followup", icon: ClipboardList, label: "Follow-up", roles: ["admin", "consultor"] },
+    { path: "/patients", icon: UserPlus, label: "Pacientes", roles: ["admin", "consultor"] },
+    { path: "/medical-records", icon: FileText, label: "Prontuários", roles: ["admin", "consultor"] },
+    { path: "/professionals", icon: Briefcase, label: "Profissionais", roles: ["admin"] },
+    { path: "/services", icon: Activity, label: "Serviços", roles: ["admin"] },
+    { path: "/rooms", icon: DoorOpen, label: "Salas", roles: ["admin"] },
+    { path: "/revenue", icon: DollarSign, label: "Faturamento", roles: ["admin"] },
+    { path: "/settings", icon: Settings, label: "Configurações", roles: ["admin"] },
   ];
 
-  if (isAdmin) {
-    menuItems.push({ path: "/revenue", icon: DollarSign, label: "Faturamento" });
-    menuItems.push({ path: "/settings", icon: Settings, label: "Configurações" });
-  }
+  // Filtra menus baseado no tipo de usuário
+  const menuItems = allMenuItems.filter(item => item.roles.includes(userType));
 
   return (
     <div className="flex min-h-screen">
