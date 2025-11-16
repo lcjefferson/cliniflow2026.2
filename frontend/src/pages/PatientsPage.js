@@ -89,7 +89,7 @@ export default function PatientsPage() {
         </div>
 
         <div className="grid gap-6">
-          {patients.map((patient) => (
+          {patients.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((patient) => (
             <div key={patient.id} className="bg-white rounded-2xl p-6 shadow-lg">
               <div className="flex justify-between items-start">
                 <div>
