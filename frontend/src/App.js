@@ -18,6 +18,7 @@ import RoomsPage from "./pages/RoomsPage";
 import PatientsPage from "./pages/PatientsPage";
 import MedicalRecordsPage from "./pages/MedicalRecordsPage";
 import RevenuePage from "./pages/RevenuePage";
+import UsersPage from "./pages/UsersPage";
 import SettingsPage from "./pages/SettingsPage";
 
 const PrivateRoute = ({ children }) => {
