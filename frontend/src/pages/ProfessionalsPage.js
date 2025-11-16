@@ -90,13 +90,22 @@ export default function ProfessionalsPage() {
                   <p className="text-gray-600 mt-2">{prof.email}</p>
                   <p className="text-gray-600">{prof.phone}</p>
                 </div>
-                <button
-                  onClick={() => handleDelete(prof.id)}
-                  data-testid={`delete-professional-${prof.id}`}
-                  className="text-red-500 hover:text-red-700"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleEdit(prof)}
+                    data-testid={`edit-professional-${prof.id}`}
+                    className="text-blue-500 hover:text-blue-700"
+                  >
+                    <Edit className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(prof.id)}
+                    data-testid={`delete-professional-${prof.id}`}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
