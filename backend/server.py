@@ -281,7 +281,9 @@ async def register(user_data: UserRegister):
         name=user_data.name,
         email=user_data.email,
         password_hash=hash_password(user_data.password),
-        role=UserRole(is_admin=user_data.is_admin, is_attendant=not user_data.is_admin)
+        role=UserRole(is_admin=user_data.is_admin, is_attendant=not user_data.is_admin),
+        user_type=user_data.user_type,
+        professional_id=user_data.professional_id
     )
     
     doc = user.model_dump()
@@ -297,7 +299,9 @@ async def register(user_data: UserRegister):
             "id": user.id,
             "name": user.name,
             "email": user.email,
-            "role": user.role.model_dump()
+            "role": user.role.model_dump(),
+            "user_type": user.user_type,
+            "professional_id": user.professional_id
         }
     )
 
