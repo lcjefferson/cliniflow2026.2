@@ -36,7 +36,12 @@ class CliniFlowAPITester:
             elif method == 'DELETE':
                 response = requests.delete(url, headers=test_headers, timeout=10)
 
-            success = response.status_code == expected_status
+            # Handle multiple expected status codes
+            if isinstance(expected_status, list):
+                success = response.status_code in expected_status
+            else:
+                success = response.status_code == expected_status
+                
             if success:
                 self.tests_passed += 1
                 print(f"✅ Passed - Status: {response.status_code}")
