@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
-import { Plus, Eye } from "lucide-react";
+import { Plus, Edit, Trash2, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 export default function PatientsPage() {
   const [patients, setPatients] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({ name: "", email: "", phone: "", birthdate: "", address: "" });
 
   useEffect(() => {
@@ -29,14 +30,49 @@ export default function PatientsPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/patients", formData);
-      toast.success("Paciente cadastrado!");
+      if (editingId) {
+        await api.put(`/patients/${editingId}`, formData);
+        toast.success("Paciente atualizado!");
+      } else {
+        await api.post("/patients", formData);
+        toast.success("Paciente cadastrado!");
+      }
+      
       setShowDialog(false);
+      setEditingId(null);
       setFormData({ name: "", email: "", phone: "", birthdate: "", address: "" });
       loadPatients();
     } catch (error) {
-      toast.error("Erro ao cadastrar paciente");
+      toast.error(editingId ? "Erro ao atualizar paciente" : "Erro ao cadastrar paciente");
     }
+  };
+
+  const handleEdit = (patient) => {
+    setEditingId(patient.id);
+    setFormData({
+      name: patient.name,
+      email: patient.email,
+      phone: patient.phone,
+      birthdate: patient.birthdate,
+      address: patient.address || ""
+    });
+    setShowDialog(true);
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await api.delete(`/patients/${id}`);
+      toast.success("Paciente removido!");
+      loadPatients();
+    } catch (error) {
+      toast.error("Erro ao remover paciente");
+    }
+  };
+
+  const handleCloseDialog = () => {
+    setShowDialog(false);
+    setEditingId(null);
+    setFormData({ name: "", email: "", phone: "", birthdate: "", address: "" });
   };
 
   return (
@@ -63,23 +99,33 @@ export default function PatientsPage() {
                     {patient.address && <p className="text-gray-600">{patient.address}</p>}
                   </div>
                 </div>
-                <Button variant="outline" className="btn-secondary">
-                  <Eye className="w-4 h-4 mr-2" />
-                  Ver Prontuário
-                </Button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleEdit(patient)}
+                    className="text-blue-500 hover:text-blue-700"
+                  >
+                    <Edit className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(patient.id)}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
 
-        <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Adicionar Paciente</DialogTitle>
+              <DialogTitle>{editingId ? "Editar Paciente" : "Adicionar Paciente"}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <Label>Nome Completo</Label>
+                <Label>Nome</Label>
                 <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
               </div>
               <div>
@@ -98,7 +144,9 @@ export default function PatientsPage() {
                 <Label>Endereço</Label>
                 <Input value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
               </div>
-              <Button type="submit" className="w-full btn-primary">Cadastrar</Button>
+              <Button type="submit" className="w-full btn-primary">
+                {editingId ? "Atualizar" : "Cadastrar"}
+              </Button>
             </form>
           </DialogContent>
         </Dialog>

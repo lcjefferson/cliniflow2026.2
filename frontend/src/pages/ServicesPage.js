@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 export default function ServicesPage() {
   const [services, setServices] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({ name: "", description: "", duration_minutes: "", price: "" });
 
   useEffect(() => {
@@ -29,18 +30,38 @@ export default function ServicesPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/services", {
+      const payload = {
         ...formData,
         duration_minutes: parseInt(formData.duration_minutes),
         price: parseFloat(formData.price)
-      });
-      toast.success("Serviço cadastrado!");
+      };
+      
+      if (editingId) {
+        await api.put(`/services/${editingId}`, payload);
+        toast.success("Serviço atualizado!");
+      } else {
+        await api.post("/services", payload);
+        toast.success("Serviço cadastrado!");
+      }
+      
       setShowDialog(false);
+      setEditingId(null);
       setFormData({ name: "", description: "", duration_minutes: "", price: "" });
       loadServices();
     } catch (error) {
-      toast.error("Erro ao cadastrar serviço");
+      toast.error(editingId ? "Erro ao atualizar serviço" : "Erro ao cadastrar serviço");
     }
+  };
+
+  const handleEdit = (service) => {
+    setEditingId(service.id);
+    setFormData({
+      name: service.name,
+      description: service.description,
+      duration_minutes: service.duration_minutes.toString(),
+      price: service.price.toString()
+    });
+    setShowDialog(true);
   };
 
   const handleDelete = async (id) => {
@@ -51,6 +72,12 @@ export default function ServicesPage() {
     } catch (error) {
       toast.error("Erro ao remover serviço");
     }
+  };
+
+  const handleCloseDialog = () => {
+    setShowDialog(false);
+    setEditingId(null);
+    setFormData({ name: "", description: "", duration_minutes: "", price: "" });
   };
 
   return (
@@ -82,18 +109,29 @@ export default function ServicesPage() {
                     </div>
                   </div>
                 </div>
-                <button onClick={() => handleDelete(service.id)} className="text-red-500 hover:text-red-700">
-                  <Trash2 className="w-5 h-5" />
-                </button>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => handleEdit(service)} 
+                    className="text-blue-500 hover:text-blue-700"
+                  >
+                    <Edit className="w-5 h-5" />
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(service.id)} 
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
 
-        <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
           <DialogContent data-testid="service-dialog">
             <DialogHeader>
-              <DialogTitle>Adicionar Serviço</DialogTitle>
+              <DialogTitle>{editingId ? "Editar Serviço" : "Adicionar Serviço"}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -112,7 +150,9 @@ export default function ServicesPage() {
                 <Label>Preço (R$)</Label>
                 <Input type="number" step="0.01" value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} required />
               </div>
-              <Button type="submit" className="w-full btn-primary">Cadastrar</Button>
+              <Button type="submit" className="w-full btn-primary">
+                {editingId ? "Atualizar" : "Cadastrar"}
+              </Button>
             </form>
           </DialogContent>
         </Dialog>
