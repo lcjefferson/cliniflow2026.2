@@ -372,6 +372,21 @@ test_plan:
 
 agent_communication:
   - agent: "main"
-    message: "Sistema CliniFlow restaurado com sucesso. Frontend compilando sem erros após restauração do commit e738327. Backend está rodando corretamente. Todas as páginas foram restauradas e o interceptor de API para tratamento de erros 401 está implementado. Pronto para testes completos de backend e frontend para validar todas as funcionalidades."
+    message: "Sistema CliniFlow completamente atualizado com novas funcionalidades:
+    
+    BACKEND:
+    - ✅ Sistema de permissões com 3 tipos de usuário (admin, consultor, profissional)
+    - ✅ Campos user_type e professional_id no modelo User
+    - ✅ Endpoints de gerenciamento de usuários (/users GET, PUT, DELETE)
+    - ✅ Autenticação retornando user_type e professional_id
+    
+    FRONTEND:
+    - ✅ Diálogos com fundo branco (bg-white)
+    - ✅ Funcionalidade de edição em: Profissionais, Serviços, Pacientes, Salas, Leads
+    - ✅ CalendarPage com pesquisa de leads e botão 'Novo Lead'
+    - ✅ Layout com filtro de menu baseado em permissões (admin, consultor, profissional)
+    - ✅ Exibição do tipo de usuário no sidebar
+    
+    Sistema pronto para testes completos. Todas as páginas compilando sem erros."
   - agent: "testing"
     message: "🏥 BACKEND CLINIFLOW - TESTE COMPLETO REALIZADO ✅ TODOS OS ENDPOINTS FUNCIONANDO: ✅ Autenticação JWT (registro/login) ✅ CRUD Profissionais, Serviços, Pacientes, Salas ✅ Sistema de Agendamentos com filtros ✅ Leads e Follow-ups com permissões ✅ Prontuários médicos com IA ✅ Dashboard com estatísticas ✅ Mensagens automáticas IA ✅ Conversas omnichannel (mocked) ✅ Validação de dados (422) ✅ Tratamento de erros (404/401/403) ✅ Segurança e autenticação robusta. CORRIGIDO: Bug jwt.JWTError -> jwt.InvalidTokenError. Sistema backend 100% funcional e pronto para produção!"
