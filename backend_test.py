@@ -63,8 +63,32 @@ class CliniFlowAPITester:
             })
             return False, {}
 
-    def test_login(self):
-        """Test admin login"""
+    def test_register_and_login(self):
+        """Test user registration and login"""
+        # First try to register a new admin user
+        register_data = {
+            "name": "Admin Test",
+            "email": "admin@cliniflow.com",
+            "password": "admin123",
+            "is_admin": True
+        }
+        
+        # Try registration (might fail if user exists, that's ok)
+        success, response = self.run_test(
+            "Admin Registration",
+            "POST",
+            "auth/register",
+            [200, 400],  # 400 if user already exists
+            data=register_data
+        )
+        
+        if success and 'access_token' in response:
+            self.token = response['access_token']
+            self.user_id = response.get('user', {}).get('id')
+            print(f"   Token obtained from registration: {self.token[:20]}...")
+            return True
+        
+        # If registration failed (user exists), try login
         success, response = self.run_test(
             "Admin Login",
             "POST",
@@ -75,7 +99,7 @@ class CliniFlowAPITester:
         if success and 'access_token' in response:
             self.token = response['access_token']
             self.user_id = response.get('user', {}).get('id')
-            print(f"   Token obtained: {self.token[:20]}...")
+            print(f"   Token obtained from login: {self.token[:20]}...")
             return True
         return False
 
