@@ -154,7 +154,9 @@ export default function ProfessionalsPage() {
                   required
                 />
               </div>
-              <Button type="submit" data-testid="submit-professional-button" className="w-full btn-primary">Cadastrar</Button>
+              <Button type="submit" data-testid="submit-professional-button" className="w-full btn-primary">
+                {editingId ? "Atualizar" : "Cadastrar"}
+              </Button>
             </form>
           </DialogContent>
         </Dialog>
