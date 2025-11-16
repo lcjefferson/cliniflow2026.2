@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
-import { Plus, Calendar as CalendarIcon } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -16,10 +16,13 @@ export default function CalendarPage() {
   const [leads, setLeads] = useState([]);
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [showDialog, setShowDialog] = useState(false);
   const [showLeadDialog, setShowLeadDialog] = useState(false);
+  const [showDetailsDialog, setShowDetailsDialog] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [leadSearch, setLeadSearch] = useState("");
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  
   const [formData, setFormData] = useState({
     patient_id: "",
     professional_id: "",
@@ -29,6 +32,7 @@ export default function CalendarPage() {
     appointment_time: "",
     notes: ""
   });
+  
   const [leadFormData, setLeadFormData] = useState({
     name: "",
     phone: "",
@@ -38,14 +42,28 @@ export default function CalendarPage() {
     notes: ""
   });
 
-  useEffect(() => {
-    loadAppointments();
-    loadData();
-  }, [selectedDate]);
+  // Cores para cada profissional
+  const professionalColors = [
+    "bg-blue-500",
+    "bg-green-500",
+    "bg-purple-500",
+    "bg-pink-500",
+    "bg-yellow-500",
+    "bg-red-500",
+    "bg-indigo-500",
+    "bg-teal-500",
+  ];
 
-  const loadAppointments = async () => {
+  useEffect(() => {
+    loadMonthAppointments();
+    loadData();
+  }, [currentDate]);
+
+  const loadMonthAppointments = async () => {
     try {
-      const response = await api.get(`/appointments?date=${selectedDate}`);
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth() + 1;
+      const response = await api.get(`/appointments`);
       setAppointments(response.data);
     } catch (error) {
       toast.error("Erro ao carregar agendamentos");
@@ -86,7 +104,7 @@ export default function CalendarPage() {
         appointment_time: "",
         notes: ""
       });
-      loadAppointments();
+      loadMonthAppointments();
     } catch (error) {
       toast.error("Erro ao criar agendamento");
     }
@@ -106,27 +124,92 @@ export default function CalendarPage() {
         status: "new",
         notes: ""
       });
-      loadData(); // Reload leads data
+      loadData();
     } catch (error) {
       toast.error("Erro ao criar lead");
     }
   };
 
-  const updateStatus = async (id, status) => {
-    try {
-      await api.put(`/appointments/${id}?status=${status}`);
-      toast.success("Status atualizado!");
-      loadAppointments();
-    } catch (error) {
-      toast.error("Erro ao atualizar status");
+  const getProfessionalColor = (professionalId) => {
+    const index = professionals.findIndex(p => p.id === professionalId);
+    return professionalColors[index % professionalColors.length];
+  };
+
+  const getProfessionalName = (professionalId) => {
+    const prof = professionals.find(p => p.id === professionalId);
+    return prof ? prof.name : "Profissional";
+  };
+
+  const getPatientName = (patientId) => {
+    const patient = patients.find(p => p.id === patientId);
+    return patient ? patient.name : "Paciente";
+  };
+
+  const getServiceName = (serviceId) => {
+    const service = services.find(s => s.id === serviceId);
+    return service ? service.name : "Serviço";
+  };
+
+  // Gerar dias do mês
+  const generateCalendarDays = () => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
+    
+    const days = [];
+    
+    // Dias do mês anterior (vazios)
+    for (let i = 0; i < startingDayOfWeek; i++) {
+      days.push({ day: null, date: null });
     }
+    
+    // Dias do mês atual
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      days.push({ 
+        day, 
+        date: date.toISOString().split('T')[0],
+        isToday: date.toDateString() === new Date().toDateString()
+      });
+    }
+    
+    return days;
+  };
+
+  const getAppointmentsForDay = (date) => {
+    if (!date) return [];
+    return appointments.filter(apt => apt.appointment_date === date);
+  };
+
+  const previousMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+  };
+
+  const nextMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+  };
+
+  const monthNames = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+  ];
+
+  const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+  const openAppointmentDetails = (appointment) => {
+    setSelectedAppointment(appointment);
+    setShowDetailsDialog(true);
   };
 
   return (
     <Layout>
       <div>
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900" data-testid="calendar-page-title">Calendário</h1>
+          <h1 className="text-4xl font-bold text-gray-900">Calendário</h1>
           <div className="flex gap-3">
             <Button onClick={() => setShowLeadDialog(true)} variant="outline" className="btn-secondary">
               <Plus className="w-5 h-5 mr-2" />
@@ -139,70 +222,129 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        <div className="mb-6">
-          <Label>Selecionar Data</Label>
-          <Input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="max-w-xs"
-          />
-        </div>
-
-        <div className="bg-white rounded-2xl p-6 shadow-lg">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">
-            Agendamentos - {new Date(selectedDate).toLocaleDateString('pt-BR', { dateStyle: 'full' })}
+        {/* Navegação do Mês */}
+        <div className="flex items-center justify-between mb-6 bg-white rounded-2xl p-6 shadow-lg">
+          <Button onClick={previousMonth} variant="outline" className="btn-secondary">
+            <ChevronLeft className="w-5 h-5" />
+          </Button>
+          <h2 className="text-2xl font-bold text-gray-900">
+            {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
           </h2>
-          
-          {appointments.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <CalendarIcon className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-              <p>Nenhum agendamento para esta data</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {appointments.map((apt) => {
-                const patient = patients.find(p => p.id === apt.patient_id);
-                const professional = professionals.find(p => p.id === apt.professional_id);
-                const service = services.find(s => s.id === apt.service_id);
-                
-                return (
-                  <div key={apt.id} className="border border-gray-200 rounded-xl p-4">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="text-xl font-bold text-blue-600">{apt.appointment_time}</span>
-                          <span className={`status-badge status-${apt.status}`}>
-                            {apt.status === 'scheduled' && 'Agendado'}
-                            {apt.status === 'confirmed' && 'Confirmado'}
-                            {apt.status === 'completed' && 'Concluído'}
-                            {apt.status === 'cancelled' && 'Cancelado'}
-                          </span>
-                        </div>
-                        <p className="font-semibold text-gray-900">{patient?.name || 'Paciente'}</p>
-                        <p className="text-gray-600">{professional?.name || 'Profissional'} - {service?.name || 'Serviço'}</p>
-                        {apt.notes && <p className="text-sm text-gray-500 mt-2">{apt.notes}</p>}
-                      </div>
-                      <div className="flex gap-2">
-                        {apt.status === 'scheduled' && (
-                          <Button onClick={() => updateStatus(apt.id, 'confirmed')} variant="outline" size="sm">
-                            Confirmar
-                          </Button>
-                        )}
-                        {apt.status === 'confirmed' && (
-                          <Button onClick={() => updateStatus(apt.id, 'completed')} variant="outline" size="sm">
-                            Concluir
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <Button onClick={nextMonth} variant="outline" className="btn-secondary">
+            <ChevronRight className="w-5 h-5" />
+          </Button>
         </div>
 
+        {/* Grade do Calendário */}
+        <div className="bg-white rounded-2xl shadow-lg p-6">
+          {/* Cabeçalho dos dias da semana */}
+          <div className="grid grid-cols-7 gap-2 mb-4">
+            {weekDays.map((day, index) => (
+              <div key={index} className="text-center font-bold text-gray-700 py-2">
+                {day}
+              </div>
+            ))}
+          </div>
+
+          {/* Dias do mês */}
+          <div className="grid grid-cols-7 gap-2">
+            {generateCalendarDays().map((dayObj, index) => (
+              <div
+                key={index}
+                className={`min-h-[120px] border rounded-lg p-2 ${
+                  dayObj.day ? 'bg-white hover:bg-gray-50' : 'bg-gray-100'
+                } ${dayObj.isToday ? 'border-blue-500 border-2' : 'border-gray-200'}`}
+              >
+                {dayObj.day && (
+                  <>
+                    <div className={`text-sm font-semibold mb-2 ${
+                      dayObj.isToday ? 'text-blue-600' : 'text-gray-700'
+                    }`}>
+                      {dayObj.day}
+                    </div>
+                    
+                    {/* Agendamentos do dia */}
+                    <div className="space-y-1">
+                      {getAppointmentsForDay(dayObj.date).map((apt, aptIndex) => (
+                        <button
+                          key={aptIndex}
+                          onClick={() => openAppointmentDetails(apt)}
+                          className={`w-full text-left text-xs px-2 py-1 rounded text-white hover:opacity-80 transition-opacity truncate ${
+                            getProfessionalColor(apt.professional_id)
+                          }`}
+                        >
+                          {apt.appointment_time} - {getProfessionalName(apt.professional_id)}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Legenda de Profissionais */}
+        <div className="mt-6 bg-white rounded-2xl shadow-lg p-6">
+          <h3 className="font-bold text-gray-900 mb-4">Profissionais</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {professionals.map((prof, index) => (
+              <div key={prof.id} className="flex items-center gap-2">
+                <div className={`w-4 h-4 rounded ${professionalColors[index % professionalColors.length]}`}></div>
+                <span className="text-sm text-gray-700">{prof.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Modal de Detalhes do Agendamento */}
+        <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Detalhes do Agendamento</DialogTitle>
+            </DialogHeader>
+            {selectedAppointment && (
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-gray-600">Paciente</Label>
+                  <p className="font-semibold">{getPatientName(selectedAppointment.patient_id)}</p>
+                </div>
+                <div>
+                  <Label className="text-gray-600">Profissional</Label>
+                  <p className="font-semibold">{getProfessionalName(selectedAppointment.professional_id)}</p>
+                </div>
+                <div>
+                  <Label className="text-gray-600">Serviço</Label>
+                  <p className="font-semibold">{getServiceName(selectedAppointment.service_id)}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-gray-600">Data</Label>
+                    <p className="font-semibold">
+                      {new Date(selectedAppointment.appointment_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-600">Horário</Label>
+                    <p className="font-semibold">{selectedAppointment.appointment_time}</p>
+                  </div>
+                </div>
+                {selectedAppointment.notes && (
+                  <div>
+                    <Label className="text-gray-600">Observações</Label>
+                    <p className="text-sm">{selectedAppointment.notes}</p>
+                  </div>
+                )}
+                <div>
+                  <Label className="text-gray-600">Status</Label>
+                  <p className="font-semibold capitalize">{selectedAppointment.status || "Agendado"}</p>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal de Novo Agendamento */}
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
@@ -224,10 +366,7 @@ export default function CalendarPage() {
                         <div
                           key={lead.id}
                           className="p-2 hover:bg-blue-50 cursor-pointer flex justify-between items-center"
-                          onClick={() => {
-                            setLeadSearch(lead.name);
-                            // Opcional: preencher outros campos com dados do lead
-                          }}
+                          onClick={() => setLeadSearch(lead.name)}
                         >
                           <div>
                             <p className="font-medium">{lead.name}</p>
@@ -323,6 +462,7 @@ export default function CalendarPage() {
           </DialogContent>
         </Dialog>
 
+        {/* Modal de Novo Lead */}
         <Dialog open={showLeadDialog} onOpenChange={setShowLeadDialog}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
