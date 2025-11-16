@@ -3,7 +3,7 @@ import Layout from "../components/Layout";
 import api from "../services/api";
 import { Plus, Eye } from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,10 +22,7 @@ export default function PatientsPage() {
       const response = await api.get("/patients");
       setPatients(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao carregar pacientes");
-      }
     }
   };
 
@@ -38,10 +35,7 @@ export default function PatientsPage() {
       setFormData({ name: "", email: "", phone: "", birthdate: "", address: "" });
       loadPatients();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao cadastrar paciente");
-      }
     }
   };
 
@@ -82,32 +76,29 @@ export default function PatientsPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Adicionar Paciente</DialogTitle>
-              <DialogDescription>
-                Cadastre um novo paciente no sistema
-              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <Label>Nome Completo</Label>
-                <Input data-testid="patient-name-input" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+                <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
               </div>
               <div>
                 <Label>Email</Label>
-                <Input data-testid="patient-email-input" type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
+                <Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
               </div>
               <div>
                 <Label>Telefone</Label>
-                <Input data-testid="patient-phone-input" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
+                <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
               </div>
               <div>
                 <Label>Data de Nascimento</Label>
-                <Input data-testid="patient-birthdate-input" type="date" value={formData.birthdate} onChange={(e) => setFormData({...formData, birthdate: e.target.value})} required />
+                <Input type="date" value={formData.birthdate} onChange={(e) => setFormData({...formData, birthdate: e.target.value})} required />
               </div>
               <div>
                 <Label>Endereço</Label>
-                <Input data-testid="patient-address-input" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
+                <Input value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
               </div>
-              <Button type="submit" data-testid="submit-patient-button" className="w-full btn-primary">Cadastrar</Button>
+              <Button type="submit" className="w-full btn-primary">Cadastrar</Button>
             </form>
           </DialogContent>
         </Dialog>

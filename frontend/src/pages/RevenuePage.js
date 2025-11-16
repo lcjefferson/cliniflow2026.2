@@ -20,10 +20,7 @@ export default function RevenuePage() {
       const response = await api.get("/dashboard/revenue");
       setRevenueData(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao carregar dados de faturamento");
-      }
     }
   };
 

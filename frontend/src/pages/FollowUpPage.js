@@ -3,7 +3,7 @@ import Layout from "../components/Layout";
 import api from "../services/api";
 import { Plus, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,10 +24,7 @@ export default function FollowUpPage() {
       const response = await api.get("/followups");
       setFollowups(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao carregar follow-ups");
-      }
     }
   };
 
@@ -36,8 +33,6 @@ export default function FollowUpPage() {
       const response = await api.get("/leads");
       setLeads(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       console.error("Erro ao carregar leads");
     }
   };
@@ -51,10 +46,7 @@ export default function FollowUpPage() {
       setFormData({ lead_id: "", assigned_to: "", scheduled_date: "", notes: "" });
       loadFollowups();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao agendar follow-up");
-      }
     }
   };
 
@@ -64,10 +56,7 @@ export default function FollowUpPage() {
       toast.success("Follow-up concluído!");
       loadFollowups();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao completar follow-up");
-      }
     }
   };
 
@@ -112,9 +101,6 @@ export default function FollowUpPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Agendar Follow-up</DialogTitle>
-              <DialogDescription>
-                Agende um acompanhamento com o lead
-              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>

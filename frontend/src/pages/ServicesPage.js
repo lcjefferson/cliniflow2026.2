@@ -3,7 +3,7 @@ import Layout from "../components/Layout";
 import api from "../services/api";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,10 +22,7 @@ export default function ServicesPage() {
       const response = await api.get("/services");
       setServices(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao carregar serviços");
-      }
     }
   };
 
@@ -42,10 +39,7 @@ export default function ServicesPage() {
       setFormData({ name: "", description: "", duration_minutes: "", price: "" });
       loadServices();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao cadastrar serviço");
-      }
     }
   };
 
@@ -55,10 +49,7 @@ export default function ServicesPage() {
       toast.success("Serviço removido!");
       loadServices();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao remover serviço");
-      }
     }
   };
 
@@ -103,28 +94,25 @@ export default function ServicesPage() {
           <DialogContent data-testid="service-dialog">
             <DialogHeader>
               <DialogTitle>Adicionar Serviço</DialogTitle>
-              <DialogDescription>
-                Cadastre um novo serviço oferecido pela clínica com preço e duração
-              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <Label>Nome do Serviço</Label>
-                <Input data-testid="service-name-input" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+                <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
               </div>
               <div>
                 <Label>Descrição</Label>
-                <Input data-testid="service-description-input" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} required />
+                <Input value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} required />
               </div>
               <div>
                 <Label>Duração (minutos)</Label>
-                <Input data-testid="service-duration-input" type="number" value={formData.duration_minutes} onChange={(e) => setFormData({...formData, duration_minutes: e.target.value})} required />
+                <Input type="number" value={formData.duration_minutes} onChange={(e) => setFormData({...formData, duration_minutes: e.target.value})} required />
               </div>
               <div>
                 <Label>Preço (R$)</Label>
-                <Input data-testid="service-price-input" type="number" step="0.01" value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} required />
+                <Input type="number" step="0.01" value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} required />
               </div>
-              <Button type="submit" data-testid="submit-service-button" className="w-full btn-primary">Cadastrar</Button>
+              <Button type="submit" className="w-full btn-primary">Cadastrar</Button>
             </form>
           </DialogContent>
         </Dialog>

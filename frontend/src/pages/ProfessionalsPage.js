@@ -3,7 +3,7 @@ import Layout from "../components/Layout";
 import api from "../services/api";
 import { Plus, Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,14 +18,8 @@ export default function ProfessionalsPage() {
   }, []);
 
   const loadProfessionals = async () => {
-    try {
-      const response = await api.get("/professionals");
-      setProfessionals(response.data);
-    } catch (error) {
-      if (error.response?.status !== 401) {
-        toast.error("Erro ao carregar profissionais");
-      }
-    }
+    const response = await api.get("/professionals");
+    setProfessionals(response.data);
   };
 
   const handleSubmit = async (e) => {
@@ -37,10 +31,7 @@ export default function ProfessionalsPage() {
       setFormData({ name: "", specialty: "", email: "", phone: "" });
       loadProfessionals();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao cadastrar profissional");
-      }
     }
   };
 
@@ -50,10 +41,7 @@ export default function ProfessionalsPage() {
       toast.success("Profissional removido!");
       loadProfessionals();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao remover profissional");
-      }
     }
   };
 
@@ -94,9 +82,6 @@ export default function ProfessionalsPage() {
           <DialogContent data-testid="professional-dialog">
             <DialogHeader>
               <DialogTitle>Adicionar Profissional</DialogTitle>
-              <DialogDescription>
-                Cadastre um novo profissional de saúde na clínica
-              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>

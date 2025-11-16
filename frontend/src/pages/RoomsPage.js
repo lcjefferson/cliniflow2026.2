@@ -3,7 +3,7 @@ import Layout from "../components/Layout";
 import api from "../services/api";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,10 +22,7 @@ export default function RoomsPage() {
       const response = await api.get("/rooms");
       setRooms(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao carregar salas");
-      }
     }
   };
 
@@ -38,10 +35,7 @@ export default function RoomsPage() {
       setFormData({ name: "", capacity: "" });
       loadRooms();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao cadastrar sala");
-      }
     }
   };
 
@@ -69,20 +63,17 @@ export default function RoomsPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Adicionar Sala</DialogTitle>
-              <DialogDescription>
-                Cadastre uma nova sala ou consultório da clínica
-              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <Label>Nome da Sala</Label>
-                <Input data-testid="room-name-input" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+                <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
               </div>
               <div>
                 <Label>Capacidade</Label>
-                <Input data-testid="room-capacity-input" type="number" value={formData.capacity} onChange={(e) => setFormData({...formData, capacity: e.target.value})} required />
+                <Input type="number" value={formData.capacity} onChange={(e) => setFormData({...formData, capacity: e.target.value})} required />
               </div>
-              <Button type="submit" data-testid="submit-room-button" className="w-full btn-primary">Cadastrar</Button>
+              <Button type="submit" className="w-full btn-primary">Cadastrar</Button>
             </form>
           </DialogContent>
         </Dialog>

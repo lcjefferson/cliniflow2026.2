@@ -5,7 +5,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { Settings, Users, Key, User as UserIcon, Plus, Trash2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,8 +62,6 @@ export default function SettingsPage() {
       const response = await api.get("/auth/users");
       setUsers(response.data || []);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       // Endpoint não existe ainda, vamos mockar
       setUsers([user]);
     }
@@ -78,8 +76,6 @@ export default function SettingsPage() {
       setUserForm({ name: "", email: "", password: "", is_admin: false });
       loadUsers();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error(error.response?.data?.detail || "Erro ao criar usuário");
     }
   };
@@ -527,9 +523,6 @@ export default function SettingsPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Adicionar Novo Usuário</DialogTitle>
-              <DialogDescription>
-                Crie um novo usuário do sistema (administrador ou atendente)
-              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreateUser} className="space-y-4">
               <div>

@@ -19,8 +19,6 @@ export default function Dashboard() {
       ]);
       setStats({ appointments: appts.data, leads: leads.data, revenue: revenue.data });
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       console.error("Erro ao carregar estatísticas", error);
     }
   };

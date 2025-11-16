@@ -3,7 +3,7 @@ import Layout from "../components/Layout";
 import api from "../services/api";
 import { Plus, Calendar as CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,10 +37,7 @@ export default function CalendarPage() {
       const response = await api.get(`/appointments?date=${selectedDate}`);
       setAppointments(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao carregar agendamentos");
-      }
     }
   };
 
@@ -57,8 +54,6 @@ export default function CalendarPage() {
       setServices(serv.data);
       setRooms(room.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       console.error("Erro ao carregar dados");
     }
   };
@@ -80,10 +75,7 @@ export default function CalendarPage() {
       });
       loadAppointments();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao criar agendamento");
-      }
     }
   };
 
@@ -93,10 +85,7 @@ export default function CalendarPage() {
       toast.success("Status atualizado!");
       loadAppointments();
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
       toast.error("Erro ao atualizar status");
-      }
     }
   };
 
@@ -179,9 +168,6 @@ export default function CalendarPage() {
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Novo Agendamento</DialogTitle>
-              <DialogDescription>
-                Agende uma consulta selecionando paciente, profissional e horário
-              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">

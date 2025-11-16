@@ -3,7 +3,7 @@ import Layout from "../components/Layout";
 import api from "../services/api";
 import { Plus, Filter } from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,10 +24,7 @@ export default function LeadsPage() {
       const response = await api.get(`/leads${params}`);
       setLeads(response.data);
     } catch (error) {
-      // Não mostrar erro se for 401 (usuário será redirecionado)
-      if (error.response?.status !== 401) {
-        toast.error("Erro ao carregar leads");
-      }
+      toast.error("Erro ao carregar leads");
     }
   };
 
@@ -110,27 +107,23 @@ export default function LeadsPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Adicionar Lead</DialogTitle>
-              <DialogDescription>
-                Cadastre um novo lead que entrou em contato
-              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <Label>Nome</Label>
-                <Input data-testid="lead-name-input" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+                <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
               </div>
               <div>
                 <Label>Telefone</Label>
-                <Input data-testid="lead-phone-input" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
+                <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
               </div>
               <div>
                 <Label>Email</Label>
-                <Input data-testid="lead-email-input" type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
+                <Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
               </div>
               <div>
                 <Label>Origem</Label>
                 <select
-                  data-testid="lead-source-select"
                   className="input-field"
                   value={formData.source}
                   onChange={(e) => setFormData({...formData, source: e.target.value})}
@@ -142,9 +135,9 @@ export default function LeadsPage() {
               </div>
               <div>
                 <Label>Observações</Label>
-                <Input data-testid="lead-notes-input" value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} />
+                <Input value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} />
               </div>
-              <Button type="submit" data-testid="submit-lead-button" className="w-full btn-primary">Cadastrar</Button>
+              <Button type="submit" className="w-full btn-primary">Cadastrar</Button>
             </form>
           </DialogContent>
         </Dialog>
