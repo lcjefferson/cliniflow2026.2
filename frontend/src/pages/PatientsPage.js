@@ -76,6 +76,9 @@ export default function PatientsPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Adicionar Paciente</DialogTitle>
+              <DialogDescription>
+                Cadastre um novo paciente no sistema
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
