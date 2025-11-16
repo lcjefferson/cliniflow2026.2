@@ -83,7 +83,7 @@ export default function ProfessionalsPage() {
         </div>
 
         <div className="grid gap-6">
-          {professionals.map((prof) => (
+          {professionals.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((prof) => (
             <div key={prof.id} className="bg-white rounded-2xl p-6 shadow-lg" data-testid={`professional-${prof.id}`}>
               <div className="flex justify-between items-start">
                 <div>
