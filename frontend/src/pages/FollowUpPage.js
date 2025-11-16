@@ -13,12 +13,10 @@ export default function FollowUpPage() {
   const [leads, setLeads] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
   const [formData, setFormData] = useState({ lead_id: "", assigned_to: "", scheduled_date: "", notes: "" });
-
   useEffect(() => {
     loadFollowups();
     loadLeads();
   }, []);
-
   const loadFollowups = async () => {
     try {
       const response = await api.get("/followups");
@@ -29,41 +27,22 @@ export default function FollowUpPage() {
       }
     }
   };
-
   const loadLeads = async () => {
-    try {
       const response = await api.get("/leads");
       setLeads(response.data);
     } catch (error) {      if (error.response?.status !== 401) {
-    } catch (error) {      if (error.response?.status !== 401) {
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
       await api.post("/followups", formData);
       toast.success("Follow-up agendado!");
       setShowDialog(false);
       setFormData({ lead_id: "", assigned_to: "", scheduled_date: "", notes: "" });
       loadFollowups();
-    } catch (error) {
-      if (error.response?.status !== 401) {
         toast.error("Erro ao agendar follow-up");
-      }
-    }
-
   const handleComplete = async (id) => {
-    try {
       await api.put(`/followups/${id}?status=completed`);
       toast.success("Follow-up concluído!");
-      loadFollowups();
-    } catch (error) {
-      if (error.response?.status !== 401) {
         toast.error("Erro ao completar follow-up");
-      }
-    }
-
   return (
     <Layout>
       <div>
@@ -74,7 +53,6 @@ export default function FollowUpPage() {
             Agendar Follow-up
           </Button>
         </div>
-
         <div className="grid gap-6">
           {followups.map((followup) => {
             const lead = leads.find(l => l.id === followup.lead_id);
@@ -99,8 +77,6 @@ export default function FollowUpPage() {
               </div>
             );
           })}
-        </div>
-
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
           <DialogContent>
             <DialogHeader>
@@ -123,15 +99,10 @@ export default function FollowUpPage() {
                     <option key={lead.id} value={lead.id}>{lead.name}</option>
                   ))}
                 </select>
-              </div>
-              <div>
                 <Label>Data Agendada</Label>
                 <Input type="date" value={formData.scheduled_date} onChange={(e) => setFormData({...formData, scheduled_date: e.target.value})} required />
-              </div>
-              <div>
                 <Label>Observações</Label>
                 <Input value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} required />
-              </div>
               <Button type="submit" className="w-full btn-primary">Agendar</Button>
             </form>
           </DialogContent>

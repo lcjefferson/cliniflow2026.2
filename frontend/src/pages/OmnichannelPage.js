@@ -11,11 +11,9 @@ export default function OmnichannelPage() {
   const [selectedConv, setSelectedConv] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
-
   useEffect(() => {
     loadConversations();
   }, []);
-
   const loadConversations = async () => {
     try {
       const response = await api.get("/conversations");
@@ -26,24 +24,14 @@ export default function OmnichannelPage() {
       }
     }
   };
-
   const loadMessages = async (convId) => {
-    try {
       const response = await api.get(`/conversations/${convId}/messages`);
       setMessages(response.data);
       setSelectedConv(convId);
-    } catch (error) {
-      if (error.response?.status !== 401) {
         toast.error("Erro ao carregar mensagens");
-      }
-    }
-  };
-
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || !selectedConv) return;
-
-    try {
       await api.post(`/conversations/${selectedConv}/messages`, {
         conversation_id: selectedConv,
         content: newMessage
@@ -51,13 +39,7 @@ export default function OmnichannelPage() {
       setNewMessage("");
       loadMessages(selectedConv);
       toast.success("Mensagem enviada (mockado)");
-    } catch (error) {
-      if (error.response?.status !== 401) {
         toast.error("Erro ao enviar mensagem");
-      }
-    }
-  };
-
   const getChannelIcon = (channel) => {
     const icons = {
       whatsapp: "📱",
@@ -65,8 +47,6 @@ export default function OmnichannelPage() {
       messenger: "💬"
     };
     return icons[channel] || "💬";
-  };
-
   return (
     <Layout>
       <div>
@@ -104,14 +84,12 @@ export default function OmnichannelPage() {
                 ))
               )}
             </div>
-
             {/* Área de mensagens */}
             <div className="flex-1 flex flex-col">
               {selectedConv ? (
                 <>
                   <div className="p-4 bg-blue-50 border-b border-gray-200">
                     <h3 className="font-semibold text-gray-900">Conversa selecionada</h3>
-                  </div>
                   <div className="flex-1 overflow-y-auto p-4 space-y-4">
                     {messages.map((msg) => (
                       <div
@@ -129,9 +107,7 @@ export default function OmnichannelPage() {
                         >
                           <p>{msg.content}</p>
                         </div>
-                      </div>
                     ))}
-                  </div>
                   <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-200">
                     <div className="flex gap-2">
                       <Input
@@ -143,27 +119,19 @@ export default function OmnichannelPage() {
                       <Button type="submit" className="btn-primary">
                         <Send className="w-4 h-4" />
                       </Button>
-                    </div>
                   </form>
                 </>
-              ) : (
                 <div className="flex-1 flex items-center justify-center text-gray-500">
                   <div className="text-center">
                     <MessageSquare className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                     <p>Selecione uma conversa para começar</p>
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         </div>
-
         <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
           <p className="text-sm text-yellow-800">
             <strong>Nota:</strong> As integrações com WhatsApp, Instagram e Messenger estão <strong>mockadas</strong> nesta versão. 
             Para ativar, configure as credenciais da Meta Business API.
           </p>
-        </div>
       </div>
     </Layout>
   );

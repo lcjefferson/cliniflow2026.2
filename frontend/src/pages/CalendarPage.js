@@ -26,12 +26,10 @@ export default function CalendarPage() {
     appointment_time: "",
     notes: ""
   });
-
   useEffect(() => {
     loadAppointments();
     loadData();
   }, [selectedDate]);
-
   const loadAppointments = async () => {
     try {
       const response = await api.get(`/appointments?date=${selectedDate}`);
@@ -42,9 +40,7 @@ export default function CalendarPage() {
       }
     }
   };
-
   const loadData = async () => {
-    try {
       const [prof, pat, serv, room] = await Promise.all([
         api.get("/professionals"),
         api.get("/patients"),
@@ -55,16 +51,9 @@ export default function CalendarPage() {
       setPatients(pat.data);
       setServices(serv.data);
       setRooms(room.data);
-    } catch (error) {
-      if (error.response?.status !== 401) {
         console.error("Erro ao carregar dados");
-      }
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
       await api.post("/appointments", formData);
       toast.success("Agendamento criado!");
       setShowDialog(false);
@@ -78,23 +67,11 @@ export default function CalendarPage() {
         notes: ""
       });
       loadAppointments();
-    } catch (error) {
-      if (error.response?.status !== 401) {
         toast.error("Erro ao criar agendamento");
-      }
-    }
-
   const updateStatus = async (id, status) => {
-    try {
       await api.put(`/appointments/${id}?status=${status}`);
       toast.success("Status atualizado!");
-      loadAppointments();
-    } catch (error) {
-      if (error.response?.status !== 401) {
         toast.error("Erro ao atualizar status");
-      }
-    }
-
   return (
     <Layout>
       <div>
@@ -105,7 +82,6 @@ export default function CalendarPage() {
             Novo Agendamento
           </Button>
         </div>
-
         <div className="mb-6">
           <Label>Selecionar Data</Label>
           <Input
@@ -114,8 +90,6 @@ export default function CalendarPage() {
             onChange={(e) => setSelectedDate(e.target.value)}
             className="max-w-xs"
           />
-        </div>
-
         <div className="bg-white rounded-2xl p-6 shadow-lg">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">
             Agendamentos - {new Date(selectedDate).toLocaleDateString('pt-BR', { dateStyle: 'full' })}
@@ -159,17 +133,11 @@ export default function CalendarPage() {
                         {apt.status === 'confirmed' && (
                           <Button onClick={() => updateStatus(apt.id, 'completed')} variant="outline" size="sm">
                             Concluir
-                          </Button>
-                        )}
-                      </div>
                     </div>
                   </div>
                 );
               })}
-            </div>
           )}
-        </div>
-
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
@@ -192,72 +160,35 @@ export default function CalendarPage() {
                     {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
-                <div>
                   <Label>Profissional</Label>
-                  <select
-                    className="input-field"
                     value={formData.professional_id}
                     onChange={(e) => setFormData({...formData, professional_id: e.target.value})}
-                    required
-                  >
-                    <option value="">Selecione</option>
                     {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
                   <Label>Serviço</Label>
-                  <select
-                    className="input-field"
                     value={formData.service_id}
                     onChange={(e) => setFormData({...formData, service_id: e.target.value})}
-                    required
-                  >
-                    <option value="">Selecione</option>
                     {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                </div>
-                <div>
                   <Label>Sala</Label>
-                  <select
-                    className="input-field"
                     value={formData.room_id}
                     onChange={(e) => setFormData({...formData, room_id: e.target.value})}
-                    required
-                  >
-                    <option value="">Selecione</option>
                     {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
                   <Label>Data</Label>
                   <Input
                     type="date"
                     value={formData.appointment_date}
                     onChange={(e) => setFormData({...formData, appointment_date: e.target.value})}
-                    required
                   />
-                </div>
-                <div>
                   <Label>Horário</Label>
-                  <Input
                     type="time"
                     value={formData.appointment_time}
                     onChange={(e) => setFormData({...formData, appointment_time: e.target.value})}
-                    required
-                  />
-                </div>
-              </div>
               <div>
                 <Label>Observações</Label>
                 <Input
                   value={formData.notes}
                   onChange={(e) => setFormData({...formData, notes: e.target.value})}
                 />
-              </div>
               <Button type="submit" className="w-full btn-primary">Agendar</Button>
             </form>
           </DialogContent>

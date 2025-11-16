@@ -8,13 +8,11 @@ import { toast } from "sonner";
 export default function RevenuePage() {
   const { user } = useAuth();
   const [revenueData, setRevenueData] = useState({ total_revenue: 0, total_appointments: 0 });
-
   useEffect(() => {
     if (user?.role?.is_admin) {
       loadRevenue();
     }
   }, [user]);
-
   const loadRevenue = async () => {
     try {
       const response = await api.get("/dashboard/revenue");
@@ -23,9 +21,7 @@ export default function RevenuePage() {
       if (error.response?.status !== 401) {
         toast.error("Erro ao carregar dados de faturamento");
       }
-    }
   };
-
   if (!user?.role?.is_admin) {
     return (
       <Layout>
@@ -36,7 +32,6 @@ export default function RevenuePage() {
       </Layout>
     );
   }
-
   return (
     <Layout>
       <div>
@@ -52,18 +47,10 @@ export default function RevenuePage() {
               </div>
             </div>
           </div>
-
           <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-8 shadow-xl text-white">
-            <div className="flex items-center gap-4 mb-4">
               <Calendar className="w-12 h-12" />
-              <div>
                 <p className="text-blue-100">Atendimentos Concluídos</p>
                 <h2 className="text-4xl font-bold">{revenueData.total_appointments}</h2>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <div className="bg-white rounded-2xl p-8 shadow-lg">
           <h3 className="text-2xl font-bold text-gray-900 mb-6">Detalhamento</h3>
           
@@ -76,14 +63,8 @@ export default function RevenuePage() {
                   : '0,00'
                 }
               </span>
-            </div>
-
-            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
               <span className="text-gray-700 font-medium">Total de Serviços Prestados</span>
               <span className="text-xl font-bold text-green-600">{revenueData.total_appointments}</span>
-            </div>
-          </div>
-        </div>
       </div>
     </Layout>
   );
