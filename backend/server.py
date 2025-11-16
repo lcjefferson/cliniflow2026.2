@@ -148,6 +148,8 @@ class AppointmentCreate(BaseModel):
     room_id: str
     appointment_date: str
     appointment_time: str
+    amount: Optional[float] = None
+    paid: bool = False
     notes: Optional[str] = None
 
 class MedicalRecord(BaseModel):
