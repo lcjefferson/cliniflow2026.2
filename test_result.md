@@ -107,99 +107,171 @@ user_problem_statement: "Sistema de gestão de clínica CliniFlow com funcionali
 backend:
   - task: "Autenticação de usuários (Login/Registro)"
     implemented: true
-    working: "NA"
+    working: true
     file: "backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Sistema restaurado. Backend rodando corretamente. Precisa testar endpoints de auth."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO COMPLETAMENTE: Registro de usuários (200/400 para duplicados), login (200), validação de credenciais (401 para inválidas), geração de JWT tokens funcionando. Corrigido bug jwt.JWTError -> jwt.InvalidTokenError. Autenticação robusta e segura."
   
   - task: "CRUD de Profissionais"
     implemented: true
-    working: "NA"
+    working: true
     file: "backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Endpoints implementados. Precisa testar CRUD completo."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO COMPLETAMENTE: GET /api/professionals (200), POST (200), PUT (200), DELETE (200). Validação de dados (422 para inválidos), 404 para IDs inexistentes. Todos os endpoints funcionando perfeitamente com autenticação JWT."
   
   - task: "CRUD de Serviços"
     implemented: true
-    working: "NA"
+    working: true
     file: "backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Endpoints implementados. Precisa testar CRUD completo."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO COMPLETAMENTE: GET /api/services (200), POST (200), PUT (200), DELETE (200). Validação de preços e duração, tratamento de erros 404/422. Sistema de serviços totalmente funcional."
   
   - task: "CRUD de Pacientes"
     implemented: true
-    working: "NA"
+    working: true
     file: "backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Endpoints implementados. Precisa testar CRUD completo."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO COMPLETAMENTE: GET /api/patients (200), POST (200), GET específico /api/patients/{id} (200/404). Validação de email, dados obrigatórios. Sistema de pacientes funcionando corretamente."
   
   - task: "Sistema de Agendamentos"
     implemented: true
-    working: "NA"
+    working: true
     file: "backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Endpoints de agendamento implementados. Precisa testar criação e listagem."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO COMPLETAMENTE: GET /api/appointments (200), POST (200), filtros por data ?date=YYYY-MM-DD (200), PUT para atualizar status (200). Sistema de agendamentos totalmente funcional com relacionamentos entre pacientes, profissionais, serviços e salas."
 
   - task: "CRUD de Salas"
     implemented: true
-    working: "NA"
+    working: true
     file: "backend/server.py"
     stuck_count: 0
     priority: "medium"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Endpoints implementados. Precisa testar."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO COMPLETAMENTE: GET /api/rooms (200), POST /api/rooms (200). Sistema de salas funcionando corretamente para agendamentos."
 
   - task: "Sistema de Leads"
     implemented: true
-    working: "NA"
+    working: true
     file: "backend/server.py"
     stuck_count: 0
     priority: "medium"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Endpoints implementados. Precisa testar."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO COMPLETAMENTE: GET /api/leads (200), POST (200), PUT (200), filtros por status ?status=new (200). Sistema de leads com controle de permissões (admins veem todos, usuários apenas os atribuídos). Funcional."
 
   - task: "Prontuários Médicos"
     implemented: true
-    working: "NA"
+    working: true
     file: "backend/server.py"
     stuck_count: 0
     priority: "medium"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Endpoints implementados. Precisa testar."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO COMPLETAMENTE: GET /api/medical-records/patient/{id} (200), POST /api/medical-records (200), geração de documentos com IA /api/medical-records/generate-document (200/404). Sistema de prontuários com integração IA funcionando."
+
+  - task: "Sistema de Follow-ups"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO COMPLETAMENTE: GET /api/followups (200), POST (200), PUT para atualizar status (200). Sistema de follow-ups funcionando com controle de permissões."
+
+  - task: "Sistema de Conversas (Omnichannel)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO: GET /api/conversations (200), GET /api/conversations/{id}/messages (200), POST mensagens (200). Sistema **mocked** mas endpoints funcionais."
+
+  - task: "Mensagens Automáticas com IA"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO: POST /api/auto-messages/send (200/404). Integração com IA GPT-4o-mini funcionando. Gera mensagens de aniversário e lembretes de consulta. Status **mocked** para envio real."
+
+  - task: "Dashboard e Estatísticas"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO COMPLETAMENTE: GET /api/dashboard/appointments (200), /api/dashboard/leads (200), /api/dashboard/revenue (200). Cálculos de receita baseados em consultas concluídas funcionando. Controle de acesso admin."
 
 frontend:
   - task: "Página de Login"
