@@ -98,21 +98,21 @@ export default function ServicesPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <Label>Nome do Serviço</Label>
-                <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+                <Input data-testid="service-name-input" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
               </div>
               <div>
                 <Label>Descrição</Label>
-                <Input value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} required />
+                <Input data-testid="service-description-input" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} required />
               </div>
               <div>
                 <Label>Duração (minutos)</Label>
-                <Input type="number" value={formData.duration_minutes} onChange={(e) => setFormData({...formData, duration_minutes: e.target.value})} required />
+                <Input data-testid="service-duration-input" type="number" value={formData.duration_minutes} onChange={(e) => setFormData({...formData, duration_minutes: e.target.value})} required />
               </div>
               <div>
                 <Label>Preço (R$)</Label>
-                <Input type="number" step="0.01" value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} required />
+                <Input data-testid="service-price-input" type="number" step="0.01" value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} required />
               </div>
-              <Button type="submit" className="w-full btn-primary">Cadastrar</Button>
+              <Button type="submit" data-testid="submit-service-button" className="w-full btn-primary">Cadastrar</Button>
             </form>
           </DialogContent>
         </Dialog>
