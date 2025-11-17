@@ -500,6 +500,27 @@ async def get_rooms(current_user: dict = Depends(get_current_user)):
             room['created_at'] = datetime.fromisoformat(room['created_at'])
     return rooms
 
+@api_router.put("/rooms/{room_id}", response_model=Room)
+async def update_room(room_id: str, data: RoomCreate, current_user: dict = Depends(get_current_user)):
+    result = await db.rooms.update_one(
+        {"id": room_id},
+        {"$set": data.model_dump()}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    updated = await db.rooms.find_one({"id": room_id}, {"_id": 0})
+    if isinstance(updated['created_at'], str):
+        updated['created_at'] = datetime.fromisoformat(updated['created_at'])
+    return Room(**updated)
+
+@api_router.delete("/rooms/{room_id}")
+async def delete_room(room_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.rooms.delete_one({"id": room_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return {"message": "Room deleted successfully"}
+
 # Patient Routes
 @api_router.post("/patients", response_model=Patient)
 async def create_patient(data: PatientCreate, current_user: dict = Depends(get_current_user)):
