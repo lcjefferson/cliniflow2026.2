@@ -299,10 +299,6 @@ export default function CalendarPage() {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900">Calendário</h1>
           <div className="flex gap-3">
-            <Button onClick={() => setShowLeadDialog(true)} variant="outline" className="btn-secondary">
-              <Plus className="w-5 h-5 mr-2" />
-              Novo Lead
-            </Button>
             <Button onClick={() => setShowDialog(true)} className="btn-primary">
               <Plus className="w-5 h-5 mr-2" />
               Novo Agendamento
