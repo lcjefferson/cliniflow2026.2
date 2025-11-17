@@ -13,7 +13,6 @@ export default function CalendarPage() {
   const [appointments, setAppointments] = useState([]);
   const [professionals, setProfessionals] = useState([]);
   const [patients, setPatients] = useState([]);
-  const [leads, setLeads] = useState([]);
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
