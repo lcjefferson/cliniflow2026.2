@@ -1,157 +1,420 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
-import { FileText, Sparkles } from "lucide-react";
+import { Plus, Edit, Trash2, FileText, Save, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function MedicalRecordsPage() {
-  const [patients, setPatients] = useState([]);
-  const [selectedPatient, setSelectedPatient] = useState(null);
   const [records, setRecords] = useState([]);
-  const [generating, setGenerating] = useState(false);
+  const [patients, setPatients] = useState([]);
+  const [templates, setTemplates] = useState([
+    { id: "receita", name: "Receita Médica", type: "receita" },
+    { id: "atestado", name: "Atestado Médico", type: "atestado" },
+    { id: "prontuario", name: "Prontuário Completo", type: "prontuario" }
+  ]);
+  const [showDialog, setShowDialog] = useState(false);
+  const [showTemplateDialog, setShowTemplateDialog] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
+  const [formData, setFormData] = useState({
+    patient_id: "",
+    record_type: "prontuario",
+    diagnosis: "",
+    symptoms: "",
+    treatment: "",
+    medications: "",
+    observations: "",
+    doctor_name: "",
+    crm: "",
+    template_used: ""
+  });
+  const [newTemplate, setNewTemplate] = useState({
+    name: "",
+    type: "prontuario",
+    content: ""
+  });
 
   useEffect(() => {
+    loadRecords();
     loadPatients();
   }, []);
+
+  const loadRecords = async () => {
+    try {
+      const response = await api.get("/medical-records");
+      setRecords(response.data);
+    } catch (error) {
+      toast.error("Erro ao carregar prontuários");
+    }
+  };
 
   const loadPatients = async () => {
     try {
       const response = await api.get("/patients");
       setPatients(response.data);
     } catch (error) {
-      toast.error("Erro ao carregar pacientes");
+      console.error("Erro ao carregar pacientes");
     }
   };
 
-  const loadRecords = async (patientId) => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     try {
-      const response = await api.get(`/medical-records/patient/${patientId}`);
-      setRecords(response.data);
-      setSelectedPatient(patientId);
-    } catch (error) {
-      toast.error("Erro ao carregar prontuários");
-    }
-  };
-
-  const generateDocument = async (recordId, type) => {
-    setGenerating(true);
-    try {
-      const response = await api.post("/medical-records/generate-document", {
-        record_id: recordId,
-        document_type: type
+      if (editingId) {
+        await api.put(`/medical-records/${editingId}`, formData);
+        toast.success("Prontuário atualizado!");
+      } else {
+        await api.post("/medical-records", formData);
+        toast.success("Prontuário criado!");
+      }
+      setShowDialog(false);
+      setEditingId(null);
+      setFormData({
+        patient_id: "",
+        record_type: "prontuario",
+        diagnosis: "",
+        symptoms: "",
+        treatment: "",
+        medications: "",
+        observations: "",
+        doctor_name: "",
+        crm: "",
+        template_used: ""
       });
-      toast.success(`${type === 'prescription' ? 'Receita' : 'Atestado'} gerado com IA!`);
-      loadRecords(selectedPatient);
+      loadRecords();
     } catch (error) {
-      toast.error("Erro ao gerar documento");
-    } finally {
-      setGenerating(false);
+      toast.error(editingId ? "Erro ao atualizar prontuário" : "Erro ao criar prontuário");
     }
   };
+
+  const handleEdit = (record) => {
+    setEditingId(record.id);
+    setFormData({
+      patient_id: record.patient_id,
+      record_type: record.record_type,
+      diagnosis: record.diagnosis || "",
+      symptoms: record.symptoms || "",
+      treatment: record.treatment || "",
+      medications: record.medications || "",
+      observations: record.observations || "",
+      doctor_name: record.doctor_name || "",
+      crm: record.crm || "",
+      template_used: record.template_used || ""
+    });
+    setShowDialog(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Tem certeza que deseja deletar este prontuário?")) return;
+    
+    try {
+      await api.delete(`/medical-records/${id}`);
+      toast.success("Prontuário deletado!");
+      loadRecords();
+    } catch (error) {
+      toast.error("Erro ao deletar prontuário");
+    }
+  };
+
+  const handleUseTemplate = (template) => {
+    let content = "";
+    
+    if (template.type === "receita") {
+      content = "RECEITA MÉDICA\n\nPaciente: [Nome do Paciente]\nData: [Data]\n\nMedicamentos Prescritos:\n1. [Medicamento 1] - [Posologia]\n2. [Medicamento 2] - [Posologia]\n\nObservações:\n[Instruções de uso]\n\n___________________________\nDr(a). [Nome]\nCRM: [Número]";
+    } else if (template.type === "atestado") {
+      content = "ATESTADO MÉDICO\n\nAtesto para os devidos fins que o(a) paciente [Nome do Paciente] esteve sob meus cuidados médicos e necessita de afastamento de suas atividades por [X] dias, a partir de [Data].\n\nCID: [Código se aplicável]\n\nObservações:\n[Observações adicionais]\n\n___________________________\nDr(a). [Nome]\nCRM: [Número]\nData: [Data]";
+    } else {
+      content = "PRONTUÁRIO MÉDICO\n\nPaciente: [Nome]\nData da Consulta: [Data]\n\nQueixa Principal:\n[Descrever sintomas]\n\nHistória da Doença Atual:\n[Histórico]\n\nExame Físico:\n[Resultados do exame]\n\nDiagnóstico:\n[Diagnóstico]\n\nTratamento Proposto:\n[Tratamento]\n\nMedicações:\n[Lista de medicações]\n\nObservações:\n[Observações adicionais]";
+    }
+    
+    setFormData({
+      ...formData,
+      record_type: template.type,
+      observations: content,
+      template_used: template.name
+    });
+    toast.success(`Template "${template.name}" aplicado!`);
+  };
+
+  const handleCloseDialog = () => {
+    setShowDialog(false);
+    setEditingId(null);
+    setFormData({
+      patient_id: "",
+      record_type: "prontuario",
+      diagnosis: "",
+      symptoms: "",
+      treatment: "",
+      medications: "",
+      observations: "",
+      doctor_name: "",
+      crm: "",
+      template_used: ""
+    });
+  };
+
+  const getPatientName = (patientId) => {
+    const patient = patients.find(p => p.id === patientId);
+    return patient ? patient.name : "Paciente";
+  };
+
+  const getRecordTypeLabel = (type) => {
+    const labels = {
+      prontuario: "Prontuário",
+      receita: "Receita",
+      atestado: "Atestado"
+    };
+    return labels[type] || type;
+  };
+
+  // Paginação
+  const currentRecords = records.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const totalPages = Math.ceil(records.length / itemsPerPage);
 
   return (
     <Layout>
       <div>
-        <h1 className="text-4xl font-bold text-gray-900 mb-8" data-testid="medicalrecords-page-title">Prontuários</h1>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Lista de pacientes */}
-          <div className="bg-white rounded-2xl shadow-lg p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Pacientes</h2>
-            <div className="space-y-2">
-              {patients.map((patient) => (
-                <button
-                  key={patient.id}
-                  onClick={() => loadRecords(patient.id)}
-                  className={`w-full text-left p-3 rounded-xl transition-colors ${
-                    selectedPatient === patient.id
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
-                  }`}
-                >
-                  <p className="font-medium">{patient.name}</p>
-                  <p className="text-sm opacity-80">{patient.email}</p>
-                </button>
-              ))}
-            </div>
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-900">Prontuários Médicos</h1>
+          <Button onClick={() => setShowDialog(true)} className="btn-primary">
+            <Plus className="w-5 h-5 mr-2" />
+            Novo Prontuário
+          </Button>
+        </div>
+
+        {/* Templates Rápidos */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Templates Disponíveis</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {templates.map((template) => (
+              <button
+                key={template.id}
+                onClick={() => {
+                  setShowDialog(true);
+                  handleUseTemplate(template);
+                }}
+                className="p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all text-left"
+              >
+                <FileText className="w-8 h-8 text-blue-500 mb-2" />
+                <h4 className="font-semibold text-gray-900">{template.name}</h4>
+                <p className="text-sm text-gray-500 mt-1">Clique para usar este template</p>
+              </button>
+            ))}
           </div>
+        </div>
 
-          {/* Prontuários */}
-          <div className="lg:col-span-2 bg-white rounded-2xl shadow-lg p-6">
-            {!selectedPatient ? (
-              <div className="text-center py-12 text-gray-500">
-                <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                <p>Selecione um paciente para ver os prontuários</p>
-              </div>
-            ) : records.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                <p>Nenhum prontuário encontrado</p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                <h2 className="text-xl font-bold text-gray-900">Prontuários do Paciente</h2>
-                {records.map((record) => (
-                  <div key={record.id} className="border border-gray-200 rounded-xl p-6">
-                    <div className="mb-4">
-                      <h3 className="text-lg font-bold text-gray-900 mb-2">Diagnóstico</h3>
-                      <p className="text-gray-700">{record.diagnosis}</p>
-                    </div>
-                    <div className="mb-4">
-                      <h3 className="text-lg font-bold text-gray-900 mb-2">Tratamento</h3>
-                      <p className="text-gray-700">{record.treatment}</p>
-                    </div>
-                    
-                    {record.prescription && (
-                      <div className="mb-4 p-4 bg-blue-50 rounded-xl">
-                        <h3 className="text-lg font-bold text-blue-900 mb-2">Receita (Gerada com IA)</h3>
-                        <p className="text-blue-800 whitespace-pre-wrap">{record.prescription}</p>
-                      </div>
-                    )}
-                    
-                    {record.medical_certificate && (
-                      <div className="mb-4 p-4 bg-green-50 rounded-xl">
-                        <h3 className="text-lg font-bold text-green-900 mb-2">Atestado (Gerado com IA)</h3>
-                        <p className="text-green-800 whitespace-pre-wrap">{record.medical_certificate}</p>
-                      </div>
-                    )}
-
-                    <div className="flex gap-2 mt-4">
-                      {!record.prescription && (
-                        <Button
-                          onClick={() => generateDocument(record.id, 'prescription')}
-                          disabled={generating}
-                          className="btn-primary"
-                        >
-                          <Sparkles className="w-4 h-4 mr-2" />
-                          Gerar Receita com IA
-                        </Button>
-                      )}
-                      {!record.medical_certificate && (
-                        <Button
-                          onClick={() => generateDocument(record.id, 'certificate')}
-                          disabled={generating}
-                          className="btn-secondary"
-                        >
-                          <Sparkles className="w-4 h-4 mr-2" />
-                          Gerar Atestado com IA
-                        </Button>
-                      )}
-                    </div>
+        {/* Lista de Prontuários */}
+        <div className="grid gap-6">
+          {currentRecords.map((record) => (
+            <div key={record.id} className="bg-white rounded-2xl p-6 shadow-lg">
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-3">
+                    <h3 className="text-xl font-bold text-gray-900">
+                      {getPatientName(record.patient_id)}
+                    </h3>
+                    <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">
+                      {getRecordTypeLabel(record.record_type)}
+                    </span>
                   </div>
-                ))}
+                  
+                  {record.diagnosis && (
+                    <div className="mb-2">
+                      <span className="font-semibold text-gray-700">Diagnóstico:</span>
+                      <p className="text-gray-600">{record.diagnosis}</p>
+                    </div>
+                  )}
+                  
+                  {record.symptoms && (
+                    <div className="mb-2">
+                      <span className="font-semibold text-gray-700">Sintomas:</span>
+                      <p className="text-gray-600">{record.symptoms}</p>
+                    </div>
+                  )}
+                  
+                  {record.medications && (
+                    <div className="mb-2">
+                      <span className="font-semibold text-gray-700">Medicações:</span>
+                      <p className="text-gray-600">{record.medications}</p>
+                    </div>
+                  )}
+                  
+                  {record.doctor_name && (
+                    <p className="text-sm text-gray-500 mt-3">
+                      Dr(a). {record.doctor_name} {record.crm && `- CRM: ${record.crm}`}
+                    </p>
+                  )}
+                  
+                  <p className="text-xs text-gray-400 mt-2">
+                    Criado em: {new Date(record.created_at).toLocaleDateString('pt-BR')}
+                  </p>
+                </div>
+                
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleEdit(record)}
+                    className="text-blue-500 hover:text-blue-700"
+                  >
+                    <Edit className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(record.id)}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          ))}
+
+          {records.length === 0 && (
+            <div className="text-center py-12 text-gray-500 bg-white rounded-2xl shadow-lg">
+              <FileText className="w-16 h-16 mx-auto mb-4 opacity-30" />
+              <p>Nenhum prontuário cadastrado ainda</p>
+            </div>
+          )}
         </div>
 
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-          <p className="text-sm text-blue-800">
-            <strong>Nota:</strong> Os documentos médicos são gerados automaticamente usando IA (OpenAI GPT-4o-mini) 
-            baseados nas informações do diagnóstico e tratamento.
-          </p>
-        </div>
+        {/* Paginação */}
+        {totalPages > 1 && (
+          <div className="flex justify-center items-center gap-4 mt-8">
+            <Button
+              onClick={() => setCurrentPage(currentPage - 1)}
+              disabled={currentPage === 1}
+              variant="outline"
+              className="btn-secondary"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </Button>
+            <span className="text-gray-700">
+              Página {currentPage} de {totalPages}
+            </span>
+            <Button
+              onClick={() => setCurrentPage(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              variant="outline"
+              className="btn-secondary"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </Button>
+          </div>
+        )}
+
+        {/* Modal de Criar/Editar Prontuário */}
+        <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingId ? "Editar Prontuário" : "Novo Prontuário"}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Paciente *</Label>
+                  <select
+                    className="input-field"
+                    value={formData.patient_id}
+                    onChange={(e) => setFormData({...formData, patient_id: e.target.value})}
+                    required
+                  >
+                    <option value="">Selecione</option>
+                    {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label>Tipo de Documento *</Label>
+                  <select
+                    className="input-field"
+                    value={formData.record_type}
+                    onChange={(e) => setFormData({...formData, record_type: e.target.value})}
+                  >
+                    <option value="prontuario">Prontuário Completo</option>
+                    <option value="receita">Receita Médica</option>
+                    <option value="atestado">Atestado Médico</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <Label>Sintomas</Label>
+                <textarea
+                  className="input-field min-h-[80px]"
+                  value={formData.symptoms}
+                  onChange={(e) => setFormData({...formData, symptoms: e.target.value})}
+                  placeholder="Descreva os sintomas apresentados pelo paciente"
+                />
+              </div>
+
+              <div>
+                <Label>Diagnóstico</Label>
+                <Input
+                  value={formData.diagnosis}
+                  onChange={(e) => setFormData({...formData, diagnosis: e.target.value})}
+                  placeholder="Diagnóstico médico"
+                />
+              </div>
+
+              <div>
+                <Label>Tratamento Proposto</Label>
+                <textarea
+                  className="input-field min-h-[80px]"
+                  value={formData.treatment}
+                  onChange={(e) => setFormData({...formData, treatment: e.target.value})}
+                  placeholder="Descreva o tratamento recomendado"
+                />
+              </div>
+
+              <div>
+                <Label>Medicações Prescritas</Label>
+                <textarea
+                  className="input-field min-h-[80px]"
+                  value={formData.medications}
+                  onChange={(e) => setFormData({...formData, medications: e.target.value})}
+                  placeholder="Liste as medicações e posologia"
+                />
+              </div>
+
+              <div>
+                <Label>Observações / Conteúdo Completo</Label>
+                <textarea
+                  className="input-field min-h-[200px] font-mono text-sm"
+                  value={formData.observations}
+                  onChange={(e) => setFormData({...formData, observations: e.target.value})}
+                  placeholder="Observações adicionais ou conteúdo completo do documento"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Nome do Médico</Label>
+                  <Input
+                    value={formData.doctor_name}
+                    onChange={(e) => setFormData({...formData, doctor_name: e.target.value})}
+                    placeholder="Dr(a). Nome Completo"
+                  />
+                </div>
+                <div>
+                  <Label>CRM</Label>
+                  <Input
+                    value={formData.crm}
+                    onChange={(e) => setFormData({...formData, crm: e.target.value})}
+                    placeholder="CRM/UF"
+                  />
+                </div>
+              </div>
+
+              <Button type="submit" className="w-full btn-primary">
+                <Save className="w-5 h-5 mr-2" />
+                {editingId ? "Salvar Alterações" : "Criar Prontuário"}
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
