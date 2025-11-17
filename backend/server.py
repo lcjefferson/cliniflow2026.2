@@ -881,14 +881,21 @@ async def get_followups(current_user: dict = Depends(get_current_user)):
     return followups
 
 @api_router.put("/followups/{followup_id}")
-async def update_followup_status(followup_id: str, status: str, current_user: dict = Depends(get_current_user)):
+async def update_followup(followup_id: str, data: dict, current_user: dict = Depends(get_current_user)):
     result = await db.followups.update_one(
         {"id": followup_id},
-        {"$set": {"status": status}}
+        {"$set": data}
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="FollowUp not found")
     return {"message": "FollowUp updated successfully"}
+
+@api_router.delete("/followups/{followup_id}")
+async def delete_followup(followup_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.followups.delete_one({"id": followup_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="FollowUp not found")
+    return {"message": "FollowUp deleted successfully"}
 
 # Auto Messages with AI
 @api_router.post("/auto-messages/send")
