@@ -71,18 +71,16 @@ export default function CalendarPage() {
 
   const loadData = async () => {
     try {
-      const [prof, pat, serv, room, leadResp] = await Promise.all([
+      const [prof, pat, serv, room] = await Promise.all([
         api.get("/professionals"),
         api.get("/patients"),
         api.get("/services"),
-        api.get("/rooms"),
-        api.get("/leads")
+        api.get("/rooms")
       ]);
       setProfessionals(prof.data);
       setPatients(pat.data);
       setServices(serv.data);
       setRooms(room.data);
-      setLeads(leadResp.data);
     } catch (error) {
       console.error("Erro ao carregar dados");
     }
