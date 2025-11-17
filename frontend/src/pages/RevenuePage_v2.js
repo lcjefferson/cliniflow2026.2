@@ -1,0 +1,276 @@
+import React, { useState, useEffect } from "react";
+import Layout from "../components/Layout";
+import api from "../services/api";
+import { Plus, DollarSign, ChevronLeft, ChevronRight, CheckCircle, XCircle } from "lucide-react";
+import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+export default function RevenuePage() {
+  const [transactions, setTransactions] = useState([]);
+  const [appointments, setAppointments] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [showDialog, setShowDialog] = useState(false);
+  const [totalRevenue, setTotalRevenue] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(15);
+  const [formData, setFormData] = useState({
+    patient_id: "",
+    appointment_id: "",
+    amount: "",
+    payment_method: "cash",
+    description: "",
+    transaction_date: new Date().toISOString().split('T')[0]
+  });
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const [trans, appt, pat, rev] = await Promise.all([
+        api.get("/transactions"),
+        api.get("/appointments"),
+        api.get("/patients"),
+        api.get("/revenue/total")
+      ]);
+      setTransactions(trans.data);
+      setAppointments(appt.data);
+      setPatients(pat.data);
+      setTotalRevenue(rev.data.total_revenue);
+    } catch (error) {
+      toast.error("Erro ao carregar dados de faturamento");
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        ...formData,
+        amount: parseFloat(formData.amount)
+      };
+      await api.post("/transactions", payload);
+      toast.success("Pagamento registrado!");
+      setShowDialog(false);
+      setFormData({
+        patient_id: "",
+        appointment_id: "",
+        amount: "",
+        payment_method: "cash",
+        description: "",
+        transaction_date: new Date().toISOString().split('T')[0]
+      });
+      loadData();
+    } catch (error) {
+      toast.error("Erro ao registrar pagamento");
+    }
+  };
+
+  const getPatientName = (patientId) => {
+    const patient = patients.find(p => p.id === patientId);
+    return patient ? patient.name : "Paciente";
+  };
+
+  const getPaymentMethodLabel = (method) => {
+    const labels = {
+      cash: "Dinheiro",
+      card: "Cartão",
+      pix: "PIX",
+      transfer: "Transferência",
+      check: "Cheque"
+    };
+    return labels[method] || method;
+  };
+
+  // Paginação
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentTransactions = transactions.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(transactions.length / itemsPerPage);
+
+  return (
+    <Layout>
+      <div>
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-900">Faturamento</h1>
+          <Button onClick={() => setShowDialog(true)} className="btn-primary">
+            <Plus className="w-5 h-5 mr-2" />
+            Registrar Pagamento
+          </Button>
+        </div>
+
+        {/* Card de Resumo */}
+        <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-2xl p-8 shadow-lg mb-8">
+          <div className="flex items-center justify-between text-white">
+            <div>
+              <p className="text-green-100 text-sm mb-2">Faturamento Total</p>
+              <h2 className="text-4xl font-bold">
+                R$ {totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </h2>
+              <p className="text-green-100 text-sm mt-2">{transactions.length} transações registradas</p>
+            </div>
+            <DollarSign className="w-20 h-20 opacity-30" />
+          </div>
+        </div>
+
+        {/* Lista de Transações */}
+        <div className="bg-white rounded-2xl shadow-lg p-6">
+          <h3 className="text-xl font-bold text-gray-900 mb-6">Histórico de Transações</h3>
+          
+          <div className="space-y-4">
+            {currentTransactions.map((transaction) => (
+              <div key={transaction.id} className="border-b border-gray-200 pb-4 last:border-0">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h4 className="font-semibold text-gray-900">
+                        {getPatientName(transaction.patient_id)}
+                      </h4>
+                      <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
+                        {getPaymentMethodLabel(transaction.payment_method)}
+                      </span>
+                    </div>
+                    <p className="text-gray-600 text-sm">{transaction.description}</p>
+                    <p className="text-gray-500 text-xs mt-1">
+                      {new Date(transaction.transaction_date).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-green-600">
+                      R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {transactions.length === 0 && (
+              <div className="text-center py-12 text-gray-500">
+                <DollarSign className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                <p>Nenhuma transação registrada ainda</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Paginação */}
+        {totalPages > 1 && (
+          <div className="flex justify-center items-center gap-4 mt-8">
+            <Button
+              onClick={() => setCurrentPage(currentPage - 1)}
+              disabled={currentPage === 1}
+              variant="outline"
+              className="btn-secondary"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </Button>
+            <span className="text-gray-700">
+              Página {currentPage} de {totalPages}
+            </span>
+            <Button
+              onClick={() => setCurrentPage(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              variant="outline"
+              className="btn-secondary"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </Button>
+          </div>
+        )}
+
+        {/* Modal de Registrar Pagamento */}
+        <Dialog open={showDialog} onOpenChange={setShowDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Registrar Pagamento</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <Label>Paciente *</Label>
+                <select
+                  className="input-field"
+                  value={formData.patient_id}
+                  onChange={(e) => setFormData({...formData, patient_id: e.target.value})}
+                  required
+                >
+                  <option value="">Selecione um paciente</option>
+                  {patients.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label>Agendamento (opcional)</Label>
+                <select
+                  className="input-field"
+                  value={formData.appointment_id}
+                  onChange={(e) => setFormData({...formData, appointment_id: e.target.value})}
+                >
+                  <option value="">Nenhum</option>
+                  {appointments
+                    .filter(a => a.patient_id === formData.patient_id)
+                    .map(a => (
+                      <option key={a.id} value={a.id}>
+                        {new Date(a.appointment_date).toLocaleDateString('pt-BR')} - {a.appointment_time}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Valor (R$) *</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.amount}
+                    onChange={(e) => setFormData({...formData, amount: e.target.value})}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Forma de Pagamento *</Label>
+                  <select
+                    className="input-field"
+                    value={formData.payment_method}
+                    onChange={(e) => setFormData({...formData, payment_method: e.target.value})}
+                  >
+                    <option value="cash">Dinheiro</option>
+                    <option value="card">Cartão</option>
+                    <option value="pix">PIX</option>
+                    <option value="transfer">Transferência</option>
+                    <option value="check">Cheque</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <Label>Data da Transação *</Label>
+                <Input
+                  type="date"
+                  value={formData.transaction_date}
+                  onChange={(e) => setFormData({...formData, transaction_date: e.target.value})}
+                  required
+                />
+              </div>
+              <div>
+                <Label>Descrição *</Label>
+                <Input
+                  value={formData.description}
+                  onChange={(e) => setFormData({...formData, description: e.target.value})}
+                  placeholder="Ex: Consulta, Procedimento, etc."
+                  required
+                />
+              </div>
+              <Button type="submit" className="w-full btn-primary">
+                Registrar Pagamento
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </Layout>
+  );
+}
