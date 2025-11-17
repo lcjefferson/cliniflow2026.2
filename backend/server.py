@@ -526,6 +526,27 @@ async def get_patient(patient_id: str, current_user: dict = Depends(get_current_
         patient['created_at'] = datetime.fromisoformat(patient['created_at'])
     return Patient(**patient)
 
+@api_router.put("/patients/{patient_id}", response_model=Patient)
+async def update_patient(patient_id: str, data: PatientCreate, current_user: dict = Depends(get_current_user)):
+    result = await db.patients.update_one(
+        {"id": patient_id},
+        {"$set": data.model_dump()}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    updated = await db.patients.find_one({"id": patient_id}, {"_id": 0})
+    if isinstance(updated['created_at'], str):
+        updated['created_at'] = datetime.fromisoformat(updated['created_at'])
+    return Patient(**updated)
+
+@api_router.delete("/patients/{patient_id}")
+async def delete_patient(patient_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.patients.delete_one({"id": patient_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return {"message": "Patient deleted successfully"}
+
 # Appointment Routes
 @api_router.post("/appointments", response_model=Appointment)
 async def create_appointment(data: AppointmentCreate, current_user: dict = Depends(get_current_user)):
