@@ -712,6 +712,35 @@ async def generate_document(data: GenerateDocumentRequest, current_user: dict = 
     
     return {"document": response, "type": data.document_type}
 
+@api_router.get("/medical-records", response_model=List[MedicalRecord])
+async def get_all_medical_records(current_user: dict = Depends(get_current_user)):
+    records = await db.medical_records.find({}, {"_id": 0}).to_list(1000)
+    for record in records:
+        if isinstance(record['created_at'], str):
+            record['created_at'] = datetime.fromisoformat(record['created_at'])
+    return records
+
+@api_router.put("/medical-records/{record_id}", response_model=MedicalRecord)
+async def update_medical_record(record_id: str, data: MedicalRecordCreate, current_user: dict = Depends(get_current_user)):
+    result = await db.medical_records.update_one(
+        {"id": record_id},
+        {"$set": data.model_dump()}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Medical record not found")
+    
+    updated = await db.medical_records.find_one({"id": record_id}, {"_id": 0})
+    if isinstance(updated['created_at'], str):
+        updated['created_at'] = datetime.fromisoformat(updated['created_at'])
+    return MedicalRecord(**updated)
+
+@api_router.delete("/medical-records/{record_id}")
+async def delete_medical_record(record_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.medical_records.delete_one({"id": record_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Medical record not found")
+    return {"message": "Medical record deleted successfully"}
+
 # Lead Routes
 @api_router.post("/leads", response_model=Lead)
 async def create_lead(data: LeadCreate, current_user: dict = Depends(get_current_user)):
