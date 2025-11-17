@@ -427,33 +427,6 @@ export default function CalendarPage() {
               <DialogTitle>{editingAppointment ? "Editar Agendamento" : "Novo Agendamento"}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label>Pesquisar Lead (opcional)</Label>
-                <Input
-                  placeholder="Digite o nome do lead para filtrar..."
-                  value={leadSearch}
-                  onChange={(e) => setLeadSearch(e.target.value)}
-                />
-                {leadSearch && leads.filter(l => l.name.toLowerCase().includes(leadSearch.toLowerCase())).length > 0 && (
-                  <div className="mt-2 max-h-32 overflow-y-auto border rounded-lg">
-                    {leads
-                      .filter(l => l.name.toLowerCase().includes(leadSearch.toLowerCase()))
-                      .map(lead => (
-                        <div
-                          key={lead.id}
-                          className="p-2 hover:bg-blue-50 cursor-pointer flex justify-between items-center"
-                          onClick={() => setLeadSearch(lead.name)}
-                        >
-                          <div>
-                            <p className="font-medium">{lead.name}</p>
-                            <p className="text-sm text-gray-500">{lead.phone}</p>
-                          </div>
-                          <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">Lead</span>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <div className="flex justify-between items-center mb-2">
