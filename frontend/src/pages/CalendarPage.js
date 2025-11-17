@@ -124,6 +124,8 @@ export default function CalendarPage() {
       room_id: appointment.room_id,
       appointment_date: appointment.appointment_date,
       appointment_time: appointment.appointment_time,
+      amount: appointment.amount || "",
+      paid: appointment.paid || false,
       notes: appointment.notes || ""
     });
     setShowDetailsDialog(false);
