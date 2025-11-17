@@ -36,15 +36,8 @@ export default function CalendarPage() {
     room_id: "",
     appointment_date: new Date().toISOString().split('T')[0],
     appointment_time: "",
-    notes: ""
-  });
-  
-  const [leadFormData, setLeadFormData] = useState({
-    name: "",
-    phone: "",
-    email: "",
-    source: "whatsapp",
-    status: "new",
+    amount: "",
+    paid: false,
     notes: ""
   });
 
