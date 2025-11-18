@@ -43,26 +43,24 @@ export default function Layout({ children }) {
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
-      <aside className={`bg-white shadow-xl flex flex-col transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-72'}`}>
-        <div className={`p-6 border-b border-gray-100 ${isCollapsed ? 'px-3' : ''}`}>
+      <aside className={`bg-white shadow-xl flex flex-col transition-all duration-500 ease-in-out ${isCollapsed ? 'w-20' : 'w-72'} md:relative fixed md:translate-x-0 z-40`}>
+        <div className={`p-6 border-b border-gray-100 transition-all duration-500 ${isCollapsed ? 'px-3 py-4' : 'py-6'}`}>
           <div className="flex items-center justify-between">
-            {!isCollapsed && (
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-transparent">
-                  CliniFlow
-                </h1>
-                <p className="text-sm text-gray-500 mt-1">{user?.name}</p>
-                <p className="text-xs text-gray-400">
-                  {userType === "admin" ? "Super Usuário" : userType === "consultor" ? "Consultor" : "Profissional"}
-                </p>
-              </div>
-            )}
+            <div className={`flex-1 overflow-hidden transition-all duration-500 ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-transparent whitespace-nowrap">
+                CliniFlow
+              </h1>
+              <p className="text-sm text-gray-500 mt-1 whitespace-nowrap overflow-hidden text-ellipsis">{user?.name}</p>
+              <p className="text-xs text-gray-400 whitespace-nowrap">
+                {userType === "admin" ? "Super Usuário" : userType === "consultor" ? "Consultor" : "Profissional"}
+              </p>
+            </div>
             <button
               onClick={() => setIsCollapsed(!isCollapsed)}
-              className={`p-2 hover:bg-gray-100 rounded-lg transition-colors ${isCollapsed ? 'mx-auto' : ''}`}
+              className={`p-2 hover:bg-blue-50 rounded-lg transition-all duration-300 hover:scale-110 ${isCollapsed ? 'mx-auto' : 'flex-shrink-0'}`}
               title={isCollapsed ? "Expandir menu" : "Recolher menu"}
             >
-              <Menu className="w-5 h-5 text-gray-600" />
+              <Menu className={`w-5 h-5 text-blue-600 transition-transform duration-500 ${isCollapsed ? 'rotate-180' : ''}`} />
             </button>
           </div>
         </div>
@@ -76,11 +74,21 @@ export default function Layout({ children }) {
                 key={item.path}
                 to={item.path}
                 data-testid={`nav-link-${item.label.toLowerCase()}`}
-                className={`sidebar-link ${isActive ? "active" : ""} ${isCollapsed ? 'justify-center' : ''}`}
+                className={`sidebar-link group relative ${isActive ? "active" : ""} ${isCollapsed ? 'justify-center' : ''}`}
                 title={isCollapsed ? item.label : ""}
               >
-                <Icon className="w-5 h-5" />
-                {!isCollapsed && <span>{item.label}</span>}
+                <Icon className={`w-5 h-5 flex-shrink-0 transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`} />
+                <span className={`transition-all duration-500 overflow-hidden whitespace-nowrap ${isCollapsed ? 'opacity-0 w-0 ml-0' : 'opacity-100 ml-3'}`}>
+                  {item.label}
+                </span>
+                
+                {/* Tooltip para menu recolhido */}
+                {isCollapsed && (
+                  <div className="absolute left-full ml-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 whitespace-nowrap z-50 pointer-events-none">
+                    {item.label}
+                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-gray-900"></div>
+                  </div>
+                )}
               </Link>
             );
           })}
@@ -90,11 +98,13 @@ export default function Layout({ children }) {
           <button
             onClick={handleLogout}
             data-testid="logout-button"
-            className={`flex items-center gap-3 px-4 py-3 w-full text-red-600 hover:bg-red-50 rounded-xl transition-all ${isCollapsed ? 'justify-center' : ''}`}
+            className={`flex items-center gap-3 px-4 py-3 w-full text-red-600 hover:bg-red-50 rounded-xl transition-all duration-300 hover:scale-105 group ${isCollapsed ? 'justify-center' : ''}`}
             title={isCollapsed ? "Sair" : ""}
           >
-            <LogOut className="w-5 h-5" />
-            {!isCollapsed && <span>Sair</span>}
+            <LogOut className="w-5 h-5 flex-shrink-0 transition-transform duration-300 group-hover:scale-110" />
+            <span className={`transition-all duration-500 overflow-hidden whitespace-nowrap ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
+              Sair
+            </span>
           </button>
         </div>
       </aside>
