@@ -656,75 +656,75 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
             </>
           )}
         </div>
+      </DialogContent>
+    </Dialog>
 
-        {/* Treatment Dialog */}
-        <Dialog open={showTreatmentDialog} onOpenChange={setShowTreatmentDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Adicionar Tratamento</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label>Data do Tratamento *</Label>
-                <Input
-                  type="date"
-                  value={treatmentForm.date}
-                  onChange={(e) => setTreatmentForm({...treatmentForm, date: e.target.value})}
-                />
-              </div>
-              <div>
-                <Label>Serviço Realizado *</Label>
-                <select
-                  className="input-field"
-                  value={treatmentForm.service_id}
-                  onChange={(e) => handleServiceChange(e.target.value)}
-                >
-                  <option value="">Selecione um serviço</option>
-                  {services.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label>Profissional (opcional)</Label>
-                <select
-                  className="input-field"
-                  value={treatmentForm.professional_id}
-                  onChange={(e) => handleProfessionalChange(e.target.value)}
-                >
-                  <option value="">Nenhum</option>
-                  {professionals.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label>Status</Label>
-                <select
-                  className="input-field"
-                  value={treatmentForm.status}
-                  onChange={(e) => setTreatmentForm({...treatmentForm, status: e.target.value})}
-                >
-                  <option value="completed">Concluído</option>
-                  <option value="in_progress">Em andamento</option>
-                </select>
-              </div>
-              <div>
-                <Label>Descrição (opcional)</Label>
-                <textarea
-                  className="input-field"
-                  value={treatmentForm.description}
-                  onChange={(e) => setTreatmentForm({...treatmentForm, description: e.target.value})}
-                  placeholder="Observações sobre o tratamento"
-                  rows={3}
-                />
-              </div>
-              <Button onClick={handleAddTreatment} className="w-full btn-primary">
-                Adicionar Tratamento
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+    {/* Treatment Dialog - Moved outside main dialog */}
+    <Dialog open={showTreatmentDialog} onOpenChange={setShowTreatmentDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Adicionar Tratamento</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label>Data do Tratamento *</Label>
+            <Input
+              type="date"
+              value={treatmentForm.date}
+              onChange={(e) => setTreatmentForm({...treatmentForm, date: e.target.value})}
+            />
+          </div>
+          <div>
+            <Label>Serviço Realizado *</Label>
+            <select
+              className="input-field"
+              value={treatmentForm.service_id}
+              onChange={(e) => handleServiceChange(e.target.value)}
+            >
+              <option value="">Selecione um serviço</option>
+              {services.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label>Profissional (opcional)</Label>
+            <select
+              className="input-field"
+              value={treatmentForm.professional_id}
+              onChange={(e) => handleProfessionalChange(e.target.value)}
+            >
+              <option value="">Nenhum</option>
+              {professionals.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label>Status</Label>
+            <select
+              className="input-field"
+              value={treatmentForm.status}
+              onChange={(e) => setTreatmentForm({...treatmentForm, status: e.target.value})}
+            >
+              <option value="completed">Concluído</option>
+              <option value="in_progress">Em andamento</option>
+            </select>
+          </div>
+          <div>
+            <Label>Descrição (opcional)</Label>
+            <textarea
+              className="input-field"
+              value={treatmentForm.description}
+              onChange={(e) => setTreatmentForm({...treatmentForm, description: e.target.value})}
+              placeholder="Observações sobre o tratamento"
+              rows={3}
+            />
+          </div>
+          <Button onClick={handleAddTreatment} className="w-full btn-primary">
+            Adicionar Tratamento
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
