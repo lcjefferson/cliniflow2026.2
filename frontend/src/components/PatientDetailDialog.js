@@ -660,6 +660,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       </DialogContent>
     </Dialog>
 
+
     {/* Treatment Dialog - Moved outside main dialog */}
     <Dialog open={showTreatmentDialog} onOpenChange={setShowTreatmentDialog}>
       <DialogContent>
