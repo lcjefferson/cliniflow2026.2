@@ -538,7 +538,7 @@ export default function RevenuePage() {
                 />
               </div>
               <Button type="submit" className="w-full btn-primary">
-                Registrar Pagamento
+                {editingId ? "Atualizar Transação" : "Registrar Pagamento"}
               </Button>
             </form>
           </DialogContent>
