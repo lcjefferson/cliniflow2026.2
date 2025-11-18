@@ -437,7 +437,10 @@ test_plan:
       description: "Test debt indicator on patients page and debt filter on revenue page"
       files: ["frontend/src/pages/PatientsPage.js", "frontend/src/pages/RevenuePage.js"]
       priority: "P1"
-  stuck_tasks: []
+  stuck_tasks: 
+    - task: "Authentication Session Management"
+      description: "Frontend authentication sessions are expiring quickly, causing redirects to login page during testing"
+      priority: "high"
   test_all: false
   test_priority: "high"
 
