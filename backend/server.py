@@ -206,6 +206,7 @@ class Transaction(BaseModel):
     payment_method: str  # cash, card, pix, etc
     description: str
     transaction_date: str
+    status: str = "paid"  # paid, pending
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class TransactionCreate(BaseModel):
@@ -215,6 +216,7 @@ class TransactionCreate(BaseModel):
     payment_method: str
     description: str
     transaction_date: str
+    status: str = "paid"
 
 class MedicalRecord(BaseModel):
     model_config = ConfigDict(extra="ignore")
