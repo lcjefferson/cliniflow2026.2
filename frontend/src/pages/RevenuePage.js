@@ -25,7 +25,6 @@ export default function RevenuePage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(15);
   const [patientDebts, setPatientDebts] = useState({});
-  const [patientSearchTerm, setPatientSearchTerm] = useState("");
   const [formData, setFormData] = useState({
     patient_id: "",
     appointment_id: "",
