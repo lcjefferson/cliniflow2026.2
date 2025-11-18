@@ -264,6 +264,14 @@ export default function PatientsPage() {
             </Button>
           </div>
         )}
+
+        {/* Patient Detail Dialog */}
+        <PatientDetailDialog
+          patient={selectedPatient}
+          isOpen={showDetailDialog}
+          onClose={handleCloseDetailDialog}
+          onUpdate={handleUpdatePatient}
+        />
       </div>
     </Layout>
   );
