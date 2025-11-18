@@ -443,6 +443,34 @@ test_plan:
 
 agent_communication:
   - agent: "fork_main"
+    message: "✨ NOVAS FUNCIONALIDADES IMPLEMENTADAS - Patient Management Enhancement:
+    
+    BACKEND:
+    - ✅ Modelo Patient atualizado com: attachments, treatments, anamnese
+    - ✅ Novos endpoints: /patients/{id}/attachments (POST, DELETE)
+    - ✅ Novos endpoints: /patients/{id}/treatments (POST, PUT, DELETE)
+    - ✅ Novo endpoint: /patients/{id}/anamnese (PUT)
+    - ✅ Novo endpoint: /patients/{id}/debts (GET) - calcula débitos de appointments não pagos
+    - ✅ Novo endpoint: /patients/{id}/professionals (GET) - lista profissionais que atenderam
+    
+    FRONTEND:
+    - ✅ Novo componente: PatientDetailDialog.js com 6 abas:
+      * Info: Informações básicas + indicador de débito
+      * Anexos: Upload de arquivos (max 10MB), download, delete
+      * Prontuários: Histórico de prontuários do paciente
+      * Tratamentos: Gerenciar tratamentos realizados (baseado em serviços)
+      * Anamnese: Formulário completo (histórico médico, odontológico, alergias)
+      * Profissionais: Lista de profissionais que atenderam o paciente
+    - ✅ PatientsPage: Adicionado botão 'Ver Detalhes' + indicador de débito
+    - ✅ RevenuePage: Adicionado filtro 'Apenas com Débito' + indicador de débito nas transações
+    
+    VALIDAÇÃO BACKEND:
+    - ✅ Backend API testado: GET /api/patients retornando corretamente com novos campos
+    - ✅ Backend API testado: GET /api/patients/{id}/debts calculando débitos
+    - ⏳ Aguardando teste do frontend testing agent
+    
+    Próximo passo: Invocar frontend testing agent para validação completa de todas as novas funcionalidades."
+  - agent: "fork_main"
     message: "🔧 BUG FIX EM PROGRESSO - Search and Filter Functionality:
     
     PROBLEMA IDENTIFICADO:
