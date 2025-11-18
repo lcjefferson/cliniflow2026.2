@@ -217,9 +217,10 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   ];
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl h-[90vh] flex flex-col p-0">
-        <div className="p-6 pb-0">
+      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+        <div className="flex-shrink-0 p-6 pb-0">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <div>
@@ -256,7 +257,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto p-6 min-h-0">
+        <div className="flex-1 overflow-y-auto px-6 pb-6 pt-4" style={{minHeight: 0}}>
           {loading ? (
             <div className="text-center py-8 text-gray-500">Carregando...</div>
           ) : (
