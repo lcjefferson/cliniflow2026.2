@@ -13,6 +13,7 @@ export default function RevenuePage() {
   const [appointments, setAppointments] = useState([]);
   const [patients, setPatients] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterPaymentMethod, setFilterPaymentMethod] = useState("");
