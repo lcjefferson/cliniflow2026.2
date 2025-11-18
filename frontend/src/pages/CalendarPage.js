@@ -16,6 +16,10 @@ export default function CalendarPage() {
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [viewMode, setViewMode] = useState("month"); // month, week, day
+  const [filterProfessional, setFilterProfessional] = useState("");
+  const [filterRoom, setFilterRoom] = useState("");
+  const [filterService, setFilterService] = useState("");
   const [showDialog, setShowDialog] = useState(false);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showNewPatientDialog, setShowNewPatientDialog] = useState(false);
