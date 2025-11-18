@@ -349,6 +349,54 @@ frontend:
         agent: "testing"
         comment: "🎉 TESTE COMPLETO REALIZADO COM 100% DE SUCESSO! ✅ LEADS PAGE: Busca funcionando por nome ('Luciana'), telefone ('99999-4444'), email ('luciana.s@email.com'). Filtros de Status testados (Novos: 5 resultados, Contatados: 0, Quentes: 6, Frios: 0). Filtros de Origem testados (WhatsApp: 9, Instagram: 2, Messenger: 1). Filtros combinados funcionando (Status+Origem: 5 resultados). Botão 'Limpar Filtros' aparece quando filtros ativos e funciona perfeitamente. ✅ PATIENTS PAGE: Busca funcionando por nome ('Daniele'), telefone ('88992971648'), email ('dany@gmail.com'). Botão 'Limpar' aparece e funciona. Contador de resultados funcionando. ✅ BUG ANTERIOR CORRIGIDO: Componente 'X' do lucide-react importado corretamente em ambas as páginas. ✅ Nenhum erro no console ou rede. Sistema 100% funcional!"
 
+  - task: "Patient Detail Dialog with 6 Tabs"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/PatientDetailDialog.js"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "❌ TESTE PARCIAL: Componente PatientDetailDialog implementado com todas as 6 abas (Info, Anexos, Prontuários, Tratamentos, Anamnese, Profissionais). Código verificado e estrutura correta. PROBLEMA: Sessões de autenticação expirando durante testes, impedindo acesso ao modal. Botões 'Ver Detalhes' (ícones de olho) presentes na página mas não acessíveis devido a redirecionamentos para login. Backend APIs funcionando (/api/patients/{id}/debts, /api/patients/{id}/professionals). Necessário resolver problema de sessão JWT para teste completo."
+
+  - task: "Patient Debt Indicators"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/PatientsPage.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "ℹ️ TESTE PARCIAL: Funcionalidade implementada no código. Durante testes, nenhum indicador de débito foi encontrado na lista de pacientes, indicando que os 2 pacientes no sistema (Paulo Silva, Luciana Santos) não possuem débitos pendentes. Backend API /api/patients/{id}/debts funcionando corretamente. Código de indicador de débito presente em PatientsPage.js (linhas 170-175)."
+
+  - task: "Revenue Page Debt Filter"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/RevenuePage.js"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "❌ TESTE INCOMPLETO: Filtro de débito implementado no código (linhas 182-191 em RevenuePage.js) com opções 'Todos os Pacientes' e 'Apenas com Débito'. PROBLEMA: Não foi possível acessar a página de faturamento durante testes devido a problemas de sessão de autenticação. Código verificado e estrutura correta presente. Necessário resolver problema de sessão JWT para teste completo."
+
+  - task: "Authentication Session Management"
+    implemented: true
+    working: false
+    file: "frontend/src/services/api.js, frontend/src/contexts/AuthContext.js"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "❌ PROBLEMA CRÍTICO: Sessões de autenticação JWT expirando rapidamente durante navegação, causando redirecionamentos frequentes para página de login. Isso impede testes completos das novas funcionalidades. Login inicial funciona, mas sessão não persiste durante navegação entre páginas. Backend logs mostram requests de login bem-sucedidos, mas problema parece estar no gerenciamento de tokens no frontend."
+
   - task: "Página de Calendário/Agendamentos"
     implemented: true
     working: "NA"
