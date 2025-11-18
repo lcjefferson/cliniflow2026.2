@@ -819,6 +819,27 @@ async def get_transactions(patient_id: Optional[str] = None, current_user: dict 
             trans['created_at'] = datetime.fromisoformat(trans['created_at'])
     return transactions
 
+@api_router.put("/transactions/{transaction_id}", response_model=Transaction)
+async def update_transaction(transaction_id: str, data: TransactionCreate, current_user: dict = Depends(get_current_user)):
+    result = await db.transactions.update_one(
+        {"id": transaction_id},
+        {"$set": data.model_dump()}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    updated = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
+    if isinstance(updated['created_at'], str):
+        updated['created_at'] = datetime.fromisoformat(updated['created_at'])
+    return Transaction(**updated)
+
+@api_router.delete("/transactions/{transaction_id}")
+async def delete_transaction(transaction_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.transactions.delete_one({"id": transaction_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return {"message": "Transaction deleted successfully"}
+
 @api_router.get("/revenue/total")
 async def get_total_revenue(current_user: dict = Depends(get_current_user)):
     # Only admins can see revenue
