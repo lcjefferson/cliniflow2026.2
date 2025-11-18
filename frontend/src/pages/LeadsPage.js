@@ -138,11 +138,22 @@ export default function LeadsPage() {
     return <span className={`status-badge ${styles[status]}`}>{labels[status]}</span>;
   };
 
+  // Filtros e Pesquisa
+  const filteredLeads = leads.filter(lead => {
+    const matchesSearch = lead.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         lead.phone.includes(searchTerm) ||
+                         (lead.email && lead.email.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesStatus = !filterStatus || lead.status === filterStatus;
+    const matchesSource = !filterSource || lead.source === filterSource;
+    
+    return matchesSearch && matchesStatus && matchesSource;
+  });
+
   // Paginação
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentLeads = leads.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(leads.length / itemsPerPage);
+  const currentLeads = filteredLeads.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredLeads.length / itemsPerPage);
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
