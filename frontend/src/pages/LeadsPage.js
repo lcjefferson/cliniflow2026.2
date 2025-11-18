@@ -15,6 +15,8 @@ export default function LeadsPage() {
   const [editingId, setEditingId] = useState(null);
   const [convertingLead, setConvertingLead] = useState(null);
   const [filterStatus, setFilterStatus] = useState("");
+  const [filterSource, setFilterSource] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [formData, setFormData] = useState({ 
