@@ -729,5 +729,6 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         </div>
       </DialogContent>
     </Dialog>
+    </>
   );
 }
