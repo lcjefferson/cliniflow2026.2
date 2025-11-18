@@ -109,6 +109,48 @@ class RoomCreate(BaseModel):
     name: str
     capacity: int
 
+class Attachment(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    filename: str
+    file_data: str  # base64 encoded
+    file_type: str
+    upload_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    size_bytes: int
+
+class Treatment(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    date: str
+    service_id: str
+    service_name: str
+    description: Optional[str] = None
+    professional_id: Optional[str] = None
+    professional_name: Optional[str] = None
+    status: str = "completed"  # completed, in_progress
+
+class Anamnese(BaseModel):
+    # Histórico Médico
+    chronic_diseases: Optional[str] = None
+    allergies_medical: Optional[str] = None
+    current_medications: Optional[str] = None
+    surgery_history: Optional[str] = None
+    mental_health: Optional[str] = None
+    
+    # Histórico Odontológico
+    previous_treatments: Optional[str] = None
+    prosthetics: Optional[str] = None
+    implants: Optional[str] = None
+    pain_history: Optional[str] = None
+    periodontal_issues: Optional[str] = None
+    facial_surgeries: Optional[str] = None
+    oral_hygiene_products: Optional[str] = None
+    
+    # Alergias Específicas
+    medication_allergies: Optional[str] = None
+    material_allergies: Optional[str] = None
+    substance_allergies: Optional[str] = None
+    
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 class Patient(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -117,6 +159,9 @@ class Patient(BaseModel):
     phone: str
     birthdate: str
     address: Optional[str] = None
+    attachments: List[Attachment] = []
+    treatments: List[Treatment] = []
+    anamnese: Optional[Anamnese] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class PatientCreate(BaseModel):
