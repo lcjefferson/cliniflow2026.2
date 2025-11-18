@@ -262,6 +262,12 @@ export default function RevenuePage() {
                       <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
                         {getPaymentMethodLabel(transaction.payment_method)}
                       </span>
+                      {transaction.status === "pending" && (
+                        <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          Pendente
+                        </span>
+                      )}
                       {patientDebts[transaction.patient_id] > 0 && (
                         <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-semibold flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
@@ -275,9 +281,12 @@ export default function RevenuePage() {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-2xl font-bold text-green-600">
+                    <p className={`text-2xl font-bold ${transaction.status === 'pending' ? 'text-orange-600' : 'text-green-600'}`}>
                       R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </p>
+                    {transaction.status === "pending" && (
+                      <p className="text-xs text-orange-600 mt-1">Aguardando pagamento</p>
+                    )}
                   </div>
                 </div>
               </div>
