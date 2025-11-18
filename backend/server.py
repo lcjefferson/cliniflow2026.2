@@ -744,6 +744,20 @@ async def delete_medical_record(record_id: str, current_user: dict = Depends(get
 # Lead Routes
 @api_router.post("/leads", response_model=Lead)
 async def create_lead(data: LeadCreate, current_user: dict = Depends(get_current_user)):
+    # Verificar se já existe paciente com mesmo telefone ou email
+    existing_patient = await db.patients.find_one({
+        "$or": [
+            {"email": data.email} if data.email else {},
+            {"phone": data.phone}
+        ]
+    }, {"_id": 0})
+    
+    if existing_patient:
+        raise HTTPException(
+            status_code=400, 
+            detail="Este contato já é um paciente cadastrado. Não é possível criar um lead."
+        )
+    
     lead = Lead(**data.model_dump())
     doc = lead.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
