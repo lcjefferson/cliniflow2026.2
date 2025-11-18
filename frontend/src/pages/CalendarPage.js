@@ -665,45 +665,14 @@ export default function CalendarPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <Label>Paciente</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowNewPatientDialog(true)}
-                      className="text-xs"
-                    >
-                      + Novo Paciente
-                    </Button>
-                  </div>
-                  <Input
-                    type="text"
-                    placeholder="Pesquisar paciente..."
-                    value={patientSearchTerm}
-                    onChange={(e) => setPatientSearchTerm(e.target.value)}
-                    className="mb-2"
-                  />
-                  <select
-                    className="input-field"
+                  <Label className="mb-2 block">Paciente *</Label>
+                  <PatientCombobox
+                    patients={patients}
                     value={formData.patient_id}
-                    onChange={(e) => setFormData({...formData, patient_id: e.target.value})}
-                    required
-                  >
-                    <option value="">Selecione um paciente</option>
-                    {patients
-                      .filter(p => 
-                        !patientSearchTerm ||
-                        p.name.toLowerCase().includes(patientSearchTerm.toLowerCase()) ||
-                        p.email.toLowerCase().includes(patientSearchTerm.toLowerCase()) ||
-                        p.phone.includes(patientSearchTerm)
-                      )
-                      .map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} - {p.phone}
-                        </option>
-                      ))}
-                  </select>
+                    onChange={(patientId) => setFormData({...formData, patient_id: patientId})}
+                    onCreateNew={() => setShowNewPatientDialog(true)}
+                    placeholder="Busque ou selecione um paciente..."
+                  />
                 </div>
                 <div>
                   <Label>Profissional</Label>
