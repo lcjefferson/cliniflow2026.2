@@ -324,15 +324,30 @@ frontend:
 
   - task: "Página de Pacientes"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/src/pages/PatientsPage.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Página restaurada. Precisa testar CRUD completo."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO COMPLETAMENTE: Página carregando corretamente, busca funcionando por nome/telefone/email (testado com 'Daniele', '88992971648', 'dany@gmail.com'), botão 'Limpar' aparece e funciona corretamente, contador de resultados funcionando. Encontrados 2 pacientes no sistema. Funcionalidade de busca 100% operacional."
+
+  - task: "Search and Filter functionality on LeadsPage and PatientsPage"
+    implemented: true
+    working: true
+    file: "frontend/src/pages/LeadsPage.js, frontend/src/pages/PatientsPage.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "🎉 TESTE COMPLETO REALIZADO COM 100% DE SUCESSO! ✅ LEADS PAGE: Busca funcionando por nome ('Luciana'), telefone ('99999-4444'), email ('luciana.s@email.com'). Filtros de Status testados (Novos: 5 resultados, Contatados: 0, Quentes: 6, Frios: 0). Filtros de Origem testados (WhatsApp: 9, Instagram: 2, Messenger: 1). Filtros combinados funcionando (Status+Origem: 5 resultados). Botão 'Limpar Filtros' aparece quando filtros ativos e funciona perfeitamente. ✅ PATIENTS PAGE: Busca funcionando por nome ('Daniele'), telefone ('88992971648'), email ('dany@gmail.com'). Botão 'Limpar' aparece e funciona. Contador de resultados funcionando. ✅ BUG ANTERIOR CORRIGIDO: Componente 'X' do lucide-react importado corretamente em ambas as páginas. ✅ Nenhum erro no console ou rede. Sistema 100% funcional!"
 
   - task: "Página de Calendário/Agendamentos"
     implemented: true
