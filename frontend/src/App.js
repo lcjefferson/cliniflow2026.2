@@ -17,6 +17,7 @@ import ServicesPage from "./pages/ServicesPage";
 import RoomsPage from "./pages/RoomsPage";
 import PatientsPage from "./pages/PatientsPage";
 import MedicalRecordsPage from "./pages/MedicalRecordsPage";
+import ReportsPage from "./pages/ReportsPage";
 import RevenuePage from "./pages/RevenuePage";
 import UsersPage from "./pages/UsersPage";
 import SettingsPage from "./pages/SettingsPage";
