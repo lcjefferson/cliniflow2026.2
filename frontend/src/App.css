@@ -1,15 +1,22 @@
 /* CliniFlow Custom Styles */
 
 .sidebar-link {
-  @apply flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200;
+  @apply flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ease-in-out;
 }
 
 .sidebar-link:hover {
-  @apply bg-blue-50 text-blue-700 transform translate-x-1;
+  @apply bg-blue-50 text-blue-700 transform translate-x-1 shadow-md;
 }
 
 .sidebar-link.active {
-  @apply bg-blue-500 text-white shadow-lg shadow-blue-200;
+  @apply bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-300 scale-105;
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+  .sidebar-link {
+    @apply px-3 py-2;
+  }
 }
 
 .card-hover {
