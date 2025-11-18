@@ -319,13 +319,31 @@ export default function RevenuePage() {
 
         {/* Modal de Registrar Pagamento */}
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Registrar Pagamento</DialogTitle>
+              <DialogTitle>Registrar Pagamento/Débito</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
+                <Label>Status da Transação *</Label>
+                <select
+                  className="input-field"
+                  value={formData.status}
+                  onChange={(e) => setFormData({...formData, status: e.target.value})}
+                >
+                  <option value="paid">Pagamento Recebido</option>
+                  <option value="pending">Débito Pendente</option>
+                </select>
+              </div>
+
+              <div>
                 <Label>Paciente *</Label>
+                <Input
+                  placeholder="Pesquisar paciente..."
+                  value={patientSearchTerm}
+                  onChange={(e) => setPatientSearchTerm(e.target.value)}
+                  className="mb-2"
+                />
                 <select
                   className="input-field"
                   value={formData.patient_id}
@@ -333,9 +351,18 @@ export default function RevenuePage() {
                   required
                 >
                   <option value="">Selecione um paciente</option>
-                  {patients.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
+                  {patients
+                    .filter(p => 
+                      !patientSearchTerm || 
+                      p.name.toLowerCase().includes(patientSearchTerm.toLowerCase()) ||
+                      p.email.toLowerCase().includes(patientSearchTerm.toLowerCase()) ||
+                      p.phone.includes(patientSearchTerm)
+                    )
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} - {p.phone}
+                      </option>
+                    ))}
                 </select>
               </div>
               <div>
