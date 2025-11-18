@@ -13,7 +13,14 @@ export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const isAdmin = user?.role?.is_admin;
   const userType = user?.user_type || "consultor"; // admin, consultor, profissional
-  const [isCollapsed, setIsCollapsed] = React.useState(false);
+  
+  // Inicializa menu recolhido em mobile
+  const [isCollapsed, setIsCollapsed] = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 768; // md breakpoint
+    }
+    return false;
+  });
 
   const handleLogout = () => {
     logout();
