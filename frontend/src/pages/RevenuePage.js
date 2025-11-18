@@ -75,15 +75,21 @@ export default function RevenuePage() {
         ...formData,
         amount: parseFloat(formData.amount)
       };
-      await api.post("/transactions", payload);
       
-      if (formData.status === "paid") {
-        toast.success("Pagamento registrado!");
+      if (editingId) {
+        await api.put(`/transactions/${editingId}`, payload);
+        toast.success("Transação atualizada!");
       } else {
-        toast.success("Débito registrado!");
+        await api.post("/transactions", payload);
+        if (formData.status === "paid") {
+          toast.success("Pagamento registrado!");
+        } else {
+          toast.success("Débito registrado!");
+        }
       }
       
       setShowDialog(false);
+      setEditingId(null);
       setFormData({
         patient_id: "",
         appointment_id: "",
@@ -96,8 +102,49 @@ export default function RevenuePage() {
       setPatientSearchTerm("");
       loadData();
     } catch (error) {
-      toast.error("Erro ao registrar pagamento/débito");
+      toast.error(editingId ? "Erro ao atualizar transação" : "Erro ao registrar pagamento/débito");
     }
+  };
+
+  const handleEdit = (transaction) => {
+    setEditingId(transaction.id);
+    setFormData({
+      patient_id: transaction.patient_id,
+      appointment_id: transaction.appointment_id || "",
+      amount: transaction.amount.toString(),
+      payment_method: transaction.payment_method,
+      description: transaction.description,
+      transaction_date: transaction.transaction_date,
+      status: transaction.status || "paid"
+    });
+    setShowDialog(true);
+  };
+
+  const handleDelete = async (transactionId) => {
+    if (!window.confirm("Tem certeza que deseja deletar esta transação?")) return;
+    
+    try {
+      await api.delete(`/transactions/${transactionId}`);
+      toast.success("Transação deletada!");
+      loadData();
+    } catch (error) {
+      toast.error("Erro ao deletar transação");
+    }
+  };
+
+  const handleCloseDialog = () => {
+    setShowDialog(false);
+    setEditingId(null);
+    setFormData({
+      patient_id: "",
+      appointment_id: "",
+      amount: "",
+      payment_method: "cash",
+      description: "",
+      transaction_date: new Date().toISOString().split('T')[0],
+      status: "paid"
+    });
+    setPatientSearchTerm("");
   };
 
   const getPatientName = (patientId) => {
