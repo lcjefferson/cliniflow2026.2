@@ -28,15 +28,26 @@
 }
 
 .btn-primary {
-  @apply bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-xl font-medium shadow-lg shadow-blue-200 hover:shadow-xl hover:scale-105 transition-all duration-200;
+  @apply bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-xl font-medium shadow-lg shadow-blue-200 hover:shadow-xl hover:scale-105 transition-all duration-300 active:scale-95;
 }
 
 .btn-secondary {
-  @apply bg-white text-blue-600 border-2 border-blue-200 px-6 py-3 rounded-xl font-medium hover:bg-blue-50 hover:border-blue-300 transition-all duration-200;
+  @apply bg-white text-blue-600 border-2 border-blue-200 px-6 py-3 rounded-xl font-medium hover:bg-blue-50 hover:border-blue-300 transition-all duration-300 active:scale-95;
 }
 
 .input-field {
-  @apply w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all duration-200 bg-white;
+  @apply w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all duration-300 bg-white;
+}
+
+/* Responsividade para botões e inputs */
+@media (max-width: 640px) {
+  .btn-primary, .btn-secondary {
+    @apply px-4 py-2 text-sm;
+  }
+  
+  .input-field {
+    @apply px-3 py-2 text-sm;
+  }
 }
 
 .status-badge {
