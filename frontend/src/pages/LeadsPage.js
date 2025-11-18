@@ -144,6 +144,18 @@ export default function LeadsPage() {
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
+  const handleCleanupDuplicates = async () => {
+    if (!window.confirm("Deseja remover leads que já são pacientes cadastrados?")) return;
+    
+    try {
+      const response = await api.post("/leads/cleanup-duplicates");
+      toast.success(response.data.message);
+      loadLeads();
+    } catch (error) {
+      toast.error("Erro ao limpar leads duplicados");
+    }
+  };
+
   return (
     <Layout>
       <div>
@@ -160,6 +172,10 @@ export default function LeadsPage() {
               <option value="hot">Quentes</option>
               <option value="converted">Convertidos</option>
             </select>
+            <Button onClick={handleCleanupDuplicates} variant="outline" className="btn-secondary">
+              <Trash2 className="w-5 h-5 mr-2" />
+              Limpar Duplicados
+            </Button>
             <Button onClick={() => setShowDialog(true)} className="btn-primary">
               <Plus className="w-5 h-5 mr-2" />
               Adicionar Lead
