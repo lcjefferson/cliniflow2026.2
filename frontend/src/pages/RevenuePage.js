@@ -74,7 +74,13 @@ export default function RevenuePage() {
         amount: parseFloat(formData.amount)
       };
       await api.post("/transactions", payload);
-      toast.success("Pagamento registrado!");
+      
+      if (formData.status === "paid") {
+        toast.success("Pagamento registrado!");
+      } else {
+        toast.success("Débito registrado!");
+      }
+      
       setShowDialog(false);
       setFormData({
         patient_id: "",
@@ -82,11 +88,13 @@ export default function RevenuePage() {
         amount: "",
         payment_method: "cash",
         description: "",
-        transaction_date: new Date().toISOString().split('T')[0]
+        transaction_date: new Date().toISOString().split('T')[0],
+        status: "paid"
       });
+      setPatientSearchTerm("");
       loadData();
     } catch (error) {
-      toast.error("Erro ao registrar pagamento");
+      toast.error("Erro ao registrar pagamento/débito");
     }
   };
 
