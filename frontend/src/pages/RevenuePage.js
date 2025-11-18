@@ -90,11 +90,25 @@ export default function RevenuePage() {
     return labels[method] || method;
   };
 
+  // Filtros e Pesquisa
+  const filteredTransactions = transactions.filter(trans => {
+    const matchesSearch = getPatientName(trans.patient_id).toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         trans.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesPayment = !filterPaymentMethod || trans.payment_method === filterPaymentMethod;
+    const matchesDateStart = !filterDateStart || trans.transaction_date >= filterDateStart;
+    const matchesDateEnd = !filterDateEnd || trans.transaction_date <= filterDateEnd;
+    
+    return matchesSearch && matchesPayment && matchesDateStart && matchesDateEnd;
+  });
+
+  // Calcular total filtrado
+  const filteredTotal = filteredTransactions.reduce((sum, trans) => sum + trans.amount, 0);
+
   // Paginação
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentTransactions = transactions.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(transactions.length / itemsPerPage);
+  const currentTransactions = filteredTransactions.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
 
   return (
     <Layout>
