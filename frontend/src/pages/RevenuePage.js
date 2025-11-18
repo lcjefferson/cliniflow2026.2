@@ -245,21 +245,40 @@ export default function RevenuePage() {
           )}
         </div>
 
-        {/* Card de Resumo */}
-        <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-2xl p-8 shadow-lg mb-8">
-          <div className="flex items-center justify-between text-white">
-            <div>
-              <p className="text-green-100 text-sm mb-2">
-                {(searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd) ? "Faturamento Filtrado" : "Faturamento Total"}
-              </p>
-              <h2 className="text-4xl font-bold">
-                R$ {((searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd) ? filteredTotal : totalRevenue).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </h2>
-              <p className="text-green-100 text-sm mt-2">
-                {(searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd) ? filteredTransactions.length : transactions.length} transações
-              </p>
+        {/* Cards de Resumo */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-2xl p-8 shadow-lg">
+            <div className="flex items-center justify-between text-white">
+              <div>
+                <p className="text-green-100 text-sm mb-2">
+                  {(searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd || filterStatus || filterWithDebt) ? "Pagamentos Recebidos (Filtrado)" : "Total Recebido"}
+                </p>
+                <h2 className="text-4xl font-bold">
+                  R$ {filteredTransactions.filter(t => t.status === 'paid').reduce((sum, t) => sum + t.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </h2>
+                <p className="text-green-100 text-sm mt-2">
+                  {filteredTransactions.filter(t => t.status === 'paid').length} transações pagas
+                </p>
+              </div>
+              <CheckCircle className="w-20 h-20 opacity-30" />
             </div>
-            <DollarSign className="w-20 h-20 opacity-30" />
+          </div>
+
+          <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl p-8 shadow-lg">
+            <div className="flex items-center justify-between text-white">
+              <div>
+                <p className="text-orange-100 text-sm mb-2">
+                  {(searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd || filterStatus || filterWithDebt) ? "Débitos Pendentes (Filtrado)" : "Total Pendente"}
+                </p>
+                <h2 className="text-4xl font-bold">
+                  R$ {filteredTransactions.filter(t => t.status === 'pending').reduce((sum, t) => sum + t.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </h2>
+                <p className="text-orange-100 text-sm mt-2">
+                  {filteredTransactions.filter(t => t.status === 'pending').length} débitos pendentes
+                </p>
+              </div>
+              <Clock className="w-20 h-20 opacity-30" />
+            </div>
           </div>
         </div>
 
