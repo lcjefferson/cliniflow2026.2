@@ -2,7 +2,7 @@ import requests
 import json
 
 def test_token_validation():
-    base_url = "https://clinic-restore.preview.emergentagent.com/api"
+    base_url = "https://cliniflow-1.preview.emergentagent.com/api"
     
     # First, register a profissional user
     print("🔍 Registering profissional user...")
