@@ -19,6 +19,7 @@ export default function RevenuePage() {
   const [filterDateStart, setFilterDateStart] = useState("");
   const [filterDateEnd, setFilterDateEnd] = useState("");
   const [filterWithDebt, setFilterWithDebt] = useState(false);
+  const [filterStatus, setFilterStatus] = useState(""); // all, paid, pending
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(15);
   const [patientDebts, setPatientDebts] = useState({});
