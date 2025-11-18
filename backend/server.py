@@ -613,6 +613,131 @@ async def delete_patient(patient_id: str, current_user: dict = Depends(get_curre
         raise HTTPException(status_code=404, detail="Patient not found")
     return {"message": "Patient deleted successfully"}
 
+# Patient Attachments
+@api_router.post("/patients/{patient_id}/attachments")
+async def add_attachment(patient_id: str, attachment: Attachment, current_user: dict = Depends(get_current_user)):
+    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    attachment_dict = attachment.model_dump()
+    attachment_dict['upload_date'] = attachment_dict['upload_date'].isoformat()
+    
+    await db.patients.update_one(
+        {"id": patient_id},
+        {"$push": {"attachments": attachment_dict}}
+    )
+    return {"message": "Attachment added successfully", "attachment": attachment}
+
+@api_router.delete("/patients/{patient_id}/attachments/{attachment_id}")
+async def delete_attachment(patient_id: str, attachment_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.patients.update_one(
+        {"id": patient_id},
+        {"$pull": {"attachments": {"id": attachment_id}}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return {"message": "Attachment deleted successfully"}
+
+# Patient Treatments
+@api_router.post("/patients/{patient_id}/treatments")
+async def add_treatment(patient_id: str, treatment: Treatment, current_user: dict = Depends(get_current_user)):
+    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    await db.patients.update_one(
+        {"id": patient_id},
+        {"$push": {"treatments": treatment.model_dump()}}
+    )
+    return {"message": "Treatment added successfully", "treatment": treatment}
+
+@api_router.put("/patients/{patient_id}/treatments/{treatment_id}")
+async def update_treatment(patient_id: str, treatment_id: str, treatment: Treatment, current_user: dict = Depends(get_current_user)):
+    result = await db.patients.update_one(
+        {"id": patient_id, "treatments.id": treatment_id},
+        {"$set": {
+            "treatments.$.date": treatment.date,
+            "treatments.$.service_id": treatment.service_id,
+            "treatments.$.service_name": treatment.service_name,
+            "treatments.$.description": treatment.description,
+            "treatments.$.professional_id": treatment.professional_id,
+            "treatments.$.professional_name": treatment.professional_name,
+            "treatments.$.status": treatment.status
+        }}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Patient or treatment not found")
+    return {"message": "Treatment updated successfully"}
+
+@api_router.delete("/patients/{patient_id}/treatments/{treatment_id}")
+async def delete_treatment(patient_id: str, treatment_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.patients.update_one(
+        {"id": patient_id},
+        {"$pull": {"treatments": {"id": treatment_id}}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return {"message": "Treatment deleted successfully"}
+
+# Patient Anamnese
+@api_router.put("/patients/{patient_id}/anamnese")
+async def update_anamnese(patient_id: str, anamnese: Anamnese, current_user: dict = Depends(get_current_user)):
+    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    anamnese_dict = anamnese.model_dump()
+    anamnese_dict['last_updated'] = anamnese_dict['last_updated'].isoformat()
+    
+    await db.patients.update_one(
+        {"id": patient_id},
+        {"$set": {"anamnese": anamnese_dict}}
+    )
+    return {"message": "Anamnese updated successfully", "anamnese": anamnese}
+
+# Patient Debts
+@api_router.get("/patients/{patient_id}/debts")
+async def get_patient_debts(patient_id: str, current_user: dict = Depends(get_current_user)):
+    # Get unpaid appointments
+    unpaid_appointments = await db.appointments.find(
+        {"patient_id": patient_id, "paid": False},
+        {"_id": 0}
+    ).to_list(1000)
+    
+    total_debt = sum(app.get('amount', 0) for app in unpaid_appointments)
+    
+    return {
+        "patient_id": patient_id,
+        "total_debt": total_debt,
+        "unpaid_appointments": unpaid_appointments,
+        "debt_count": len(unpaid_appointments)
+    }
+
+# Get professionals who attended a patient
+@api_router.get("/patients/{patient_id}/professionals")
+async def get_patient_professionals(patient_id: str, current_user: dict = Depends(get_current_user)):
+    # Get all appointments for this patient
+    appointments = await db.appointments.find(
+        {"patient_id": patient_id},
+        {"_id": 0, "professional_id": 1}
+    ).to_list(1000)
+    
+    # Get unique professional IDs
+    professional_ids = list(set(app['professional_id'] for app in appointments if app.get('professional_id')))
+    
+    # Get professional details
+    professionals = []
+    for prof_id in professional_ids:
+        prof = await db.professionals.find_one({"id": prof_id}, {"_id": 0})
+        if prof:
+            # Count appointments with this professional
+            appointment_count = sum(1 for app in appointments if app.get('professional_id') == prof_id)
+            prof['appointment_count'] = appointment_count
+            professionals.append(prof)
+    
+    return professionals
+
 # Appointment Routes
 @api_router.post("/appointments", response_model=Appointment)
 async def create_appointment(data: AppointmentCreate, current_user: dict = Depends(get_current_user)):
