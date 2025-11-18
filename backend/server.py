@@ -265,17 +265,21 @@ class Conversation(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     lead_id: str
     channel: str  # whatsapp, instagram, messenger
-    assigned_to: Optional[str] = None
+    assigned_to: Optional[str] = None  # user_id do consultor
+    assigned_to_name: Optional[str] = None  # nome do consultor
     status: str = "active"  # active, closed
+    last_message_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class Message(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     conversation_id: str
-    sender_type: str  # user, lead
+    sender_type: str  # consultant, lead
     sender_id: str
+    sender_name: str
     content: str
+    read: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class MessageCreate(BaseModel):
