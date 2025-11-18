@@ -824,6 +824,33 @@ async def convert_lead_to_patient(lead_id: str, birthdate: str, address: Optiona
     
     return patient
 
+@api_router.post("/leads/cleanup-duplicates")
+async def cleanup_duplicate_leads(current_user: dict = Depends(get_current_user)):
+    """Remove leads que já são pacientes (mesmo telefone ou email)"""
+    # Buscar todos os pacientes
+    patients = await db.patients.find({}, {"_id": 0, "email": 1, "phone": 1}).to_list(10000)
+    patient_emails = [p.get("email") for p in patients if p.get("email")]
+    patient_phones = [p.get("phone") for p in patients if p.get("phone")]
+    
+    # Buscar leads duplicados
+    duplicate_leads = await db.leads.find({
+        "$or": [
+            {"email": {"$in": patient_emails}},
+            {"phone": {"$in": patient_phones}}
+        ]
+    }, {"_id": 0, "id": 1}).to_list(10000)
+    
+    # Deletar leads duplicados
+    deleted_count = 0
+    for lead in duplicate_leads:
+        await db.leads.delete_one({"id": lead["id"]})
+        deleted_count += 1
+    
+    return {
+        "message": f"{deleted_count} leads duplicados foram removidos",
+        "deleted_count": deleted_count
+    }
+
 # Conversation Routes (Mocked)
 @api_router.get("/conversations", response_model=List[Conversation])
 async def get_conversations(current_user: dict = Depends(get_current_user)):
