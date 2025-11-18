@@ -8,7 +8,7 @@ import "@/index.css";
 // Pages
 import LoginPage from "./pages/LoginPage";
 import Dashboard from "./pages/Dashboard";
-import OmnichannelPage from "./pages/OmnichannelPage";
+import OmnichannelPage from "./pages/OmnichannelPageV2";
 import CalendarPage from "./pages/CalendarPage";
 import LeadsPage from "./pages/LeadsPage";
 import FollowUpPage from "./pages/FollowUpPage";
