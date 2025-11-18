@@ -89,8 +89,49 @@ export default function PatientsPage() {
           </Button>
         </div>
 
+        {/* Barra de Pesquisa */}
+        <div className="bg-white rounded-2xl p-6 shadow-lg mb-6">
+          <div className="flex items-end gap-4">
+            <div className="flex-1">
+              <Label className="text-sm font-semibold mb-2 block">Pesquisar Paciente</Label>
+              <Input
+                placeholder="Nome, telefone ou email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            {searchTerm && (
+              <Button
+                onClick={() => setSearchTerm("")}
+                variant="outline"
+                className="btn-secondary"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Limpar
+              </Button>
+            )}
+          </div>
+          {searchTerm && (
+            <p className="mt-3 text-sm text-gray-600">
+              {patients.filter(p => 
+                p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                p.phone.includes(searchTerm) ||
+                p.email.toLowerCase().includes(searchTerm.toLowerCase())
+              ).length} resultado(s) encontrado(s)
+            </p>
+          )}
+        </div>
+
         <div className="grid gap-6">
-          {patients.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((patient) => (
+          {patients
+            .filter(p => {
+              if (!searchTerm) return true;
+              return p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                     p.phone.includes(searchTerm) ||
+                     p.email.toLowerCase().includes(searchTerm.toLowerCase());
+            })
+            .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+            .map((patient) => (
             <div key={patient.id} className="bg-white rounded-2xl p-6 shadow-lg">
               <div className="flex justify-between items-start">
                 <div>
