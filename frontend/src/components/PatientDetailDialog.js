@@ -422,7 +422,13 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
               {/* Medical Records Tab */}
               {activeTab === "records" && (
                 <div className="space-y-4">
-                  <h3 className="text-lg font-semibold mb-4">Prontuários do Paciente</h3>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold">Prontuários do Paciente</h3>
+                    <Button onClick={() => setShowMedicalRecordDialog(true)} className="btn-primary">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Adicionar Prontuário
+                    </Button>
+                  </div>
                   {medicalRecords.length > 0 ? (
                     <div className="space-y-4">
                       {medicalRecords.map((record) => (
