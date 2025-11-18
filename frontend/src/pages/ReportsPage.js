@@ -374,7 +374,7 @@ export default function ReportsPage() {
         </div>
 
         {/* Estatísticas Rápidas */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mt-6">
           <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-2xl p-6 text-white shadow-lg">
             <Calendar className="w-8 h-8 mb-3 opacity-80" />
             <p className="text-sm opacity-90">Total Agendamentos</p>
