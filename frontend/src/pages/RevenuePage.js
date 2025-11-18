@@ -150,7 +150,7 @@ export default function RevenuePage() {
 
         {/* Filtros de Pesquisa */}
         <div className="bg-white rounded-2xl p-6 shadow-lg mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div>
               <Label className="text-sm font-semibold mb-2 block">Pesquisar</Label>
               <Input
@@ -158,6 +158,18 @@ export default function RevenuePage() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
+            </div>
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Status do Pagamento</Label>
+              <select
+                className="input-field"
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <option value="">Todos</option>
+                <option value="paid">Pagos</option>
+                <option value="pending">Pendentes/Débitos</option>
+              </select>
             </div>
             <div>
               <Label className="text-sm font-semibold mb-2 block">Forma de Pagamento</Label>
@@ -174,6 +186,8 @@ export default function RevenuePage() {
                 <option value="check">Cheque</option>
               </select>
             </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <Label className="text-sm font-semibold mb-2 block">Data Inicial</Label>
               <Input
@@ -191,7 +205,7 @@ export default function RevenuePage() {
               />
             </div>
             <div>
-              <Label className="text-sm font-semibold mb-2 block">Filtro de Débito</Label>
+              <Label className="text-sm font-semibold mb-2 block">Pacientes com Débito de Appointments</Label>
               <select
                 className="input-field"
                 value={filterWithDebt}
