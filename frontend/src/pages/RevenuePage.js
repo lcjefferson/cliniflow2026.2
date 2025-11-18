@@ -111,8 +111,9 @@ export default function RevenuePage() {
     const matchesPayment = !filterPaymentMethod || trans.payment_method === filterPaymentMethod;
     const matchesDateStart = !filterDateStart || trans.transaction_date >= filterDateStart;
     const matchesDateEnd = !filterDateEnd || trans.transaction_date <= filterDateEnd;
+    const matchesDebt = !filterWithDebt || (patientDebts[trans.patient_id] > 0);
     
-    return matchesSearch && matchesPayment && matchesDateStart && matchesDateEnd;
+    return matchesSearch && matchesPayment && matchesDateStart && matchesDateEnd && matchesDebt;
   });
 
   // Calcular total filtrado
