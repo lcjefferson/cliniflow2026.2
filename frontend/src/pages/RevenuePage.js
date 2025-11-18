@@ -121,15 +121,87 @@ export default function RevenuePage() {
           </Button>
         </div>
 
+        {/* Filtros de Pesquisa */}
+        <div className="bg-white rounded-2xl p-6 shadow-lg mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="md:col-span-1">
+              <Label className="text-sm font-semibold mb-2 block">Pesquisar</Label>
+              <Input
+                placeholder="Paciente ou descrição..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Forma de Pagamento</Label>
+              <select
+                className="input-field"
+                value={filterPaymentMethod}
+                onChange={(e) => setFilterPaymentMethod(e.target.value)}
+              >
+                <option value="">Todas</option>
+                <option value="cash">Dinheiro</option>
+                <option value="card">Cartão</option>
+                <option value="pix">PIX</option>
+                <option value="transfer">Transferência</option>
+                <option value="check">Cheque</option>
+              </select>
+            </div>
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Data Inicial</Label>
+              <Input
+                type="date"
+                value={filterDateStart}
+                onChange={(e) => setFilterDateStart(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Data Final</Label>
+              <Input
+                type="date"
+                value={filterDateEnd}
+                onChange={(e) => setFilterDateEnd(e.target.value)}
+              />
+            </div>
+          </div>
+          {(searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd) && (
+            <div className="mt-4 flex items-center justify-between">
+              <Button
+                onClick={() => {
+                  setSearchTerm("");
+                  setFilterPaymentMethod("");
+                  setFilterDateStart("");
+                  setFilterDateEnd("");
+                }}
+                variant="outline"
+                className="btn-secondary text-sm"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Limpar Filtros
+              </Button>
+              <span className="text-sm text-gray-600">
+                {filteredTransactions.length} transação(ões) encontrada(s) - 
+                <span className="font-bold text-green-600 ml-2">
+                  R$ {filteredTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+              </span>
+            </div>
+          )}
+        </div>
+
         {/* Card de Resumo */}
         <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-2xl p-8 shadow-lg mb-8">
           <div className="flex items-center justify-between text-white">
             <div>
-              <p className="text-green-100 text-sm mb-2">Faturamento Total</p>
+              <p className="text-green-100 text-sm mb-2">
+                {(searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd) ? "Faturamento Filtrado" : "Faturamento Total"}
+              </p>
               <h2 className="text-4xl font-bold">
-                R$ {totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                R$ {((searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd) ? filteredTotal : totalRevenue).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </h2>
-              <p className="text-green-100 text-sm mt-2">{transactions.length} transações registradas</p>
+              <p className="text-green-100 text-sm mt-2">
+                {(searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd) ? filteredTransactions.length : transactions.length} transações
+              </p>
             </div>
             <DollarSign className="w-20 h-20 opacity-30" />
           </div>
