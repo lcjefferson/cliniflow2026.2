@@ -4,7 +4,16 @@ import api from "../services/api";
 import { Calendar, Users, DollarSign, Activity } from "lucide-react";
 
 export default function Dashboard() {
-  const [stats, setStats] = useState({ appointments: {}, leads: {}, revenue: {} });
+  const [stats, setStats] = useState({
+    appointmentsToday: 0,
+    appointmentsTotal: 0,
+    leadsTotal: 0,
+    leadsHot: 0,
+    patientsTotal: 0,
+    revenueTotal: 0,
+    revenuePaid: 0,
+    revenuePending: 0
+  });
 
   useEffect(() => {
     loadStats();
@@ -12,12 +21,39 @@ export default function Dashboard() {
 
   const loadStats = async () => {
     try {
-      const [appts, leads, revenue] = await Promise.all([
-        api.get("/dashboard/appointments"),
-        api.get("/dashboard/leads"),
-        api.get("/dashboard/revenue").catch(() => ({ data: { total_revenue: 0 } }))
+      const [appointments, leads, patients, transactions] = await Promise.all([
+        api.get("/appointments"),
+        api.get("/leads"),
+        api.get("/patients"),
+        api.get("/transactions")
       ]);
-      setStats({ appointments: appts.data, leads: leads.data, revenue: revenue.data });
+
+      // Calcular agendamentos de hoje
+      const today = new Date().toISOString().split('T')[0];
+      const appointmentsToday = appointments.data.filter(a => a.appointment_date === today).length;
+
+      // Calcular leads quentes
+      const leadsHot = leads.data.filter(l => l.status === "quente").length;
+
+      // Calcular receita paga e pendente
+      const revenuePaid = transactions.data
+        .filter(t => t.status === "paid")
+        .reduce((sum, t) => sum + t.amount, 0);
+      
+      const revenuePending = transactions.data
+        .filter(t => t.status === "pending")
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      setStats({
+        appointmentsToday,
+        appointmentsTotal: appointments.data.length,
+        leadsTotal: leads.data.length,
+        leadsHot,
+        patientsTotal: patients.data.length,
+        revenueTotal: revenuePaid + revenuePending,
+        revenuePaid,
+        revenuePending
+      });
     } catch (error) {
       console.error("Erro ao carregar estatísticas", error);
     }
