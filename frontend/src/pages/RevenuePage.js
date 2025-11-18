@@ -216,7 +216,7 @@ export default function RevenuePage() {
               </select>
             </div>
           </div>
-          {(searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd || filterWithDebt) && (
+          {(searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd || filterWithDebt || filterStatus) && (
             <div className="mt-4 flex items-center justify-between">
               <Button
                 onClick={() => {
@@ -225,6 +225,7 @@ export default function RevenuePage() {
                   setFilterDateStart("");
                   setFilterDateEnd("");
                   setFilterWithDebt(false);
+                  setFilterStatus("");
                 }}
                 variant="outline"
                 className="btn-secondary text-sm"
