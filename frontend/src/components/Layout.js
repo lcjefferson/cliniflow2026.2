@@ -13,6 +13,7 @@ export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const isAdmin = user?.role?.is_admin;
   const userType = user?.user_type || "consultor"; // admin, consultor, profissional
+  const [isCollapsed, setIsCollapsed] = React.useState(false);
 
   const handleLogout = () => {
     logout();
@@ -27,10 +28,10 @@ export default function Layout({ children }) {
     { path: "/leads", icon: Users, label: "Leads", roles: ["admin", "consultor"] },
     { path: "/followup", icon: ClipboardList, label: "Follow-up", roles: ["admin", "consultor"] },
     { path: "/patients", icon: UserPlus, label: "Pacientes", roles: ["admin", "consultor"] },
-    { path: "/medical-records", icon: FileText, label: "Prontuários", roles: ["admin", "consultor"] },
     { path: "/professionals", icon: Briefcase, label: "Profissionais", roles: ["admin"] },
     { path: "/services", icon: Activity, label: "Serviços", roles: ["admin"] },
     { path: "/rooms", icon: DoorOpen, label: "Salas", roles: ["admin"] },
+    { path: "/reports", icon: FileBarChart, label: "Relatórios", roles: ["admin"] },
     { path: "/revenue", icon: DollarSign, label: "Faturamento", roles: ["admin"] },
     { path: "/users", icon: Users, label: "Usuários", roles: ["admin"] },
     { path: "/settings", icon: Settings, label: "Configurações", roles: ["admin"] },
