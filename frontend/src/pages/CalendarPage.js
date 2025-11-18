@@ -677,14 +677,32 @@ export default function CalendarPage() {
                       + Novo Paciente
                     </Button>
                   </div>
+                  <Input
+                    type="text"
+                    placeholder="Pesquisar paciente..."
+                    value={patientSearchTerm}
+                    onChange={(e) => setPatientSearchTerm(e.target.value)}
+                    className="mb-2"
+                  />
                   <select
                     className="input-field"
                     value={formData.patient_id}
                     onChange={(e) => setFormData({...formData, patient_id: e.target.value})}
                     required
                   >
-                    <option value="">Selecione</option>
-                    {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    <option value="">Selecione um paciente</option>
+                    {patients
+                      .filter(p => 
+                        !patientSearchTerm ||
+                        p.name.toLowerCase().includes(patientSearchTerm.toLowerCase()) ||
+                        p.email.toLowerCase().includes(patientSearchTerm.toLowerCase()) ||
+                        p.phone.includes(patientSearchTerm)
+                      )
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} - {p.phone}
+                        </option>
+                      ))}
                   </select>
                 </div>
                 <div>
