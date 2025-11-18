@@ -218,43 +218,45 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center justify-between">
-            <div>
-              <span className="text-2xl">{patient.name}</span>
-              {debts.total_debt > 0 && (
-                <span className="ml-4 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">
-                  Débito: R$ {debts.total_debt.toFixed(2)}
-                </span>
-              )}
-            </div>
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent className="max-w-5xl h-[90vh] flex flex-col p-0">
+        <div className="p-6 pb-0">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <div>
+                <span className="text-2xl">{patient.name}</span>
+                {debts.total_debt > 0 && (
+                  <span className="ml-4 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">
+                    Débito: R$ {debts.total_debt.toFixed(2)}
+                  </span>
+                )}
+              </div>
+            </DialogTitle>
+          </DialogHeader>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 overflow-x-auto">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 font-medium text-sm whitespace-nowrap transition-colors ${
-                  activeTab === tab.id
-                    ? "border-b-2 border-blue-500 text-blue-600"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {tab.label}
-              </button>
-            );
-          })}
+          {/* Tabs */}
+          <div className="flex border-b border-gray-200 overflow-x-auto mt-4">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-3 font-medium text-sm whitespace-nowrap transition-colors ${
+                    activeTab === tab.id
+                      ? "border-b-2 border-blue-500 text-blue-600"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 min-h-0">
           {loading ? (
             <div className="text-center py-8 text-gray-500">Carregando...</div>
           ) : (
