@@ -1089,14 +1089,59 @@ async def get_conversation_messages(conversation_id: str, current_user: dict = D
 async def send_message(conversation_id: str, data: MessageCreate, current_user: dict = Depends(get_current_user)):
     message = Message(
         conversation_id=conversation_id,
-        sender_type="user",
+        sender_type="consultant",
         sender_id=current_user["id"],
-        content=data.content
+        sender_name=current_user["name"],
+        content=data.content,
+        read=False
     )
     doc = message.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.messages.insert_one(doc)
+    
+    # Atualizar last_message_at da conversa
+    await db.conversations.update_one(
+        {"id": conversation_id},
+        {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
     return message
+
+@api_router.put("/conversations/{conversation_id}/assign")
+async def assign_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    """Atribui a conversa ao consultor atual"""
+    result = await db.conversations.update_one(
+        {"id": conversation_id},
+        {"$set": {
+            "assigned_to": current_user["id"],
+            "assigned_to_name": current_user["name"]
+        }}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"message": "Conversation assigned successfully"}
+
+@api_router.put("/conversations/{conversation_id}/close")
+async def close_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    """Fecha a conversa"""
+    result = await db.conversations.update_one(
+        {"id": conversation_id},
+        {"$set": {"status": "closed"}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"message": "Conversation closed successfully"}
+
+@api_router.put("/conversations/{conversation_id}/reopen")
+async def reopen_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    """Reabre a conversa"""
+    result = await db.conversations.update_one(
+        {"id": conversation_id},
+        {"$set": {"status": "active"}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"message": "Conversation reopened successfully"}
 
 # FollowUp Routes
 @api_router.post("/followups", response_model=FollowUp)
