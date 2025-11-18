@@ -22,13 +22,15 @@ export default function RevenuePage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(15);
   const [patientDebts, setPatientDebts] = useState({});
+  const [patientSearchTerm, setPatientSearchTerm] = useState("");
   const [formData, setFormData] = useState({
     patient_id: "",
     appointment_id: "",
     amount: "",
     payment_method: "cash",
     description: "",
-    transaction_date: new Date().toISOString().split('T')[0]
+    transaction_date: new Date().toISOString().split('T')[0],
+    status: "paid"
   });
 
   useEffect(() => {
