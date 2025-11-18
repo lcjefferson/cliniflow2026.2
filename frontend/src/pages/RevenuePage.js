@@ -449,33 +449,13 @@ export default function RevenuePage() {
               </div>
 
               <div>
-                <Label>Paciente *</Label>
-                <Input
-                  placeholder="Pesquisar paciente..."
-                  value={patientSearchTerm}
-                  onChange={(e) => setPatientSearchTerm(e.target.value)}
-                  className="mb-2"
-                />
-                <select
-                  className="input-field"
+                <Label className="mb-2 block">Paciente *</Label>
+                <PatientCombobox
+                  patients={patients}
                   value={formData.patient_id}
-                  onChange={(e) => setFormData({...formData, patient_id: e.target.value})}
-                  required
-                >
-                  <option value="">Selecione um paciente</option>
-                  {patients
-                    .filter(p => 
-                      !patientSearchTerm || 
-                      p.name.toLowerCase().includes(patientSearchTerm.toLowerCase()) ||
-                      p.email.toLowerCase().includes(patientSearchTerm.toLowerCase()) ||
-                      p.phone.includes(patientSearchTerm)
-                    )
-                    .map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} - {p.phone}
-                      </option>
-                    ))}
-                </select>
+                  onChange={(patientId) => setFormData({...formData, patient_id: patientId})}
+                  placeholder="Busque ou selecione um paciente..."
+                />
               </div>
               <div>
                 <Label>Agendamento (opcional)</Label>
