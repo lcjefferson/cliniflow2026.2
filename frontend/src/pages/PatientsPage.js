@@ -12,6 +12,7 @@ export default function PatientsPage() {
   const [patients, setPatients] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [formData, setFormData] = useState({ name: "", email: "", phone: "", birthdate: "", address: "" });
