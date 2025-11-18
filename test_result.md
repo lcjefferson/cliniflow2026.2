@@ -423,6 +423,23 @@ test_plan:
   test_priority: "high"
 
 agent_communication:
+  - agent: "fork_main"
+    message: "🔧 BUG FIX EM PROGRESSO - Search and Filter Functionality:
+    
+    PROBLEMA IDENTIFICADO:
+    - ❌ LeadsPage e PatientsPage estavam causando erro ao usar busca/filtros
+    - 🔍 Root Cause: Componente 'X' do lucide-react não estava importado
+    
+    CORREÇÃO APLICADA:
+    - ✅ Adicionado import do componente 'X' em LeadsPage.js (linha 4)
+    - ✅ Adicionado import do componente 'X' em PatientsPage.js (linha 4)
+    
+    VALIDAÇÃO:
+    - ✅ Backend API testado: /api/leads retornando 12 leads corretamente
+    - ✅ Backend API testado: /api/patients retornando 2 pacientes corretamente
+    - ⏳ Aguardando teste do frontend testing agent
+    
+    Próximo passo: Invocar frontend testing agent para validação completa."
   - agent: "main"
     message: "Sistema CliniFlow completamente atualizado com novas funcionalidades:
     
