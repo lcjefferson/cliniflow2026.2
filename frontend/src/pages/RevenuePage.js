@@ -18,8 +18,10 @@ export default function RevenuePage() {
   const [filterPaymentMethod, setFilterPaymentMethod] = useState("");
   const [filterDateStart, setFilterDateStart] = useState("");
   const [filterDateEnd, setFilterDateEnd] = useState("");
+  const [filterWithDebt, setFilterWithDebt] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(15);
+  const [patientDebts, setPatientDebts] = useState({});
   const [formData, setFormData] = useState({
     patient_id: "",
     appointment_id: "",
