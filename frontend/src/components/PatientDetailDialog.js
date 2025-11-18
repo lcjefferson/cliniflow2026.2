@@ -50,6 +50,20 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     status: "completed"
   });
 
+  // Medical Record form state
+  const [showMedicalRecordDialog, setShowMedicalRecordDialog] = useState(false);
+  const [medicalRecordForm, setMedicalRecordForm] = useState({
+    record_type: "prontuario",
+    diagnosis: "",
+    symptoms: "",
+    treatment: "",
+    medications: "",
+    observations: "",
+    doctor_name: "",
+    crm: "",
+    template_used: ""
+  });
+
   useEffect(() => {
     if (isOpen && patient) {
       loadPatientData();
