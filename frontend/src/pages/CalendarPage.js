@@ -272,6 +272,59 @@ export default function CalendarPage() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
   };
 
+  const previousPeriod = () => {
+    if (viewMode === "month") {
+      previousMonth();
+    } else if (viewMode === "week") {
+      setCurrentDate(new Date(currentDate.getTime() - 7 * 24 * 60 * 60 * 1000));
+    } else {
+      setCurrentDate(new Date(currentDate.getTime() - 24 * 60 * 60 * 1000));
+    }
+  };
+
+  const nextPeriod = () => {
+    if (viewMode === "month") {
+      nextMonth();
+    } else if (viewMode === "week") {
+      setCurrentDate(new Date(currentDate.getTime() + 7 * 24 * 60 * 60 * 1000));
+    } else {
+      setCurrentDate(new Date(currentDate.getTime() + 24 * 60 * 60 * 1000));
+    }
+  };
+
+  const getWeekDays = () => {
+    const startOfWeek = new Date(currentDate);
+    const day = startOfWeek.getDay();
+    const diff = startOfWeek.getDate() - day;
+    startOfWeek.setDate(diff);
+
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(startOfWeek);
+      date.setDate(startOfWeek.getDate() + i);
+      days.push({
+        day: date.getDate(),
+        date: date.toISOString().split('T')[0],
+        dayName: weekDays[i],
+        isToday: date.toDateString() === new Date().toDateString()
+      });
+    }
+    return days;
+  };
+
+  const getPeriodTitle = () => {
+    if (viewMode === "month") {
+      return `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+    } else if (viewMode === "week") {
+      const weekDays = getWeekDays();
+      const firstDay = weekDays[0];
+      const lastDay = weekDays[6];
+      return `${firstDay.day} - ${lastDay.day} ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+    } else {
+      return `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+    }
+  };
+
   const monthNames = [
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
