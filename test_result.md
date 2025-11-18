@@ -515,3 +515,27 @@ agent_communication:
     message: "🎉 NOVAS FUNCIONALIDADES DE PERMISSÕES TESTADAS COM SUCESSO! ✅ Sistema de Permissões: Registro com user_type (admin/consultor/profissional) e professional_id funcionando ✅ Login retorna user_type e professional_id corretamente ✅ Gerenciamento de Usuários: GET/PUT/DELETE /api/users restrito a admins ✅ Validação de Permissões: 403 para não-admins tentando acessar gerenciamento ✅ Todos os tipos de usuário testados e funcionando ✅ Campos obrigatórios presentes em todas as respostas. Taxa de sucesso: 92.3% (12/13 testes). Sistema de permissões 100% funcional!"
   - agent: "testing"
     message: "🔥 TESTE COMPLETO DE DELETE ENDPOINTS CONCLUÍDO COM 100% DE SUCESSO! Testados todos os 9 endpoints DELETE solicitados pelo usuário: professionals, services, patients, rooms, appointments, leads, users, medical-records, followups. Fluxo completo testado para cada endpoint: autenticação admin → criação de item → confirmação → DELETE → verificação de remoção → teste com ID inválido. Taxa de sucesso: 100% (56/56 testes individuais). Todos os endpoints retornam status 200 para DELETE válido e 404 para IDs inexistentes. Sistema de DELETE totalmente funcional e seguro."
+  - agent: "testing"
+    message: "🏥 TESTE DAS NOVAS FUNCIONALIDADES DE GERENCIAMENTO DE PACIENTES - RESULTADOS PARCIAIS:
+    
+    ✅ SUCESSOS CONFIRMADOS:
+    - Login com credenciais fornecidas (admin.final@cliniflow.com) funcionando
+    - Página de pacientes carregando corretamente
+    - 2 pacientes encontrados no sistema (Paulo Silva, Luciana Santos)
+    - Backend APIs funcionando: /api/patients, /api/patients/{id}/debts, /api/patients/{id}/professionals
+    - Componente PatientDetailDialog.js implementado com todas as 6 abas
+    - RevenuePage com filtro de débito implementado
+    
+    ❌ PROBLEMAS IDENTIFICADOS:
+    - Sessões de autenticação expirando rapidamente durante testes
+    - Redirecionamentos frequentes para página de login
+    - Não foi possível testar completamente o modal de detalhes devido a problemas de sessão
+    - Botões 'Ver Detalhes' (ícones de olho) não foram acessíveis durante os testes
+    
+    📋 COMPONENTES VERIFICADOS NO CÓDIGO:
+    - PatientDetailDialog: 6 abas implementadas (Info, Anexos, Prontuários, Tratamentos, Anamnese, Profissionais)
+    - Funcionalidade 'Adicionar Tratamento' com formulário completo
+    - Anamnese com 3 seções coloridas (azul, verde, vermelho)
+    - Filtro de débito na página de faturamento
+    
+    ⚠️ RECOMENDAÇÃO: Investigar problema de gerenciamento de sessão JWT no frontend para permitir testes mais estáveis."
