@@ -143,7 +143,6 @@ export default function RevenuePage() {
       transaction_date: new Date().toISOString().split('T')[0],
       status: "paid"
     });
-    setPatientSearchTerm("");
   };
 
   const getPatientName = (patientId) => {
