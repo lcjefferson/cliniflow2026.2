@@ -164,8 +164,16 @@ export default function PatientsPage() {
             .map((patient) => (
             <div key={patient.id} className="bg-white rounded-2xl p-6 shadow-lg">
               <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">{patient.name}</h3>
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-xl font-bold text-gray-900">{patient.name}</h3>
+                    {patientDebts[patient.id] > 0 && (
+                      <span className="flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">
+                        <AlertCircle className="w-4 h-4" />
+                        Débito: R$ {patientDebts[patient.id].toFixed(2)}
+                      </span>
+                    )}
+                  </div>
                   <div className="mt-2 space-y-1">
                     <p className="text-gray-600">{patient.email}</p>
                     <p className="text-gray-600">{patient.phone}</p>
@@ -174,6 +182,13 @@ export default function PatientsPage() {
                   </div>
                 </div>
                 <div className="flex gap-2">
+                  <button
+                    onClick={() => handleViewDetails(patient)}
+                    className="text-purple-500 hover:text-purple-700"
+                    title="Ver Detalhes"
+                  >
+                    <Eye className="w-5 h-5" />
+                  </button>
                   <button
                     onClick={() => handleEdit(patient)}
                     className="text-blue-500 hover:text-blue-700"
