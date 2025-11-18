@@ -138,8 +138,8 @@ export default function RevenuePage() {
 
         {/* Filtros de Pesquisa */}
         <div className="bg-white rounded-2xl p-6 shadow-lg mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="md:col-span-1">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div>
               <Label className="text-sm font-semibold mb-2 block">Pesquisar</Label>
               <Input
                 placeholder="Paciente ou descrição..."
@@ -177,6 +177,17 @@ export default function RevenuePage() {
                 value={filterDateEnd}
                 onChange={(e) => setFilterDateEnd(e.target.value)}
               />
+            </div>
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Filtro de Débito</Label>
+              <select
+                className="input-field"
+                value={filterWithDebt}
+                onChange={(e) => setFilterWithDebt(e.target.value === "true")}
+              >
+                <option value="false">Todos os Pacientes</option>
+                <option value="true">Apenas com Débito</option>
+              </select>
             </div>
           </div>
           {(searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd) && (
