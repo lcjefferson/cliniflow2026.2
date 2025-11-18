@@ -1,0 +1,729 @@
+import React, { useState, useEffect } from "react";
+import api from "../services/api";
+import { 
+  FileText, Paperclip, Stethoscope, Activity, Users, 
+  X, Upload, Trash2, Plus, Edit, Save, AlertCircle,
+  Download, CheckCircle, Clock
+} from "lucide-react";
+import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate }) {
+  const [activeTab, setActiveTab] = useState("info");
+  const [medicalRecords, setMedicalRecords] = useState([]);
+  const [professionals, setProfessionals] = useState([]);
+  const [services, setServices] = useState([]);
+  const [debts, setDebts] = useState({ total_debt: 0, unpaid_appointments: [] });
+  const [loading, setLoading] = useState(false);
+  
+  // Anamnese state
+  const [anamnese, setAnamnese] = useState({
+    chronic_diseases: "",
+    allergies_medical: "",
+    current_medications: "",
+    surgery_history: "",
+    mental_health: "",
+    previous_treatments: "",
+    prosthetics: "",
+    implants: "",
+    pain_history: "",
+    periodontal_issues: "",
+    facial_surgeries: "",
+    oral_hygiene_products: "",
+    medication_allergies: "",
+    material_allergies: "",
+    substance_allergies: ""
+  });
+
+  // Treatment form state
+  const [showTreatmentDialog, setShowTreatmentDialog] = useState(false);
+  const [treatmentForm, setTreatmentForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    service_id: "",
+    service_name: "",
+    description: "",
+    professional_id: "",
+    professional_name: "",
+    status: "completed"
+  });
+
+  useEffect(() => {
+    if (isOpen && patient) {
+      loadPatientData();
+    }
+  }, [isOpen, patient]);
+
+  const loadPatientData = async () => {
+    try {
+      setLoading(true);
+      const [recordsRes, profsRes, servicesRes, debtsRes] = await Promise.all([
+        api.get(`/medical-records`),
+        api.get(`/patients/${patient.id}/professionals`),
+        api.get(`/services`),
+        api.get(`/patients/${patient.id}/debts`)
+      ]);
+
+      // Filter records for this patient
+      setMedicalRecords(recordsRes.data.filter(r => r.patient_id === patient.id));
+      setProfessionals(profsRes.data);
+      setServices(servicesRes.data);
+      setDebts(debtsRes.data);
+
+      // Load anamnese if exists
+      if (patient.anamnese) {
+        setAnamnese(patient.anamnese);
+      }
+    } catch (error) {
+      console.error("Error loading patient data:", error);
+      toast.error("Erro ao carregar dados do paciente");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Check file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Arquivo muito grande! Tamanho máximo: 10MB");
+      return;
+    }
+
+    try {
+      // Convert to base64
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64 = event.target.result.split(',')[1];
+        
+        const attachment = {
+          filename: file.name,
+          file_data: base64,
+          file_type: file.type,
+          size_bytes: file.size
+        };
+
+        await api.post(`/patients/${patient.id}/attachments`, attachment);
+        toast.success("Arquivo anexado com sucesso!");
+        onUpdate(); // Refresh patient data
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      toast.error("Erro ao anexar arquivo");
+    }
+  };
+
+  const handleDeleteAttachment = async (attachmentId) => {
+    if (!window.confirm("Tem certeza que deseja deletar este anexo?")) return;
+    
+    try {
+      await api.delete(`/patients/${patient.id}/attachments/${attachmentId}`);
+      toast.success("Anexo removido!");
+      onUpdate();
+    } catch (error) {
+      toast.error("Erro ao remover anexo");
+    }
+  };
+
+  const handleDownloadAttachment = (attachment) => {
+    const link = document.createElement('a');
+    link.href = `data:${attachment.file_type};base64,${attachment.file_data}`;
+    link.download = attachment.filename;
+    link.click();
+  };
+
+  const handleSaveAnamnese = async () => {
+    try {
+      await api.put(`/patients/${patient.id}/anamnese`, anamnese);
+      toast.success("Anamnese salva com sucesso!");
+      onUpdate();
+    } catch (error) {
+      toast.error("Erro ao salvar anamnese");
+    }
+  };
+
+  const handleAddTreatment = async () => {
+    if (!treatmentForm.service_id) {
+      toast.error("Selecione um serviço");
+      return;
+    }
+
+    try {
+      await api.post(`/patients/${patient.id}/treatments`, treatmentForm);
+      toast.success("Tratamento adicionado!");
+      setShowTreatmentDialog(false);
+      setTreatmentForm({
+        date: new Date().toISOString().split('T')[0],
+        service_id: "",
+        service_name: "",
+        description: "",
+        professional_id: "",
+        professional_name: "",
+        status: "completed"
+      });
+      onUpdate();
+    } catch (error) {
+      toast.error("Erro ao adicionar tratamento");
+    }
+  };
+
+  const handleDeleteTreatment = async (treatmentId) => {
+    if (!window.confirm("Tem certeza que deseja deletar este tratamento?")) return;
+    
+    try {
+      await api.delete(`/patients/${patient.id}/treatments/${treatmentId}`);
+      toast.success("Tratamento removido!");
+      onUpdate();
+    } catch (error) {
+      toast.error("Erro ao remover tratamento");
+    }
+  };
+
+  const handleServiceChange = (serviceId) => {
+    const service = services.find(s => s.id === serviceId);
+    if (service) {
+      setTreatmentForm({
+        ...treatmentForm,
+        service_id: serviceId,
+        service_name: service.name
+      });
+    }
+  };
+
+  const handleProfessionalChange = (professionalId) => {
+    const prof = professionals.find(p => p.id === professionalId);
+    if (prof) {
+      setTreatmentForm({
+        ...treatmentForm,
+        professional_id: professionalId,
+        professional_name: prof.name
+      });
+    }
+  };
+
+  if (!patient) return null;
+
+  const tabs = [
+    { id: "info", label: "Informações", icon: FileText },
+    { id: "attachments", label: "Anexos", icon: Paperclip },
+    { id: "records", label: "Prontuários", icon: Stethoscope },
+    { id: "treatments", label: "Tratamentos", icon: Activity },
+    { id: "anamnese", label: "Anamnese", icon: FileText },
+    { id: "professionals", label: "Profissionais", icon: Users }
+  ];
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center justify-between">
+            <div>
+              <span className="text-2xl">{patient.name}</span>
+              {debts.total_debt > 0 && (
+                <span className="ml-4 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">
+                  Débito: R$ {debts.total_debt.toFixed(2)}
+                </span>
+              )}
+            </div>
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* Tabs */}
+        <div className="flex border-b border-gray-200 overflow-x-auto">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-3 font-medium text-sm whitespace-nowrap transition-colors ${
+                  activeTab === tab.id
+                    ? "border-b-2 border-blue-500 text-blue-600"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tab Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading ? (
+            <div className="text-center py-8 text-gray-500">Carregando...</div>
+          ) : (
+            <>
+              {/* Info Tab */}
+              {activeTab === "info" && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-700">Email</Label>
+                      <p className="text-gray-900">{patient.email}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-700">Telefone</Label>
+                      <p className="text-gray-900">{patient.phone}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-700">Data de Nascimento</Label>
+                      <p className="text-gray-900">{patient.birthdate}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-700">Endereço</Label>
+                      <p className="text-gray-900">{patient.address || "Não informado"}</p>
+                    </div>
+                  </div>
+
+                  {debts.total_debt > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mt-6">
+                      <div className="flex items-start gap-3">
+                        <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-red-900">Débitos Pendentes</h4>
+                          <p className="text-sm text-red-700 mt-1">
+                            Total: R$ {debts.total_debt.toFixed(2)} ({debts.debt_count} agendamento(s) não pago(s))
+                          </p>
+                          <div className="mt-3 space-y-2">
+                            {debts.unpaid_appointments.slice(0, 3).map((app) => (
+                              <div key={app.id} className="text-sm text-red-800 flex justify-between">
+                                <span>{new Date(app.appointment_date).toLocaleDateString('pt-BR')} às {app.appointment_time}</span>
+                                <span className="font-semibold">R$ {app.amount?.toFixed(2) || "0.00"}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Attachments Tab */}
+              {activeTab === "attachments" && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold">Anexos</h3>
+                    <label className="btn-primary cursor-pointer inline-flex items-center">
+                      <Upload className="w-4 h-4 mr-2" />
+                      Adicionar Arquivo
+                      <input type="file" className="hidden" onChange={handleFileUpload} />
+                    </label>
+                  </div>
+
+                  {patient.attachments && patient.attachments.length > 0 ? (
+                    <div className="grid gap-3">
+                      {patient.attachments.map((att) => (
+                        <div key={att.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                          <div className="flex items-center gap-3">
+                            <Paperclip className="w-5 h-5 text-gray-400" />
+                            <div>
+                              <p className="font-medium text-gray-900">{att.filename}</p>
+                              <p className="text-sm text-gray-500">
+                                {(att.size_bytes / 1024).toFixed(2)} KB - {new Date(att.upload_date).toLocaleDateString('pt-BR')}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleDownloadAttachment(att)}
+                              className="text-blue-500 hover:text-blue-700"
+                            >
+                              <Download className="w-5 h-5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteAttachment(att.id)}
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-gray-500">
+                      <Paperclip className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                      <p>Nenhum arquivo anexado</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Medical Records Tab */}
+              {activeTab === "records" && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold mb-4">Prontuários do Paciente</h3>
+                  {medicalRecords.length > 0 ? (
+                    <div className="space-y-4">
+                      {medicalRecords.map((record) => (
+                        <div key={record.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">
+                              {record.record_type}
+                            </span>
+                            <span className="text-sm text-gray-500">
+                              {new Date(record.created_at).toLocaleDateString('pt-BR')}
+                            </span>
+                          </div>
+                          {record.diagnosis && (
+                            <div className="mt-2">
+                              <span className="font-semibold text-gray-700">Diagnóstico:</span>
+                              <p className="text-gray-600">{record.diagnosis}</p>
+                            </div>
+                          )}
+                          {record.symptoms && (
+                            <div className="mt-2">
+                              <span className="font-semibold text-gray-700">Sintomas:</span>
+                              <p className="text-gray-600">{record.symptoms}</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-gray-500">
+                      <Stethoscope className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                      <p>Nenhum prontuário cadastrado</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Treatments Tab */}
+              {activeTab === "treatments" && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold">Tratamentos Realizados</h3>
+                    <Button onClick={() => setShowTreatmentDialog(true)} className="btn-primary">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Adicionar Tratamento
+                    </Button>
+                  </div>
+
+                  {patient.treatments && patient.treatments.length > 0 ? (
+                    <div className="space-y-3">
+                      {patient.treatments.map((treatment) => (
+                        <div key={treatment.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <h4 className="font-semibold text-gray-900">{treatment.service_name}</h4>
+                                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                  treatment.status === 'completed' 
+                                    ? 'bg-green-100 text-green-700' 
+                                    : 'bg-yellow-100 text-yellow-700'
+                                }`}>
+                                  {treatment.status === 'completed' ? 'Concluído' : 'Em andamento'}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-600">
+                                Data: {new Date(treatment.date).toLocaleDateString('pt-BR')}
+                              </p>
+                              {treatment.professional_name && (
+                                <p className="text-sm text-gray-600">
+                                  Profissional: {treatment.professional_name}
+                                </p>
+                              )}
+                              {treatment.description && (
+                                <p className="text-sm text-gray-600 mt-2">{treatment.description}</p>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => handleDeleteTreatment(treatment.id)}
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-gray-500">
+                      <Activity className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                      <p>Nenhum tratamento cadastrado</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Anamnese Tab */}
+              {activeTab === "anamnese" && (
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-semibold">Anamnese</h3>
+                    <Button onClick={handleSaveAnamnese} className="btn-primary">
+                      <Save className="w-4 h-4 mr-2" />
+                      Salvar Anamnese
+                    </Button>
+                  </div>
+
+                  {/* Histórico Médico */}
+                  <div className="bg-blue-50 rounded-lg p-4">
+                    <h4 className="font-semibold text-blue-900 mb-3">Histórico Médico</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <Label className="text-sm">Doenças Crônicas</Label>
+                        <textarea
+                          className="input-field mt-1"
+                          value={anamnese.chronic_diseases}
+                          onChange={(e) => setAnamnese({...anamnese, chronic_diseases: e.target.value})}
+                          placeholder="Diabetes, hipertensão, etc."
+                          rows={2}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Alergias Médicas</Label>
+                        <textarea
+                          className="input-field mt-1"
+                          value={anamnese.allergies_medical}
+                          onChange={(e) => setAnamnese({...anamnese, allergies_medical: e.target.value})}
+                          placeholder="Alergias conhecidas"
+                          rows={2}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Medicamentos em Uso</Label>
+                        <textarea
+                          className="input-field mt-1"
+                          value={anamnese.current_medications}
+                          onChange={(e) => setAnamnese({...anamnese, current_medications: e.target.value})}
+                          placeholder="Medicamentos que o paciente toma regularmente"
+                          rows={2}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Histórico de Cirurgias</Label>
+                        <textarea
+                          className="input-field mt-1"
+                          value={anamnese.surgery_history}
+                          onChange={(e) => setAnamnese({...anamnese, surgery_history: e.target.value})}
+                          placeholder="Cirurgias realizadas anteriormente"
+                          rows={2}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Condições de Saúde Mental</Label>
+                        <textarea
+                          className="input-field mt-1"
+                          value={anamnese.mental_health}
+                          onChange={(e) => setAnamnese({...anamnese, mental_health: e.target.value})}
+                          placeholder="Ansiedade, depressão, etc."
+                          rows={2}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Histórico Odontológico */}
+                  <div className="bg-green-50 rounded-lg p-4">
+                    <h4 className="font-semibold text-green-900 mb-3">Histórico Odontológico</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <Label className="text-sm">Tratamentos Prévios</Label>
+                        <textarea
+                          className="input-field mt-1"
+                          value={anamnese.previous_treatments}
+                          onChange={(e) => setAnamnese({...anamnese, previous_treatments: e.target.value})}
+                          placeholder="Tratamentos odontológicos anteriores"
+                          rows={2}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Próteses</Label>
+                        <Input
+                          value={anamnese.prosthetics}
+                          onChange={(e) => setAnamnese({...anamnese, prosthetics: e.target.value})}
+                          placeholder="Tipo de próteses"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Implantes</Label>
+                        <Input
+                          value={anamnese.implants}
+                          onChange={(e) => setAnamnese({...anamnese, implants: e.target.value})}
+                          placeholder="Implantes dentários"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Histórico de Dores</Label>
+                        <textarea
+                          className="input-field mt-1"
+                          value={anamnese.pain_history}
+                          onChange={(e) => setAnamnese({...anamnese, pain_history: e.target.value})}
+                          placeholder="Dores dentárias ou faciais"
+                          rows={2}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Problemas Periodontais</Label>
+                        <Input
+                          value={anamnese.periodontal_issues}
+                          onChange={(e) => setAnamnese({...anamnese, periodontal_issues: e.target.value})}
+                          placeholder="Gengivite, periodontite, etc."
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Cirurgias Prévias na Face</Label>
+                        <Input
+                          value={anamnese.facial_surgeries}
+                          onChange={(e) => setAnamnese({...anamnese, facial_surgeries: e.target.value})}
+                          placeholder="Cirurgias faciais realizadas"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Produtos de Higiene Bucal</Label>
+                        <Input
+                          value={anamnese.oral_hygiene_products}
+                          onChange={(e) => setAnamnese({...anamnese, oral_hygiene_products: e.target.value})}
+                          placeholder="Pasta de dente, enxaguante, etc."
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Alergias Específicas */}
+                  <div className="bg-red-50 rounded-lg p-4">
+                    <h4 className="font-semibold text-red-900 mb-3">Alergias Específicas</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <Label className="text-sm">Alergias a Medicamentos</Label>
+                        <Input
+                          value={anamnese.medication_allergies}
+                          onChange={(e) => setAnamnese({...anamnese, medication_allergies: e.target.value})}
+                          placeholder="Penicilina, anestésicos, etc."
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Alergias a Materiais</Label>
+                        <Input
+                          value={anamnese.material_allergies}
+                          onChange={(e) => setAnamnese({...anamnese, material_allergies: e.target.value})}
+                          placeholder="Látex, níquel, etc."
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Alergias a Substâncias</Label>
+                        <Input
+                          value={anamnese.substance_allergies}
+                          onChange={(e) => setAnamnese({...anamnese, substance_allergies: e.target.value})}
+                          placeholder="Metais, produtos químicos, etc."
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Professionals Tab */}
+              {activeTab === "professionals" && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold mb-4">Profissionais que Atenderam</h3>
+                  {professionals.length > 0 ? (
+                    <div className="grid gap-4">
+                      {professionals.map((prof) => (
+                        <div key={prof.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <h4 className="font-semibold text-gray-900">{prof.name}</h4>
+                              <p className="text-sm text-gray-600">{prof.specialty}</p>
+                              <p className="text-sm text-gray-500 mt-1">
+                                {prof.appointment_count} agendamento(s)
+                              </p>
+                            </div>
+                            <CheckCircle className="w-5 h-5 text-green-500" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-gray-500">
+                      <Users className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                      <p>Nenhum profissional registrado ainda</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Treatment Dialog */}
+        <Dialog open={showTreatmentDialog} onOpenChange={setShowTreatmentDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Adicionar Tratamento</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Data do Tratamento *</Label>
+                <Input
+                  type="date"
+                  value={treatmentForm.date}
+                  onChange={(e) => setTreatmentForm({...treatmentForm, date: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label>Serviço Realizado *</Label>
+                <select
+                  className="input-field"
+                  value={treatmentForm.service_id}
+                  onChange={(e) => handleServiceChange(e.target.value)}
+                >
+                  <option value="">Selecione um serviço</option>
+                  {services.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label>Profissional (opcional)</Label>
+                <select
+                  className="input-field"
+                  value={treatmentForm.professional_id}
+                  onChange={(e) => handleProfessionalChange(e.target.value)}
+                >
+                  <option value="">Nenhum</option>
+                  {professionals.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label>Status</Label>
+                <select
+                  className="input-field"
+                  value={treatmentForm.status}
+                  onChange={(e) => setTreatmentForm({...treatmentForm, status: e.target.value})}
+                >
+                  <option value="completed">Concluído</option>
+                  <option value="in_progress">Em andamento</option>
+                </select>
+              </div>
+              <div>
+                <Label>Descrição (opcional)</Label>
+                <textarea
+                  className="input-field"
+                  value={treatmentForm.description}
+                  onChange={(e) => setTreatmentForm({...treatmentForm, description: e.target.value})}
+                  placeholder="Observações sobre o tratamento"
+                  rows={3}
+                />
+              </div>
+              <Button onClick={handleAddTreatment} className="w-full btn-primary">
+                Adicionar Tratamento
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </DialogContent>
+    </Dialog>
+  );
+}
