@@ -47,6 +47,18 @@ export default function RevenuePage() {
       setAppointments(appt.data);
       setPatients(pat.data);
       setTotalRevenue(rev.data.total_revenue);
+
+      // Load debts for each patient
+      const debtsPromises = pat.data.map(p => 
+        api.get(`/patients/${p.id}/debts`).catch(() => ({ data: { total_debt: 0 } }))
+      );
+      const debtsResults = await Promise.all(debtsPromises);
+      
+      const debtsMap = {};
+      pat.data.forEach((p, index) => {
+        debtsMap[p.id] = debtsResults[index].data.total_debt;
+      });
+      setPatientDebts(debtsMap);
     } catch (error) {
       toast.error("Erro ao carregar dados de faturamento");
     }
