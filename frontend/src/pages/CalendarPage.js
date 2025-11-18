@@ -432,15 +432,15 @@ export default function CalendarPage() {
           )}
         </div>
 
-        {/* Navegação do Mês */}
+        {/* Navegação do Período */}
         <div className="flex items-center justify-between mb-6 bg-white rounded-2xl p-6 shadow-lg">
-          <Button onClick={previousMonth} variant="outline" className="btn-secondary">
+          <Button onClick={previousPeriod} variant="outline" className="btn-secondary">
             <ChevronLeft className="w-5 h-5" />
           </Button>
           <h2 className="text-2xl font-bold text-gray-900">
-            {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+            {getPeriodTitle()}
           </h2>
-          <Button onClick={nextMonth} variant="outline" className="btn-secondary">
+          <Button onClick={nextPeriod} variant="outline" className="btn-secondary">
             <ChevronRight className="w-5 h-5" />
           </Button>
         </div>
