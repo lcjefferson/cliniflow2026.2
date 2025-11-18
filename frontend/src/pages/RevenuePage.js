@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
-import { Plus, DollarSign, ChevronLeft, ChevronRight, CheckCircle, XCircle, X, AlertCircle, Clock } from "lucide-react";
+import { Plus, DollarSign, ChevronLeft, ChevronRight, CheckCircle, XCircle, X, AlertCircle, Clock, Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
