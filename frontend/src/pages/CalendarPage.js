@@ -33,6 +33,8 @@ export default function CalendarPage() {
     address: ""
   });
   
+  const [patientSearchTerm, setPatientSearchTerm] = useState("");
+  
   const [formData, setFormData] = useState({
     patient_id: "",
     professional_id: "",
