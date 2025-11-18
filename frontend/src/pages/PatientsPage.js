@@ -29,6 +29,18 @@ export default function PatientsPage() {
     try {
       const response = await api.get("/patients");
       setPatients(response.data);
+      
+      // Load debts for each patient
+      const debtsPromises = response.data.map(p => 
+        api.get(`/patients/${p.id}/debts`).catch(() => ({ data: { total_debt: 0 } }))
+      );
+      const debtsResults = await Promise.all(debtsPromises);
+      
+      const debtsMap = {};
+      response.data.forEach((p, index) => {
+        debtsMap[p.id] = debtsResults[index].data.total_debt;
+      });
+      setPatientDebts(debtsMap);
     } catch (error) {
       toast.error("Erro ao carregar pacientes");
     }
