@@ -656,7 +656,6 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
             </>
           )}
         </div>
-        </div>
 
         {/* Treatment Dialog */}
         <Dialog open={showTreatmentDialog} onOpenChange={setShowTreatmentDialog}>
