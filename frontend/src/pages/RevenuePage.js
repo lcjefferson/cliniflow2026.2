@@ -428,11 +428,11 @@ export default function RevenuePage() {
           </div>
         )}
 
-        {/* Modal de Registrar Pagamento */}
-        <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        {/* Modal de Registrar/Editar Pagamento */}
+        <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Registrar Pagamento/Débito</DialogTitle>
+              <DialogTitle>{editingId ? "Editar Transação" : "Registrar Pagamento/Débito"}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
