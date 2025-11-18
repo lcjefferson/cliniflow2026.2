@@ -94,6 +94,20 @@ export default function PatientsPage() {
     setFormData({ name: "", email: "", phone: "", birthdate: "", address: "" });
   };
 
+  const handleViewDetails = (patient) => {
+    setSelectedPatient(patient);
+    setShowDetailDialog(true);
+  };
+
+  const handleCloseDetailDialog = () => {
+    setShowDetailDialog(false);
+    setSelectedPatient(null);
+  };
+
+  const handleUpdatePatient = async () => {
+    await loadPatients();
+  };
+
   return (
     <Layout>
       <div>
