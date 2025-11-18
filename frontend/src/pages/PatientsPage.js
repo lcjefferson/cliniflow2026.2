@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
-import { Plus, Edit, Trash2, Eye, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Plus, Edit, Trash2, Eye, ChevronLeft, ChevronRight, X, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import PatientDetailDialog from "../components/PatientDetailDialog";
 
 export default function PatientsPage() {
   const [patients, setPatients] = useState([]);
@@ -16,6 +17,9 @@ export default function PatientsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [formData, setFormData] = useState({ name: "", email: "", phone: "", birthdate: "", address: "" });
+  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [patientDebts, setPatientDebts] = useState({});
 
   useEffect(() => {
     loadPatients();
