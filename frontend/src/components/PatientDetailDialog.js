@@ -798,7 +798,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
     {/* Medical Record Dialog */}
     <Dialog open={showMedicalRecordDialog} onOpenChange={setShowMedicalRecordDialog}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] w-[95vw] md:w-auto overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Novo Prontuário - {patient?.name}</DialogTitle>
         </DialogHeader>
