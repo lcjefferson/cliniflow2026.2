@@ -447,52 +447,134 @@ export default function CalendarPage() {
 
         {/* Grade do Calendário */}
         <div className="bg-white rounded-2xl shadow-lg p-6">
-          {/* Cabeçalho dos dias da semana */}
-          <div className="grid grid-cols-7 gap-2 mb-4">
-            {weekDays.map((day, index) => (
-              <div key={index} className="text-center font-bold text-gray-700 py-2">
-                {day}
+          {viewMode === "month" && (
+            <>
+              {/* Cabeçalho dos dias da semana */}
+              <div className="grid grid-cols-7 gap-2 mb-4">
+                {weekDays.map((day, index) => (
+                  <div key={index} className="text-center font-bold text-gray-700 py-2">
+                    {day}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          {/* Dias do mês */}
-          <div className="grid grid-cols-7 gap-2">
-            {generateCalendarDays().map((dayObj, index) => (
-              <div
-                key={index}
-                onDoubleClick={() => handleDayDoubleClick(dayObj.date)}
-                className={`min-h-[120px] border rounded-lg p-2 cursor-pointer ${
-                  dayObj.day ? 'bg-white hover:bg-gray-50' : 'bg-gray-100'
-                } ${dayObj.isToday ? 'border-blue-500 border-2' : 'border-gray-200'}`}
-              >
-                {dayObj.day && (
-                  <>
-                    <div className={`text-sm font-semibold mb-2 ${
-                      dayObj.isToday ? 'text-blue-600' : 'text-gray-700'
-                    }`}>
-                      {dayObj.day}
+              {/* Dias do mês */}
+              <div className="grid grid-cols-7 gap-2">
+                {generateCalendarDays().map((dayObj, index) => (
+                  <div
+                    key={index}
+                    onDoubleClick={() => handleDayDoubleClick(dayObj.date)}
+                    className={`min-h-[120px] border rounded-lg p-2 cursor-pointer ${
+                      dayObj.day ? 'bg-white hover:bg-gray-50' : 'bg-gray-100'
+                    } ${dayObj.isToday ? 'border-blue-500 border-2' : 'border-gray-200'}`}
+                  >
+                    {dayObj.day && (
+                      <>
+                        <div className={`text-sm font-semibold mb-2 ${
+                          dayObj.isToday ? 'text-blue-600' : 'text-gray-700'
+                        }`}>
+                          {dayObj.day}
+                        </div>
+                        
+                        {/* Agendamentos do dia */}
+                        <div className="space-y-1">
+                          {getAppointmentsForDay(dayObj.date).map((apt, aptIndex) => (
+                            <button
+                              key={aptIndex}
+                              onClick={() => openAppointmentDetails(apt)}
+                              className={`w-full text-left text-xs px-2 py-1 rounded text-white hover:opacity-80 transition-opacity truncate ${
+                                getProfessionalColor(apt.professional_id)
+                              }`}
+                            >
+                              {apt.appointment_time} - {getProfessionalName(apt.professional_id)}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {viewMode === "week" && (
+            <>
+              {/* Visualização de Semana */}
+              <div className="grid grid-cols-7 gap-2">
+                {getWeekDays().map((dayObj, index) => (
+                  <div
+                    key={index}
+                    onDoubleClick={() => handleDayDoubleClick(dayObj.date)}
+                    className={`min-h-[400px] border rounded-lg p-2 cursor-pointer bg-white hover:bg-gray-50 ${
+                      dayObj.isToday ? 'border-blue-500 border-2' : 'border-gray-200'
+                    }`}
+                  >
+                    <div className={`text-center mb-3 ${dayObj.isToday ? 'text-blue-600' : 'text-gray-700'}`}>
+                      <div className="font-bold">{dayObj.dayName}</div>
+                      <div className="text-2xl font-bold">{dayObj.day}</div>
                     </div>
                     
-                    {/* Agendamentos do dia */}
-                    <div className="space-y-1">
+                    <div className="space-y-2">
                       {getAppointmentsForDay(dayObj.date).map((apt, aptIndex) => (
                         <button
                           key={aptIndex}
                           onClick={() => openAppointmentDetails(apt)}
-                          className={`w-full text-left text-xs px-2 py-1 rounded text-white hover:opacity-80 transition-opacity truncate ${
+                          className={`w-full text-left text-xs px-2 py-2 rounded text-white hover:opacity-80 transition-opacity ${
                             getProfessionalColor(apt.professional_id)
                           }`}
                         >
-                          {apt.appointment_time} - {getProfessionalName(apt.professional_id)}
+                          <div className="font-semibold">{apt.appointment_time}</div>
+                          <div className="truncate">{getProfessionalName(apt.professional_id)}</div>
+                          <div className="truncate text-[10px] opacity-80">{getPatientName(apt.patient_id)}</div>
                         </button>
                       ))}
                     </div>
-                  </>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {viewMode === "day" && (
+            <>
+              {/* Visualização de Dia */}
+              <div className="space-y-3">
+                {getAppointmentsForDay(currentDate.toISOString().split('T')[0])
+                  .sort((a, b) => a.appointment_time.localeCompare(b.appointment_time))
+                  .map((apt, index) => (
+                    <button
+                      key={index}
+                      onClick={() => openAppointmentDetails(apt)}
+                      className={`w-full text-left p-4 rounded-lg text-white hover:opacity-90 transition-opacity ${
+                        getProfessionalColor(apt.professional_id)
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="text-2xl font-bold mb-2">{apt.appointment_time}</div>
+                          <div className="text-lg font-semibold">{getPatientName(apt.patient_id)}</div>
+                          <div className="text-sm opacity-90">{getProfessionalName(apt.professional_id)}</div>
+                          <div className="text-sm opacity-80">{getServiceName(apt.service_id)}</div>
+                        </div>
+                        {apt.amount && (
+                          <div className="text-right">
+                            <div className="text-lg font-bold">R$ {apt.amount.toFixed(2)}</div>
+                            {apt.paid && <div className="text-xs">✓ Pago</div>}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                
+                {getAppointmentsForDay(currentDate.toISOString().split('T')[0]).length === 0 && (
+                  <div className="text-center py-12 text-gray-500">
+                    <p>Nenhum agendamento para este dia</p>
+                  </div>
                 )}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </div>
 
         {/* Legenda de Profissionais */}
