@@ -14,6 +14,10 @@ export default function RevenuePage() {
   const [patients, setPatients] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
   const [totalRevenue, setTotalRevenue] = useState(0);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterPaymentMethod, setFilterPaymentMethod] = useState("");
+  const [filterDateStart, setFilterDateStart] = useState("");
+  const [filterDateEnd, setFilterDateEnd] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(15);
   const [formData, setFormData] = useState({
