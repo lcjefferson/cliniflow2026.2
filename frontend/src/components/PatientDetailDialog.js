@@ -795,6 +795,131 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Medical Record Dialog */}
+    <Dialog open={showMedicalRecordDialog} onOpenChange={setShowMedicalRecordDialog}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Novo Prontuário - {patient?.name}</DialogTitle>
+        </DialogHeader>
+        
+        {/* Templates Rápidos */}
+        <div className="mb-4">
+          <Label className="text-sm font-semibold mb-2 block">Templates Disponíveis</Label>
+          <div className="grid grid-cols-3 gap-3">
+            <button
+              onClick={() => handleUseTemplate("prontuario")}
+              className="p-3 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all text-center"
+            >
+              <FileText className="w-6 h-6 text-blue-500 mx-auto mb-1" />
+              <span className="text-sm font-medium">Prontuário</span>
+            </button>
+            <button
+              onClick={() => handleUseTemplate("receita")}
+              className="p-3 border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all text-center"
+            >
+              <FileText className="w-6 h-6 text-green-500 mx-auto mb-1" />
+              <span className="text-sm font-medium">Receita</span>
+            </button>
+            <button
+              onClick={() => handleUseTemplate("atestado")}
+              className="p-3 border-2 border-gray-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all text-center"
+            >
+              <FileText className="w-6 h-6 text-purple-500 mx-auto mb-1" />
+              <span className="text-sm font-medium">Atestado</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <Label>Tipo de Documento *</Label>
+            <select
+              className="input-field"
+              value={medicalRecordForm.record_type}
+              onChange={(e) => setMedicalRecordForm({...medicalRecordForm, record_type: e.target.value})}
+            >
+              <option value="prontuario">Prontuário Completo</option>
+              <option value="receita">Receita Médica</option>
+              <option value="atestado">Atestado Médico</option>
+            </select>
+          </div>
+
+          <div>
+            <Label>Sintomas</Label>
+            <textarea
+              className="input-field min-h-[80px]"
+              value={medicalRecordForm.symptoms}
+              onChange={(e) => setMedicalRecordForm({...medicalRecordForm, symptoms: e.target.value})}
+              placeholder="Descreva os sintomas apresentados pelo paciente"
+            />
+          </div>
+
+          <div>
+            <Label>Diagnóstico</Label>
+            <Input
+              value={medicalRecordForm.diagnosis}
+              onChange={(e) => setMedicalRecordForm({...medicalRecordForm, diagnosis: e.target.value})}
+              placeholder="Diagnóstico médico"
+            />
+          </div>
+
+          <div>
+            <Label>Tratamento Proposto</Label>
+            <textarea
+              className="input-field min-h-[80px]"
+              value={medicalRecordForm.treatment}
+              onChange={(e) => setMedicalRecordForm({...medicalRecordForm, treatment: e.target.value})}
+              placeholder="Descreva o tratamento recomendado"
+            />
+          </div>
+
+          <div>
+            <Label>Medicações Prescritas</Label>
+            <textarea
+              className="input-field min-h-[80px]"
+              value={medicalRecordForm.medications}
+              onChange={(e) => setMedicalRecordForm({...medicalRecordForm, medications: e.target.value})}
+              placeholder="Liste as medicações e posologia"
+            />
+          </div>
+
+          <div>
+            <Label>Observações / Conteúdo Completo</Label>
+            <textarea
+              className="input-field min-h-[200px] font-mono text-sm"
+              value={medicalRecordForm.observations}
+              onChange={(e) => setMedicalRecordForm({...medicalRecordForm, observations: e.target.value})}
+              placeholder="Observações adicionais ou conteúdo completo do documento"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Nome do Médico</Label>
+              <Input
+                value={medicalRecordForm.doctor_name}
+                onChange={(e) => setMedicalRecordForm({...medicalRecordForm, doctor_name: e.target.value})}
+                placeholder="Dr(a). Nome Completo"
+              />
+            </div>
+            <div>
+              <Label>CRM</Label>
+              <Input
+                value={medicalRecordForm.crm}
+                onChange={(e) => setMedicalRecordForm({...medicalRecordForm, crm: e.target.value})}
+                placeholder="CRM/UF"
+              />
+            </div>
+          </div>
+
+          <Button onClick={handleAddMedicalRecord} className="w-full btn-primary">
+            <Save className="w-5 h-5 mr-2" />
+            Criar Prontuário
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
     </>
   );
 }
