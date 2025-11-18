@@ -248,7 +248,20 @@ export default function CalendarPage() {
 
   const getAppointmentsForDay = (date) => {
     if (!date) return [];
-    return appointments.filter(apt => apt.appointment_date === date);
+    let filtered = appointments.filter(apt => apt.appointment_date === date);
+    
+    // Aplicar filtros
+    if (filterProfessional) {
+      filtered = filtered.filter(apt => apt.professional_id === filterProfessional);
+    }
+    if (filterRoom) {
+      filtered = filtered.filter(apt => apt.room_id === filterRoom);
+    }
+    if (filterService) {
+      filtered = filtered.filter(apt => apt.service_id === filterService);
+    }
+    
+    return filtered;
   };
 
   const previousMonth = () => {
