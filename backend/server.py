@@ -795,10 +795,16 @@ async def convert_lead_to_patient(lead_id: str, birthdate: str, address: Optiona
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     
-    # Verificar se já existe paciente com mesmo email
-    existing_patient = await db.patients.find_one({"email": lead["email"]}, {"_id": 0})
+    # Verificar se já existe paciente com mesmo email ou telefone
+    existing_patient = await db.patients.find_one({
+        "$or": [
+            {"email": lead["email"]},
+            {"phone": lead["phone"]}
+        ]
+    }, {"_id": 0})
+    
     if existing_patient:
-        raise HTTPException(status_code=400, detail="Patient with this email already exists")
+        raise HTTPException(status_code=400, detail="Paciente com este email ou telefone já existe")
     
     # Criar paciente
     patient = Patient(
@@ -813,11 +819,8 @@ async def convert_lead_to_patient(lead_id: str, birthdate: str, address: Optiona
     doc['created_at'] = doc['created_at'].isoformat()
     await db.patients.insert_one(doc)
     
-    # Atualizar status do lead para convertido
-    await db.leads.update_one(
-        {"id": lead_id},
-        {"$set": {"status": "converted"}}
-    )
+    # DELETAR o lead da lista (não apenas marcar como convertido)
+    await db.leads.delete_one({"id": lead_id})
     
     return patient
 
