@@ -428,7 +428,15 @@ metadata:
         comment: "🔥 TESTE COMPLETO DE TODOS OS DELETE ENDPOINTS REALIZADO COM SUCESSO! ✅ DELETE /api/professionals/{id} (200/404) ✅ DELETE /api/services/{id} (200/404) ✅ DELETE /api/patients/{id} (200/404) ✅ DELETE /api/rooms/{id} (200/404) ✅ DELETE /api/appointments/{id} (200/404) ✅ DELETE /api/leads/{id} (200/404) ✅ DELETE /api/users/{id} (200/404 - admin only) ✅ DELETE /api/medical-records/{id} (200/404) ✅ DELETE /api/followups/{id} (200/404). FLUXO TESTADO: Login admin → Criar item → Confirmar criação → Deletar → Confirmar remoção → Testar ID inválido. Taxa de sucesso: 100% (56/56 testes). TODOS OS 9 ENDPOINTS DELETE FUNCIONANDO PERFEITAMENTE!"
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - task: "Patient Detail Dialog with Attachments, Treatments, Anamnese, Medical Records, and Professionals"
+      description: "Test new patient detail modal with all tabs: Info, Attachments, Records, Treatments, Anamnese, Professionals"
+      files: ["frontend/src/components/PatientDetailDialog.js", "frontend/src/pages/PatientsPage.js"]
+      priority: "P1"
+    - task: "Patient Debts Indicator and Revenue Page Debt Filter"
+      description: "Test debt indicator on patients page and debt filter on revenue page"
+      files: ["frontend/src/pages/PatientsPage.js", "frontend/src/pages/RevenuePage.js"]
+      priority: "P1"
   stuck_tasks: []
   test_all: false
   test_priority: "high"
