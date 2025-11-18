@@ -297,6 +297,88 @@ export default function CalendarPage() {
           </div>
         </div>
 
+        {/* Filtros e Visualizações */}
+        <div className="bg-white rounded-2xl p-6 shadow-lg mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Visualização */}
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Visualização</Label>
+              <select
+                className="input-field"
+                value={viewMode}
+                onChange={(e) => setViewMode(e.target.value)}
+              >
+                <option value="month">Mês</option>
+                <option value="week">Semana</option>
+                <option value="day">Dia</option>
+              </select>
+            </div>
+
+            {/* Filtro por Profissional */}
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Profissional</Label>
+              <select
+                className="input-field"
+                value={filterProfessional}
+                onChange={(e) => setFilterProfessional(e.target.value)}
+              >
+                <option value="">Todos</option>
+                {professionals.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filtro por Sala */}
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Sala</Label>
+              <select
+                className="input-field"
+                value={filterRoom}
+                onChange={(e) => setFilterRoom(e.target.value)}
+              >
+                <option value="">Todas</option>
+                {rooms.map(r => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filtro por Serviço */}
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Serviço</Label>
+              <select
+                className="input-field"
+                value={filterService}
+                onChange={(e) => setFilterService(e.target.value)}
+              >
+                <option value="">Todos</option>
+                {services.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Botão Limpar Filtros */}
+          {(filterProfessional || filterRoom || filterService) && (
+            <div className="mt-4">
+              <Button
+                onClick={() => {
+                  setFilterProfessional("");
+                  setFilterRoom("");
+                  setFilterService("");
+                }}
+                variant="outline"
+                className="btn-secondary"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Limpar Filtros
+              </Button>
+            </div>
+          )}
+        </div>
+
         {/* Navegação do Mês */}
         <div className="flex items-center justify-between mb-6 bg-white rounded-2xl p-6 shadow-lg">
           <Button onClick={previousMonth} variant="outline" className="btn-secondary">
