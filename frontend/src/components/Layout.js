@@ -109,9 +109,17 @@ export default function Layout({ children }) {
         </div>
       </aside>
 
+      {/* Overlay para mobile quando menu está aberto */}
+      {!isCollapsed && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden"
+          onClick={() => setIsCollapsed(true)}
+        ></div>
+      )}
+
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto p-8">
+      <main className={`flex-1 overflow-y-auto bg-gray-50 transition-all duration-500 ${isCollapsed ? 'md:ml-0' : 'md:ml-0'}`}>
+        <div className="w-full px-4 py-6 md:px-6 md:py-8 lg:px-8">
           {children}
         </div>
       </main>
