@@ -206,12 +206,14 @@ export default function RevenuePage() {
                 <X className="w-4 h-4 mr-2" />
                 Limpar Filtros
               </Button>
-              <span className="text-sm text-gray-600">
-                {filteredTransactions.length} transação(ões) encontrada(s) - 
-                <span className="font-bold text-green-600 ml-2">
-                  R$ {filteredTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-600">
+                  {filteredTransactions.length} transação(ões) encontrada(s)
                 </span>
-              </span>
+                <span className="text-sm font-bold text-green-600">
+                  Total: R$ {filteredTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
             </div>
           )}
         </div>
