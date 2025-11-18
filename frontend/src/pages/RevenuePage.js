@@ -250,6 +250,12 @@ export default function RevenuePage() {
                       <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
                         {getPaymentMethodLabel(transaction.payment_method)}
                       </span>
+                      {patientDebts[transaction.patient_id] > 0 && (
+                        <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-semibold flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          Débito: R$ {patientDebts[transaction.patient_id].toFixed(2)}
+                        </span>
+                      )}
                     </div>
                     <p className="text-gray-600 text-sm">{transaction.description}</p>
                     <p className="text-gray-500 text-xs mt-1">
