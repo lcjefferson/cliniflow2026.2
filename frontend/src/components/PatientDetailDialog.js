@@ -279,7 +279,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   return (
     <>
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+      <DialogContent className="max-w-5xl max-h-[90vh] w-[95vw] md:w-auto flex flex-col p-0 overflow-hidden">
         <div className="flex-shrink-0 p-6 pb-0">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
