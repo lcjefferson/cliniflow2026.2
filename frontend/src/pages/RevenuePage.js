@@ -99,7 +99,6 @@ export default function RevenuePage() {
         transaction_date: new Date().toISOString().split('T')[0],
         status: "paid"
       });
-      setPatientSearchTerm("");
       loadData();
     } catch (error) {
       toast.error(editingId ? "Erro ao atualizar transação" : "Erro ao registrar pagamento/débito");
