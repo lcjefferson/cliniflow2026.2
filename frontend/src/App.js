@@ -53,6 +53,7 @@ function App() {
           <Route path="/rooms" element={<PrivateRoute><RoomsPage /></PrivateRoute>} />
           <Route path="/patients" element={<PrivateRoute><PatientsPage /></PrivateRoute>} />
           <Route path="/medical-records" element={<PrivateRoute><MedicalRecordsPage /></PrivateRoute>} />
+          <Route path="/reports" element={<PrivateRoute><ReportsPage /></PrivateRoute>} />
           <Route path="/revenue" element={<PrivateRoute><RevenuePage /></PrivateRoute>} />
           <Route path="/users" element={<PrivateRoute><UsersPage /></PrivateRoute>} />
           <Route path="/settings" element={<PrivateRoute><SettingsPage /></PrivateRoute>} />
