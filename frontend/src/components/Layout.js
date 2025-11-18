@@ -43,18 +43,31 @@ export default function Layout({ children }) {
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
-      <aside className="w-72 bg-white shadow-xl flex flex-col">
-        <div className="p-6 border-b border-gray-100">
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-transparent">
-            CliniFlow
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">{user?.name}</p>
-          <p className="text-xs text-gray-400">
-            {userType === "admin" ? "Super Usuário" : userType === "consultor" ? "Consultor" : "Profissional"}
-          </p>
+      <aside className={`bg-white shadow-xl flex flex-col transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-72'}`}>
+        <div className={`p-6 border-b border-gray-100 ${isCollapsed ? 'px-3' : ''}`}>
+          <div className="flex items-center justify-between">
+            {!isCollapsed && (
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-transparent">
+                  CliniFlow
+                </h1>
+                <p className="text-sm text-gray-500 mt-1">{user?.name}</p>
+                <p className="text-xs text-gray-400">
+                  {userType === "admin" ? "Super Usuário" : userType === "consultor" ? "Consultor" : "Profissional"}
+                </p>
+              </div>
+            )}
+            <button
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className={`p-2 hover:bg-gray-100 rounded-lg transition-colors ${isCollapsed ? 'mx-auto' : ''}`}
+              title={isCollapsed ? "Expandir menu" : "Recolher menu"}
+            >
+              <Menu className="w-5 h-5 text-gray-600" />
+            </button>
+          </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
@@ -63,10 +76,11 @@ export default function Layout({ children }) {
                 key={item.path}
                 to={item.path}
                 data-testid={`nav-link-${item.label.toLowerCase()}`}
-                className={`sidebar-link ${isActive ? "active" : ""}`}
+                className={`sidebar-link ${isActive ? "active" : ""} ${isCollapsed ? 'justify-center' : ''}`}
+                title={isCollapsed ? item.label : ""}
               >
                 <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
+                {!isCollapsed && <span>{item.label}</span>}
               </Link>
             );
           })}
@@ -76,10 +90,11 @@ export default function Layout({ children }) {
           <button
             onClick={handleLogout}
             data-testid="logout-button"
-            className="flex items-center gap-3 px-4 py-3 w-full text-red-600 hover:bg-red-50 rounded-xl transition-all"
+            className={`flex items-center gap-3 px-4 py-3 w-full text-red-600 hover:bg-red-50 rounded-xl transition-all ${isCollapsed ? 'justify-center' : ''}`}
+            title={isCollapsed ? "Sair" : ""}
           >
             <LogOut className="w-5 h-5" />
-            <span>Sair</span>
+            {!isCollapsed && <span>Sair</span>}
           </button>
         </div>
       </aside>
