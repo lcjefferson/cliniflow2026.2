@@ -219,6 +219,52 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }
   };
 
+  const handleAddMedicalRecord = async () => {
+    try {
+      const payload = {
+        ...medicalRecordForm,
+        patient_id: patient.id
+      };
+      await api.post("/medical-records", payload);
+      toast.success("Prontuário criado com sucesso!");
+      setShowMedicalRecordDialog(false);
+      setMedicalRecordForm({
+        record_type: "prontuario",
+        diagnosis: "",
+        symptoms: "",
+        treatment: "",
+        medications: "",
+        observations: "",
+        doctor_name: "",
+        crm: "",
+        template_used: ""
+      });
+      loadPatientData(); // Reload to show new record
+    } catch (error) {
+      toast.error("Erro ao criar prontuário");
+    }
+  };
+
+  const handleUseTemplate = (templateType) => {
+    let content = "";
+    
+    if (templateType === "receita") {
+      content = "RECEITA MÉDICA\n\nPaciente: " + patient.name + "\nData: " + new Date().toLocaleDateString('pt-BR') + "\n\nMedicamentos Prescritos:\n1. [Medicamento 1] - [Posologia]\n2. [Medicamento 2] - [Posologia]\n\nObservações:\n[Instruções de uso]\n\n___________________________\nDr(a). [Nome]\nCRM: [Número]";
+    } else if (templateType === "atestado") {
+      content = "ATESTADO MÉDICO\n\nAtesto para os devidos fins que o(a) paciente " + patient.name + " esteve sob meus cuidados médicos e necessita de afastamento de suas atividades por [X] dias, a partir de " + new Date().toLocaleDateString('pt-BR') + ".\n\nCID: [Código se aplicável]\n\nObservações:\n[Observações adicionais]\n\n___________________________\nDr(a). [Nome]\nCRM: [Número]\nData: " + new Date().toLocaleDateString('pt-BR');
+    } else {
+      content = "PRONTUÁRIO MÉDICO\n\nPaciente: " + patient.name + "\nData da Consulta: " + new Date().toLocaleDateString('pt-BR') + "\n\nQueixa Principal:\n[Descrever sintomas]\n\nHistória da Doença Atual:\n[Histórico]\n\nExame Físico:\n[Resultados do exame]\n\nDiagnóstico:\n[Diagnóstico]\n\nTratamento Proposto:\n[Tratamento]\n\nMedicações:\n[Lista de medicações]\n\nObservações:\n[Observações adicionais]";
+    }
+    
+    setMedicalRecordForm({
+      ...medicalRecordForm,
+      record_type: templateType,
+      observations: content,
+      template_used: templateType === "receita" ? "Receita Médica" : templateType === "atestado" ? "Atestado Médico" : "Prontuário Completo"
+    });
+    toast.success("Template aplicado!");
+  };
+
   if (!patient) return null;
 
   const tabs = [
