@@ -174,17 +174,7 @@ export default function LeadsPage() {
       <div>
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900" data-testid="leads-page-title">Leads</h1>
-          <div className="flex gap-4">
-            <select 
-              className="input-field w-48" 
-              value={filterStatus} 
-              onChange={(e) => setFilterStatus(e.target.value)}
-            >
-              <option value="">Todos</option>
-              <option value="new">Novos</option>
-              <option value="hot">Quentes</option>
-              <option value="converted">Convertidos</option>
-            </select>
+          <div className="flex gap-3">
             <Button onClick={handleCleanupDuplicates} variant="outline" className="btn-secondary">
               <Trash2 className="w-5 h-5 mr-2" />
               Limpar Duplicados
@@ -194,6 +184,67 @@ export default function LeadsPage() {
               Adicionar Lead
             </Button>
           </div>
+        </div>
+
+        {/* Barra de Pesquisa e Filtros */}
+        <div className="bg-white rounded-2xl p-6 shadow-lg mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-1">
+              <Label className="text-sm font-semibold mb-2 block">Pesquisar</Label>
+              <Input
+                placeholder="Nome, telefone ou email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Status</Label>
+              <select 
+                className="input-field" 
+                value={filterStatus} 
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <option value="">Todos</option>
+                <option value="new">Novos</option>
+                <option value="contacted">Contatados</option>
+                <option value="hot">Quentes</option>
+                <option value="cold">Frios</option>
+              </select>
+            </div>
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Origem</Label>
+              <select 
+                className="input-field" 
+                value={filterSource} 
+                onChange={(e) => setFilterSource(e.target.value)}
+              >
+                <option value="">Todas</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="instagram">Instagram</option>
+                <option value="messenger">Messenger</option>
+              </select>
+            </div>
+          </div>
+          {(searchTerm || filterStatus || filterSource) && (
+            <div className="mt-4">
+              <Button
+                onClick={() => {
+                  setSearchTerm("");
+                  setFilterStatus("");
+                  setFilterSource("");
+                }}
+                variant="outline"
+                className="btn-secondary text-sm"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Limpar Filtros
+              </Button>
+              <span className="ml-4 text-sm text-gray-600">
+                {filteredLeads.length} resultado(s) encontrado(s)
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="grid gap-6">
