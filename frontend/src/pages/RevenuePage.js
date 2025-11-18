@@ -364,13 +364,31 @@ export default function RevenuePage() {
                       {new Date(transaction.transaction_date).toLocaleDateString('pt-BR')}
                     </p>
                   </div>
-                  <div className="text-right">
-                    <p className={`text-2xl font-bold ${transaction.status === 'pending' ? 'text-orange-600' : 'text-green-600'}`}>
-                      R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </p>
-                    {transaction.status === "pending" && (
-                      <p className="text-xs text-orange-600 mt-1">Aguardando pagamento</p>
-                    )}
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className={`text-2xl font-bold ${transaction.status === 'pending' ? 'text-orange-600' : 'text-green-600'}`}>
+                        R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                      {transaction.status === "pending" && (
+                        <p className="text-xs text-orange-600 mt-1">Aguardando pagamento</p>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleEdit(transaction)}
+                        className="text-blue-500 hover:text-blue-700 p-2"
+                        title="Editar transação"
+                      >
+                        <Edit className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(transaction.id)}
+                        className="text-red-500 hover:text-red-700 p-2"
+                        title="Deletar transação"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
