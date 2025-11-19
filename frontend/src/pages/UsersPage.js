@@ -280,6 +280,42 @@ export default function UsersPage() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Modal de Confirmação de Exclusão */}
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirmar Exclusão</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-gray-700">
+                Tem certeza que deseja deletar o usuário <strong>{userToDelete?.name}</strong>?
+              </p>
+              <p className="text-sm text-gray-500">
+                Esta ação não pode ser desfeita.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowDeleteDialog(false);
+                    setUserToDelete(null);
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-red-500 hover:bg-red-600 text-white"
+                  onClick={confirmDelete}
+                >
+                  Confirmar Exclusão
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
