@@ -757,18 +757,83 @@ export default function CalendarPage() {
                   <Input
                     type="date"
                     value={formData.appointment_date}
-                    onChange={(e) => setFormData({...formData, appointment_date: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <Label>Horário</Label>
-                  <Input
-                    type="time"
-                    value={formData.appointment_time}
-                    onChange={(e) => setFormData({...formData, appointment_time: e.target.value})}
+                    onChange={(e) => {
+                      setFormData({...formData, appointment_date: e.target.value});
+                      setConflicts(null);
+                    }}
                   />
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Horário Início</Label>
+                  <Input
+                    type="time"
+                    value={formData.appointment_time}
+                    onChange={(e) => {
+                      setFormData({...formData, appointment_time: e.target.value});
+                      setConflicts(null);
+                    }}
+                    onBlur={checkConflicts}
+                  />
+                </div>
+                <div>
+                  <Label>Horário Fim</Label>
+                  <Input
+                    type="time"
+                    value={formData.appointment_time_end}
+                    onChange={(e) => {
+                      setFormData({...formData, appointment_time_end: e.target.value});
+                      setConflicts(null);
+                    }}
+                    onBlur={checkConflicts}
+                  />
+                </div>
+              </div>
+              
+              {/* Alerta de Conflitos */}
+              {conflicts && conflicts.has_conflicts && (
+                <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="text-red-600 font-bold text-lg">⚠️</div>
+                    <div className="flex-1">
+                      <h4 className="font-bold text-red-900 mb-2">Conflito de Horário Detectado!</h4>
+                      
+                      {conflicts.conflicts.professional_conflicts.length > 0 && (
+                        <div className="mb-3">
+                          <p className="text-sm font-semibold text-red-800 mb-1">👨‍⚕️ Profissional já tem agendamento:</p>
+                          {conflicts.conflicts.professional_conflicts.map((conflict, idx) => (
+                            <p key={idx} className="text-sm text-red-700 ml-4">
+                              • {conflict.time}{conflict.time_end ? ` - ${conflict.time_end}` : ''} - Paciente: {conflict.patient_name}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {conflicts.conflicts.room_conflicts.length > 0 && (
+                        <div>
+                          <p className="text-sm font-semibold text-red-800 mb-1">🚪 Sala já está ocupada:</p>
+                          {conflicts.conflicts.room_conflicts.map((conflict, idx) => (
+                            <p key={idx} className="text-sm text-red-700 ml-4">
+                              • {conflict.time}{conflict.time_end ? ` - ${conflict.time_end}` : ''} - Paciente: {conflict.patient_name}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      
+                      <p className="text-xs text-red-600 mt-2">
+                        Você pode continuar mesmo com conflitos, mas é recomendado escolher outro horário, profissional ou sala.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {checkingConflicts && (
+                <div className="text-center text-sm text-blue-600">
+                  Verificando disponibilidade...
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Valor (R$)</Label>
