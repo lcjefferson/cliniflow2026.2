@@ -1009,11 +1009,12 @@ async def delete_medical_record(record_id: str, current_user: dict = Depends(get
 @api_router.post("/leads", response_model=Lead)
 async def create_lead(data: LeadCreate, current_user: dict = Depends(get_current_user)):
     # Verificar se já existe paciente com mesmo telefone ou email
+    or_conditions = [{"phone": data.phone}]
+    if data.email:
+        or_conditions.append({"email": data.email})
+    
     existing_patient = await db.patients.find_one({
-        "$or": [
-            {"email": data.email} if data.email else {},
-            {"phone": data.phone}
-        ]
+        "$or": or_conditions
     }, {"_id": 0})
     
     if existing_patient:
