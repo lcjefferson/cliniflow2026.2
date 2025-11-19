@@ -204,10 +204,17 @@ export default function FollowUpPage() {
     setShowRuleDialog(true);
   };
 
-  const handleDeleteRule = (id) => {
-    if (!window.confirm("Tem certeza que deseja deletar esta regra?")) return;
-    setRules(rules.filter(r => r.id !== id));
+  const handleDeleteRule = (rule) => {
+    setRuleToDelete(rule);
+    setDeleteRuleDialog(true);
+  };
+
+  const confirmDeleteRule = () => {
+    if (!ruleToDelete) return;
+    setRules(rules.filter(r => r.id !== ruleToDelete.id));
     toast.success("Regra deletada!");
+    setDeleteRuleDialog(false);
+    setRuleToDelete(null);
   };
 
   const toggleRuleActive = (id) => {
