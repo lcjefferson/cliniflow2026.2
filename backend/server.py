@@ -84,13 +84,12 @@ class ProfessionalCreate(BaseModel):
     email: Optional[EmailStr] = None
     phone: str  # Obrigatório
     
+    @field_validator('email', mode='before')
     @classmethod
-    def model_validate(cls, obj):
-        # Converter strings vazias em None para campos opcionais
-        if isinstance(obj, dict):
-            if obj.get('email') == '':
-                obj['email'] = None
-        return super().model_validate(obj)
+    def empty_str_to_none(cls, v):
+        if v == '' or v is None:
+            return None
+        return v
 
 class Service(BaseModel):
     model_config = ConfigDict(extra="ignore")
