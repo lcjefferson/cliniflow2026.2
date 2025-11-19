@@ -301,7 +301,7 @@ export default function FollowUpPage() {
                       {rule.active ? "Desativar" : "Ativar"}
                     </button>
                     <button
-                      onClick={() => handleDeleteRule(rule.id)}
+                      onClick={() => handleDeleteRule(rule)}
                       className="text-red-500 hover:text-red-700 text-sm"
                     >
                       <Trash2 className="w-4 h-4" />
