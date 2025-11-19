@@ -58,6 +58,7 @@ function App() {
           <Route path="/revenue" element={<PrivateRoute><RevenuePage /></PrivateRoute>} />
           <Route path="/users" element={<PrivateRoute><UsersPage /></PrivateRoute>} />
           <Route path="/settings" element={<PrivateRoute><SettingsPage /></PrivateRoute>} />
+          <Route path="/webhook-test" element={<PrivateRoute><WebhookTestPage /></PrivateRoute>} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
