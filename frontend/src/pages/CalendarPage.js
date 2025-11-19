@@ -190,13 +190,19 @@ export default function CalendarPage() {
     setShowDialog(true);
   };
 
-  const handleDeleteAppointment = async (appointmentId) => {
-    if (!window.confirm("Tem certeza que deseja deletar este agendamento?")) {
-      return;
-    }
+  const handleDeleteAppointment = async (appointment) => {
+    setAppointmentToDelete(appointment);
+    setDeleteDialog(true);
+  };
+
+  const confirmDeleteAppointment = async () => {
+    if (!appointmentToDelete) return;
+    
     try {
-      await api.delete(`/appointments/${appointmentId}`);
+      await api.delete(`/appointments/${appointmentToDelete.id}`);
       toast.success("Agendamento deletado!");
+      setDeleteDialog(false);
+      setAppointmentToDelete(null);
       setShowDetailsDialog(false);
       loadMonthAppointments();
     } catch (error) {
