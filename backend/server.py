@@ -1452,7 +1452,7 @@ async def whatsapp_webhook(request: Request):
                                     "id": str(uuid.uuid4()),
                                     "name": f"Lead WhatsApp {from_number[-4:]}",
                                     "phone": from_number,
-                                    "email": "",
+                                    "email": None,
                                     "status": "novo",
                                     "source": "whatsapp",
                                     "created_at": datetime.now(timezone.utc).isoformat()
