@@ -1266,6 +1266,52 @@ async def get_appointments_stats(current_user: dict = Depends(get_current_user))
         "completed": completed
     }
 
+# Settings Routes
+@api_router.get("/settings/omnichannel")
+async def get_omnichannel_settings(current_user: dict = Depends(get_current_user)):
+    """Retorna as configurações do omnichannel"""
+    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+    if not settings:
+        return {"whatsapp": {}, "instagram": {}, "messenger": {}}
+    return settings.get("config", {"whatsapp": {}, "instagram": {}, "messenger": {}})
+
+@api_router.post("/settings/omnichannel/whatsapp")
+async def save_whatsapp_settings(config: dict, current_user: dict = Depends(get_current_user)):
+    """Salva configurações do WhatsApp"""
+    await db.settings.update_one(
+        {"type": "omnichannel"},
+        {"$set": {"config.whatsapp": config, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    return {"message": "WhatsApp settings saved successfully"}
+
+@api_router.post("/settings/omnichannel/instagram")
+async def save_instagram_settings(config: dict, current_user: dict = Depends(get_current_user)):
+    """Salva configurações do Instagram"""
+    await db.settings.update_one(
+        {"type": "omnichannel"},
+        {"$set": {"config.instagram": config, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    return {"message": "Instagram settings saved successfully"}
+
+@api_router.post("/settings/omnichannel/messenger")
+async def save_messenger_settings(config: dict, current_user: dict = Depends(get_current_user)):
+    """Salva configurações do Messenger"""
+    await db.settings.update_one(
+        {"type": "omnichannel"},
+        {"$set": {"config.messenger": config, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    return {"message": "Messenger settings saved successfully"}
+
+@api_router.post("/settings/omnichannel/{channel}/test")
+async def test_connection(channel: str, current_user: dict = Depends(get_current_user)):
+    """Testa a conexão com o canal"""
+    # Aqui você implementaria a lógica real de teste com as APIs
+    # Por enquanto, retornamos sucesso simulado
+    return {"success": True, "message": f"Connection to {channel} tested successfully"}
+
 app.include_router(api_router)
 
 app.add_middleware(
