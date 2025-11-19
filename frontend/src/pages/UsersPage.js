@@ -178,7 +178,7 @@ export default function UsersPage() {
                     <Edit className="w-5 h-5" />
                   </button>
                   <button
-                    onClick={() => handleDelete(user.id)}
+                    onClick={() => handleDelete(user)}
                     className="text-red-500 hover:text-red-700"
                   >
                     <Trash2 className="w-5 h-5" />
