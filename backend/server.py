@@ -1088,6 +1088,16 @@ async def get_conversation_messages(conversation_id: str, current_user: dict = D
 
 @api_router.post("/conversations/{conversation_id}/messages", response_model=Message)
 async def send_message(conversation_id: str, data: MessageCreate, current_user: dict = Depends(get_current_user)):
+    # Buscar conversa e lead
+    conversation = await db.conversations.find_one({"id": conversation_id}, {"_id": 0})
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    lead = await db.leads.find_one({"id": conversation["lead_id"]}, {"_id": 0})
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    
+    # Criar mensagem no banco
     message = Message(
         conversation_id=conversation_id,
         sender_type="consultant",
@@ -1105,6 +1115,43 @@ async def send_message(conversation_id: str, data: MessageCreate, current_user: 
         {"id": conversation_id},
         {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
     )
+    
+    # Enviar mensagem via WhatsApp API se for canal whatsapp
+    if conversation.get("channel") == "whatsapp":
+        try:
+            # Buscar configurações do WhatsApp
+            settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+            if settings and settings.get("config", {}).get("whatsapp", {}).get("enabled"):
+                whatsapp_config = settings["config"]["whatsapp"]
+                phone_number_id = whatsapp_config.get("phone_number_id")
+                access_token = whatsapp_config.get("access_token")
+                
+                if phone_number_id and access_token:
+                    # Enviar mensagem via WhatsApp Graph API
+                    whatsapp_url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+                    headers = {
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "messaging_product": "whatsapp",
+                        "to": lead["phone"],
+                        "type": "text",
+                        "text": {
+                            "body": data.content
+                        }
+                    }
+                    
+                    async with httpx.AsyncClient() as client:
+                        response = await client.post(whatsapp_url, json=payload, headers=headers, timeout=10)
+                        
+                        if response.status_code == 200:
+                            print(f"[WhatsApp] Message sent successfully to {lead['phone']}")
+                        else:
+                            print(f"[WhatsApp] Failed to send message: {response.status_code} - {response.text}")
+        except Exception as e:
+            print(f"[WhatsApp] Error sending message: {str(e)}")
+            # Não falhar a requisição se o envio do WhatsApp falhar
     
     return message
 
