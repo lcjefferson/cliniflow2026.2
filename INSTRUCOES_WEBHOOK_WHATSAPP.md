@@ -4,15 +4,20 @@
 - **Backend**: ✅ Funcionando corretamente
 - **Endpoint do Webhook**: ✅ Configurado e testado
 - **Validação de Token**: ✅ Implementada com sucesso
+- **URL Pública**: ✅ Acessível via HTTPS
+- **Teste Externo**: ✅ Validado com sucesso
 
-## 🔑 Suas Credenciais Atuais
+## 🔑 Suas Credenciais Corretas
 
-De acordo com o banco de dados, você já tem as seguintes configurações salvas:
+**USE ESTAS CREDENCIAIS NO META FOR DEVELOPERS:**
 
+- **Webhook URL**: `https://medmanage-47.preview.emergentagent.com/api/webhooks/whatsapp`
 - **Verify Token**: `ichrg8pgmhp`
 - **Phone Number ID**: `857247354135552`
 - **Business Account ID**: `2272353643208771`
 - **Access Token**: `EAAMFNEiQ4kQBP...` (oculto por segurança)
+
+⚠️ **IMPORTANTE**: Copie estas credenciais EXATAMENTE da página de Configurações no CliniFlow!
 
 ## 📋 Passo a Passo para Configurar no Meta for Developers
 
