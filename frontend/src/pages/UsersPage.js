@@ -12,6 +12,8 @@ export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [professionals, setProfessionals] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [userToDelete, setUserToDelete] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
