@@ -21,6 +21,10 @@ export default function FollowUpPage() {
   const [showRuleDialog, setShowRuleDialog] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editingRuleId, setEditingRuleId] = useState(null);
+  const [deleteDialog, setDeleteDialog] = useState(false);
+  const [followUpToDelete, setFollowUpToDelete] = useState(null);
+  const [deleteRuleDialog, setDeleteRuleDialog] = useState(false);
+  const [ruleToDelete, setRuleToDelete] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   
