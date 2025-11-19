@@ -1110,10 +1110,10 @@ async def convert_lead_to_patient(lead_id: str, birthdate: str, address: Optiona
     # Criar paciente
     patient = Patient(
         name=lead["name"],
-        email=lead["email"],
+        email=lead.get("email") or None,
         phone=lead["phone"],
         birthdate=birthdate,
-        address=address or ""
+        address=address or None
     )
     
     doc = patient.model_dump()
