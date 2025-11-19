@@ -79,10 +79,10 @@ class Professional(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ProfessionalCreate(BaseModel):
-    name: str
-    specialty: str
-    email: EmailStr
-    phone: str
+    name: str  # Obrigatório
+    specialty: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: str  # Obrigatório
 
 class Service(BaseModel):
     model_config = ConfigDict(extra="ignore")
