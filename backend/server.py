@@ -262,6 +262,14 @@ class LeadCreate(BaseModel):
     status: str = "new"
     notes: Optional[str] = None
     assigned_to: Optional[str] = None
+    
+    @classmethod
+    def model_validate(cls, obj):
+        # Converter strings vazias em None para campos opcionais
+        if isinstance(obj, dict):
+            if obj.get('email') == '':
+                obj['email'] = None
+        return super().model_validate(obj)
 
 class Conversation(BaseModel):
     model_config = ConfigDict(extra="ignore")
