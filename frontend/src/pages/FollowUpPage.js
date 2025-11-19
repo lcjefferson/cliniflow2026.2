@@ -148,12 +148,19 @@ export default function FollowUpPage() {
     setShowDialog(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Tem certeza que deseja deletar este follow-up?")) return;
+  const handleDelete = async (followUp) => {
+    setFollowUpToDelete(followUp);
+    setDeleteDialog(true);
+  };
+
+  const confirmDeleteFollowUp = async () => {
+    if (!followUpToDelete) return;
     
     try {
-      await api.delete(`/followups/${id}`);
+      await api.delete(`/followups/${followUpToDelete.id}`);
       toast.success("Follow-up deletado!");
+      setDeleteDialog(false);
+      setFollowUpToDelete(null);
       loadFollowUps();
     } catch (error) {
       toast.error("Erro ao deletar follow-up");
