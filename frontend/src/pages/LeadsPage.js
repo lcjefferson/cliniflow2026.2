@@ -419,6 +419,40 @@ export default function LeadsPage() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteDialog} onOpenChange={setDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirmar Exclusão</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">
+              <p className="text-gray-700">
+                Tem certeza que deseja excluir o lead <strong>{leadToDelete?.name}</strong>?
+              </p>
+              <p className="text-sm text-gray-500 mt-2">
+                Esta ação não pode ser desfeita.
+              </p>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteDialog(false);
+                  setLeadToDelete(null);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={confirmDelete}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Excluir Lead
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
