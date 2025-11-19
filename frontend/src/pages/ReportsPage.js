@@ -161,7 +161,7 @@ export default function ReportsPage() {
           new Date(patient.created_at).toLocaleDateString('pt-BR')
         ]);
         
-        doc.autoTable({
+        autoTable(doc, {
           startY: 35,
           head: [["Nome", "Email", "Telefone", "Nascimento", "Cadastro"]],
           body: tableData,
@@ -169,7 +169,7 @@ export default function ReportsPage() {
           headStyles: { fillColor: [59, 130, 246] }
         });
         
-        const finalY = doc.lastAutoTable.finalY || 35;
+        const finalY = doc.previousAutoTable?.finalY || 35;
         doc.setFontSize(12);
         doc.text(`Total de Pacientes: ${filteredData.length}`, 14, finalY + 10);
         
