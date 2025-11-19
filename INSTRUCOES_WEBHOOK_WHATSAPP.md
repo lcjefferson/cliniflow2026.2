@@ -45,17 +45,17 @@
 
 **Callback URL (URL de retorno de chamada):**
 ```
-[SUA_URL_DO_APLICATIVO]/api/webhooks/whatsapp
+https://medmanage-47.preview.emergentagent.com/api/webhooks/whatsapp
 ```
 
-**Importante**: Substitua `[SUA_URL_DO_APLICATIVO]` pela URL real do seu CliniFlow.
-- Se estiver em produção: use o domínio do seu aplicativo
-- Exemplo: `https://meu-cliniflow.com/api/webhooks/whatsapp`
+**COPIE EXATAMENTE ESTA URL** ⬆️ (use o botão de copiar na página de Configurações)
 
 **Verify Token (Token de verificação):**
 ```
 ichrg8pgmhp
 ```
+
+**COPIE EXATAMENTE ESTE TOKEN** ⬆️ (case-sensitive!)
 
 ⚠️ **ATENÇÃO**: Este token DEVE ser exatamente `ichrg8pgmhp` (o que está salvo no seu banco de dados).
 
