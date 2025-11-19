@@ -94,8 +94,43 @@ export default function CalendarPage() {
     }
   };
 
+  const checkConflicts = async () => {
+    if (!formData.professional_id || !formData.room_id || !formData.appointment_date || !formData.appointment_time) {
+      return;
+    }
+    
+    setCheckingConflicts(true);
+    try {
+      const params = new URLSearchParams({
+        professional_id: formData.professional_id,
+        room_id: formData.room_id,
+        appointment_date: formData.appointment_date,
+        appointment_time: formData.appointment_time,
+      });
+      
+      if (formData.appointment_time_end) {
+        params.append("appointment_time_end", formData.appointment_time_end);
+      }
+      
+      if (editingAppointment) {
+        params.append("exclude_appointment_id", editingAppointment.id);
+      }
+      
+      const response = await api.get(`/appointments/check-conflicts?${params.toString()}`);
+      setConflicts(response.data);
+    } catch (error) {
+      console.error("Erro ao verificar conflitos:", error);
+    } finally {
+      setCheckingConflicts(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Verificar conflitos antes de salvar
+    await checkConflicts();
+    
     try {
       if (editingAppointment) {
         await api.put(`/appointments/${editingAppointment.id}`, formData);
@@ -106,6 +141,7 @@ export default function CalendarPage() {
       }
       setShowDialog(false);
       setEditingAppointment(null);
+      setConflicts(null);
       setFormData({
         patient_id: "",
         professional_id: "",
@@ -113,6 +149,7 @@ export default function CalendarPage() {
         room_id: "",
         appointment_date: new Date().toISOString().split('T')[0],
         appointment_time: "",
+        appointment_time_end: "",
         amount: "",
         paid: false,
         notes: ""
