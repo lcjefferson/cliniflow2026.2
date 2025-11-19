@@ -11,7 +11,7 @@
 
 **USE ESTAS CREDENCIAIS NO META FOR DEVELOPERS:**
 
-- **Webhook URL**: `https://medmanage-47.preview.emergentagent.com/api/webhooks/whatsapp`
+- **Webhook URL**: `https://cliniflow-fix.preview.emergentagent.com/api/webhooks/whatsapp`
 - **Verify Token**: `ichrg8pgmhp`
 - **Phone Number ID**: `857247354135552`
 - **Business Account ID**: `2272353643208771`
@@ -45,7 +45,7 @@
 
 **Callback URL (URL de retorno de chamada):**
 ```
-https://medmanage-47.preview.emergentagent.com/api/webhooks/whatsapp
+https://cliniflow-fix.preview.emergentagent.com/api/webhooks/whatsapp
 ```
 
 **COPIE EXATAMENTE ESTA URL** ⬆️ (use o botão de copiar na página de Configurações)
