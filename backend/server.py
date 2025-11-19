@@ -748,6 +748,70 @@ async def get_patient_professionals(patient_id: str, current_user: dict = Depend
     return professionals
 
 # Appointment Routes
+@api_router.get("/appointments/check-conflicts")
+async def check_appointment_conflicts(
+    professional_id: str,
+    room_id: str,
+    appointment_date: str,
+    appointment_time: str,
+    appointment_time_end: Optional[str] = None,
+    exclude_appointment_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Verifica conflitos de horário para profissional e sala"""
+    conflicts = {"professional_conflicts": [], "room_conflicts": []}
+    
+    # Buscar agendamentos do mesmo dia
+    query = {
+        "appointment_date": appointment_date,
+        "status": {"$ne": "cancelled"}
+    }
+    if exclude_appointment_id:
+        query["id"] = {"$ne": exclude_appointment_id}
+    
+    appointments = await db.appointments.find(query, {"_id": 0}).to_list(1000)
+    
+    def times_overlap(start1, end1, start2, end2):
+        """Verifica se dois intervalos de tempo se sobrepõem"""
+        if not end1 or not end2:
+            # Se não tem hora final, considera conflito se a hora inicial é igual
+            return start1 == start2
+        return start1 < end2 and end1 > start2
+    
+    for apt in appointments:
+        apt_start = apt.get("appointment_time")
+        apt_end = apt.get("appointment_time_end")
+        
+        if not apt_start:
+            continue
+        
+        # Verificar conflito de profissional
+        if apt.get("professional_id") == professional_id:
+            if times_overlap(appointment_time, appointment_time_end, apt_start, apt_end):
+                # Buscar nome do paciente
+                patient = await db.patients.find_one({"id": apt["patient_id"]}, {"_id": 0})
+                conflicts["professional_conflicts"].append({
+                    "time": apt_start,
+                    "time_end": apt_end,
+                    "patient_name": patient["name"] if patient else "Desconhecido"
+                })
+        
+        # Verificar conflito de sala
+        if apt.get("room_id") == room_id:
+            if times_overlap(appointment_time, appointment_time_end, apt_start, apt_end):
+                # Buscar nome do paciente
+                patient = await db.patients.find_one({"id": apt["patient_id"]}, {"_id": 0})
+                conflicts["room_conflicts"].append({
+                    "time": apt_start,
+                    "time_end": apt_end,
+                    "patient_name": patient["name"] if patient else "Desconhecido"
+                })
+    
+    return {
+        "has_conflicts": len(conflicts["professional_conflicts"]) > 0 or len(conflicts["room_conflicts"]) > 0,
+        "conflicts": conflicts
+    }
+
 @api_router.post("/appointments", response_model=Appointment)
 async def create_appointment(data: AppointmentCreate, current_user: dict = Depends(get_current_user)):
     appointment = Appointment(**data.model_dump())
