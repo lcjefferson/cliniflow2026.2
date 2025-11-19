@@ -298,10 +298,10 @@ class FollowUp(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class FollowUpCreate(BaseModel):
-    lead_id: str
-    assigned_to: str
-    scheduled_date: str
-    notes: str
+    lead_id: Optional[str] = None
+    assigned_to: Optional[str] = None
+    scheduled_date: Optional[str] = None
+    notes: Optional[str] = None
 
 class AutoMessageRequest(BaseModel):
     patient_id: str
