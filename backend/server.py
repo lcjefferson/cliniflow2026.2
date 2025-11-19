@@ -232,11 +232,11 @@ class MedicalRecord(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class MedicalRecordCreate(BaseModel):
-    patient_id: str
-    professional_id: str
-    appointment_id: str
-    diagnosis: str
-    treatment: str
+    patient_id: Optional[str] = None
+    professional_id: Optional[str] = None
+    appointment_id: Optional[str] = None
+    diagnosis: Optional[str] = None
+    treatment: Optional[str] = None
     prescription: Optional[str] = None
     medical_certificate: Optional[str] = None
 
