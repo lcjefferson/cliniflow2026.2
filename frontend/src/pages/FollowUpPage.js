@@ -356,7 +356,7 @@ export default function FollowUpPage() {
                     <Edit className="w-5 h-5" />
                   </button>
                   <button
-                    onClick={() => handleDelete(followUp.id)}
+                    onClick={() => handleDelete(followUp)}
                     className="text-red-500 hover:text-red-700"
                   >
                     <Trash2 className="w-5 h-5" />
