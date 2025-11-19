@@ -547,6 +547,86 @@ export default function FollowUpPage() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Delete Follow-up Confirmation Dialog */}
+        <Dialog open={deleteDialog} onOpenChange={setDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirmar Exclusão de Follow-up</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">
+              <p className="text-gray-700">
+                Tem certeza que deseja excluir este follow-up?
+              </p>
+              {followUpToDelete && (
+                <div className="mt-3 p-3 bg-gray-50 rounded">
+                  <p className="text-sm"><strong>Data:</strong> {followUpToDelete.scheduled_date}</p>
+                  <p className="text-sm"><strong>Observações:</strong> {followUpToDelete.notes}</p>
+                </div>
+              )}
+              <p className="text-sm text-gray-500 mt-2">
+                Esta ação não pode ser desfeita.
+              </p>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteDialog(false);
+                  setFollowUpToDelete(null);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={confirmDeleteFollowUp}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Excluir Follow-up
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Rule Confirmation Dialog */}
+        <Dialog open={deleteRuleDialog} onOpenChange={setDeleteRuleDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirmar Exclusão de Regra</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">
+              <p className="text-gray-700">
+                Tem certeza que deseja excluir esta regra automática?
+              </p>
+              {ruleToDelete && (
+                <div className="mt-3 p-3 bg-gray-50 rounded">
+                  <p className="text-sm"><strong>Nome:</strong> {ruleToDelete.name}</p>
+                  <p className="text-sm"><strong>Tipo:</strong> {ruleToDelete.trigger_type}</p>
+                </div>
+              )}
+              <p className="text-sm text-gray-500 mt-2">
+                Esta ação não pode ser desfeita.
+              </p>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteRuleDialog(false);
+                  setRuleToDelete(null);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={confirmDeleteRule}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Excluir Regra
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
