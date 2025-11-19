@@ -32,7 +32,7 @@ export default function PatientCombobox({
     const search = searchTerm.toLowerCase();
     return (
       patient.name.toLowerCase().includes(search) ||
-      patient.email.toLowerCase().includes(search) ||
+      (patient.email && patient.email.toLowerCase().includes(search)) ||
       patient.phone.includes(search)
     );
   });
