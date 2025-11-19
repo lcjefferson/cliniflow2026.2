@@ -53,9 +53,9 @@ class User(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class UserRegister(BaseModel):
-    name: str
-    email: EmailStr
-    password: str
+    name: str  # Obrigatório
+    email: Optional[EmailStr] = None
+    password: str  # Obrigatório
     is_admin: bool = False
     user_type: str = "consultor"  # admin, consultor, profissional
     professional_id: Optional[str] = None
