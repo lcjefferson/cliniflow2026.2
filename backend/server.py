@@ -1312,6 +1312,279 @@ async def test_connection(channel: str, current_user: dict = Depends(get_current
     # Por enquanto, retornamos sucesso simulado
     return {"success": True, "message": f"Connection to {channel} tested successfully"}
 
+# Webhook Routes (para Meta/Facebook)
+@api_router.get("/webhooks/whatsapp")
+async def verify_whatsapp_webhook(request: Request):
+    """Verificação do webhook do WhatsApp pelo Meta"""
+    params = request.query_params
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+    
+    # Buscar o verify_token configurado
+    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+    if not settings:
+        raise HTTPException(status_code=403, detail="Settings not configured")
+    
+    stored_token = settings.get("config", {}).get("whatsapp", {}).get("verify_token")
+    
+    if mode == "subscribe" and token == stored_token:
+        return int(challenge)
+    else:
+        raise HTTPException(status_code=403, detail="Verification token mismatch")
+
+@api_router.post("/webhooks/whatsapp")
+async def whatsapp_webhook(request: Request):
+    """Recebe mensagens do WhatsApp"""
+    try:
+        body = await request.json()
+        
+        # Processar mensagens recebidas
+        if body.get("object") == "whatsapp_business_account":
+            for entry in body.get("entry", []):
+                for change in entry.get("changes", []):
+                    if change.get("field") == "messages":
+                        messages = change.get("value", {}).get("messages", [])
+                        
+                        for message in messages:
+                            # Extrair dados da mensagem
+                            from_number = message.get("from")
+                            message_id = message.get("id")
+                            message_text = message.get("text", {}).get("body", "")
+                            timestamp = message.get("timestamp")
+                            
+                            # Buscar ou criar lead
+                            lead = await db.leads.find_one({"phone": from_number}, {"_id": 0})
+                            if not lead:
+                                # Criar novo lead
+                                lead = {
+                                    "id": str(uuid.uuid4()),
+                                    "name": f"Lead WhatsApp {from_number[-4:]}",
+                                    "phone": from_number,
+                                    "email": "",
+                                    "status": "novo",
+                                    "source": "whatsapp",
+                                    "created_at": datetime.now(timezone.utc).isoformat()
+                                }
+                                await db.leads.insert_one(lead)
+                            
+                            # Buscar ou criar conversa
+                            conversation = await db.conversations.find_one(
+                                {"lead_id": lead["id"], "channel": "whatsapp", "status": "active"},
+                                {"_id": 0}
+                            )
+                            if not conversation:
+                                conversation = {
+                                    "id": str(uuid.uuid4()),
+                                    "lead_id": lead["id"],
+                                    "channel": "whatsapp",
+                                    "assigned_to": None,
+                                    "assigned_to_name": None,
+                                    "status": "active",
+                                    "last_message_at": datetime.now(timezone.utc).isoformat(),
+                                    "created_at": datetime.now(timezone.utc).isoformat()
+                                }
+                                await db.conversations.insert_one(conversation)
+                            
+                            # Criar mensagem
+                            msg = {
+                                "id": str(uuid.uuid4()),
+                                "conversation_id": conversation["id"],
+                                "sender_type": "lead",
+                                "sender_id": lead["id"],
+                                "sender_name": lead["name"],
+                                "content": message_text,
+                                "read": False,
+                                "created_at": datetime.now(timezone.utc).isoformat()
+                            }
+                            await db.messages.insert_one(msg)
+                            
+                            # Atualizar última mensagem da conversa
+                            await db.conversations.update_one(
+                                {"id": conversation["id"]},
+                                {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
+                            )
+        
+        return {"status": "ok"}
+    except Exception as e:
+        print(f"Erro no webhook WhatsApp: {e}")
+        return {"status": "ok"}  # Sempre retornar 200 para o Meta
+
+@api_router.get("/webhooks/instagram")
+async def verify_instagram_webhook(request: Request):
+    """Verificação do webhook do Instagram pelo Meta"""
+    params = request.query_params
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+    
+    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+    if not settings:
+        raise HTTPException(status_code=403, detail="Settings not configured")
+    
+    stored_token = settings.get("config", {}).get("instagram", {}).get("verify_token")
+    
+    if mode == "subscribe" and token == stored_token:
+        return int(challenge)
+    else:
+        raise HTTPException(status_code=403, detail="Verification token mismatch")
+
+@api_router.post("/webhooks/instagram")
+async def instagram_webhook(request: Request):
+    """Recebe mensagens do Instagram"""
+    try:
+        body = await request.json()
+        
+        if body.get("object") == "instagram":
+            for entry in body.get("entry", []):
+                for messaging in entry.get("messaging", []):
+                    sender_id = messaging.get("sender", {}).get("id")
+                    message = messaging.get("message", {})
+                    message_text = message.get("text", "")
+                    
+                    if sender_id and message_text:
+                        # Buscar ou criar lead
+                        lead = await db.leads.find_one({"source_id": sender_id, "source": "instagram"}, {"_id": 0})
+                        if not lead:
+                            lead = {
+                                "id": str(uuid.uuid4()),
+                                "name": f"Lead Instagram {sender_id[-4:]}",
+                                "phone": "",
+                                "email": "",
+                                "status": "novo",
+                                "source": "instagram",
+                                "source_id": sender_id,
+                                "created_at": datetime.now(timezone.utc).isoformat()
+                            }
+                            await db.leads.insert_one(lead)
+                        
+                        # Buscar ou criar conversa
+                        conversation = await db.conversations.find_one(
+                            {"lead_id": lead["id"], "channel": "instagram", "status": "active"},
+                            {"_id": 0}
+                        )
+                        if not conversation:
+                            conversation = {
+                                "id": str(uuid.uuid4()),
+                                "lead_id": lead["id"],
+                                "channel": "instagram",
+                                "assigned_to": None,
+                                "assigned_to_name": None,
+                                "status": "active",
+                                "last_message_at": datetime.now(timezone.utc).isoformat(),
+                                "created_at": datetime.now(timezone.utc).isoformat()
+                            }
+                            await db.conversations.insert_one(conversation)
+                        
+                        # Criar mensagem
+                        msg = {
+                            "id": str(uuid.uuid4()),
+                            "conversation_id": conversation["id"],
+                            "sender_type": "lead",
+                            "sender_id": lead["id"],
+                            "sender_name": lead["name"],
+                            "content": message_text,
+                            "read": False,
+                            "created_at": datetime.now(timezone.utc).isoformat()
+                        }
+                        await db.messages.insert_one(msg)
+                        
+                        await db.conversations.update_one(
+                            {"id": conversation["id"]},
+                            {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
+                        )
+        
+        return {"status": "ok"}
+    except Exception as e:
+        print(f"Erro no webhook Instagram: {e}")
+        return {"status": "ok"}
+
+@api_router.get("/webhooks/messenger")
+async def verify_messenger_webhook(request: Request):
+    """Verificação do webhook do Messenger pelo Meta"""
+    params = request.query_params
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+    
+    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+    if not settings:
+        raise HTTPException(status_code=403, detail="Settings not configured")
+    
+    stored_token = settings.get("config", {}).get("messenger", {}).get("verify_token")
+    
+    if mode == "subscribe" and token == stored_token:
+        return int(challenge)
+    else:
+        raise HTTPException(status_code=403, detail="Verification token mismatch")
+
+@api_router.post("/webhooks/messenger")
+async def messenger_webhook(request: Request):
+    """Recebe mensagens do Messenger"""
+    try:
+        body = await request.json()
+        
+        if body.get("object") == "page":
+            for entry in body.get("entry", []):
+                for messaging in entry.get("messaging", []):
+                    sender_id = messaging.get("sender", {}).get("id")
+                    message = messaging.get("message", {})
+                    message_text = message.get("text", "")
+                    
+                    if sender_id and message_text:
+                        lead = await db.leads.find_one({"source_id": sender_id, "source": "messenger"}, {"_id": 0})
+                        if not lead:
+                            lead = {
+                                "id": str(uuid.uuid4()),
+                                "name": f"Lead Messenger {sender_id[-4:]}",
+                                "phone": "",
+                                "email": "",
+                                "status": "novo",
+                                "source": "messenger",
+                                "source_id": sender_id,
+                                "created_at": datetime.now(timezone.utc).isoformat()
+                            }
+                            await db.leads.insert_one(lead)
+                        
+                        conversation = await db.conversations.find_one(
+                            {"lead_id": lead["id"], "channel": "messenger", "status": "active"},
+                            {"_id": 0}
+                        )
+                        if not conversation:
+                            conversation = {
+                                "id": str(uuid.uuid4()),
+                                "lead_id": lead["id"],
+                                "channel": "messenger",
+                                "assigned_to": None,
+                                "assigned_to_name": None,
+                                "status": "active",
+                                "last_message_at": datetime.now(timezone.utc).isoformat(),
+                                "created_at": datetime.now(timezone.utc).isoformat()
+                            }
+                            await db.conversations.insert_one(conversation)
+                        
+                        msg = {
+                            "id": str(uuid.uuid4()),
+                            "conversation_id": conversation["id"],
+                            "sender_type": "lead",
+                            "sender_id": lead["id"],
+                            "sender_name": lead["name"],
+                            "content": message_text,
+                            "read": False,
+                            "created_at": datetime.now(timezone.utc).isoformat()
+                        }
+                        await db.messages.insert_one(msg)
+                        
+                        await db.conversations.update_one(
+                            {"id": conversation["id"]},
+                            {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
+                        )
+        
+        return {"status": "ok"}
+    except Exception as e:
+        print(f"Erro no webhook Messenger: {e}")
+        return {"status": "ok"}
+
 app.include_router(api_router)
 
 app.add_middleware(
