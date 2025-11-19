@@ -182,7 +182,16 @@ export default function ReportsPage() {
         doc.setFontSize(12);
         doc.text(`Total de Pacientes: ${filteredData.length}`, 14, finalY + 10);
         
-        doc.save(`relatorio_pacientes_${new Date().toISOString().split('T')[0]}.pdf`);
+        // Salvar PDF usando Blob (contorna sandbox)
+        const pdfBlob = doc.output('blob');
+        const url = URL.createObjectURL(pdfBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `relatorio_pacientes_${new Date().toISOString().split('T')[0]}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
         toast.success("Relatório PDF gerado!");
         
       } else if (format === "excel") {
