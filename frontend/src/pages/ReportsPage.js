@@ -94,7 +94,7 @@ export default function ReportsPage() {
           `R$ ${appt.amount?.toFixed(2) || "0.00"}`
         ]);
         
-        doc.autoTable({
+        autoTable(doc, {
           startY: 35,
           head: [["Data", "Hora", "Paciente", "Profissional", "Status", "Pago", "Valor"]],
           body: tableData,
@@ -104,7 +104,7 @@ export default function ReportsPage() {
         
         // Total
         const total = filteredData.reduce((sum, appt) => sum + (appt.amount || 0), 0);
-        const finalY = doc.lastAutoTable.finalY || 35;
+        const finalY = doc.previousAutoTable?.finalY || 35;
         doc.setFontSize(12);
         doc.text(`Total: R$ ${total.toFixed(2)}`, 14, finalY + 10);
         
