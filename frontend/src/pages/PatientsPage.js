@@ -214,19 +214,19 @@ export default function PatientsPage() {
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <Label>Nome</Label>
+                <Label>Nome *</Label>
                 <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
               </div>
               <div>
                 <Label>Email</Label>
-                <Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
+                <Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
               </div>
               <div>
-                <Label>Telefone</Label>
+                <Label>Telefone *</Label>
                 <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
               </div>
               <div>
-                <Label>Data de Nascimento</Label>
+                <Label>Data de Nascimento *</Label>
                 <Input type="date" value={formData.birthdate} onChange={(e) => setFormData({...formData, birthdate: e.target.value})} required />
               </div>
               <div>
