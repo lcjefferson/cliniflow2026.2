@@ -1316,29 +1316,65 @@ async def test_connection(channel: str, current_user: dict = Depends(get_current
 @api_router.get("/webhooks/whatsapp")
 async def verify_whatsapp_webhook(request: Request):
     """Verificação do webhook do WhatsApp pelo Meta"""
+    from fastapi.responses import PlainTextResponse
+    
     params = request.query_params
     mode = params.get("hub.mode")
     token = params.get("hub.verify_token")
     challenge = params.get("hub.challenge")
     
-    print(f"[WhatsApp Webhook] Verification request received")
-    print(f"Mode: {mode}, Token received: {token}, Challenge: {challenge}")
+    print(f"\n========== WhatsApp Webhook Verification ==========")
+    print(f"[RECEIVED] Mode: {mode}")
+    print(f"[RECEIVED] Verify Token: {token}")
+    print(f"[RECEIVED] Challenge: {challenge}")
+    print(f"[INFO] Request URL: {request.url}")
+    print(f"[INFO] Request Method: {request.method}")
     
     # Buscar o verify_token configurado
     settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
     if not settings:
-        print("[WhatsApp Webhook] ERROR: Settings not found in database")
+        print("[ERROR] ❌ Settings not found in database")
+        print("===================================================\n")
         raise HTTPException(status_code=403, detail="Settings not configured")
     
     stored_token = settings.get("config", {}).get("whatsapp", {}).get("verify_token")
-    print(f"Stored token: {stored_token}")
+    print(f"[DATABASE] Stored Verify Token: {stored_token}")
     
-    if mode == "subscribe" and token and token == stored_token:
-        print(f"[WhatsApp Webhook] Verification SUCCESS! Returning challenge: {challenge}")
-        return int(challenge)
-    else:
-        print(f"[WhatsApp Webhook] Verification FAILED! Token mismatch or invalid mode")
+    # Validação detalhada
+    if not mode:
+        print("[ERROR] ❌ Mode parameter is missing")
+        print("===================================================\n")
+        raise HTTPException(status_code=400, detail="Mode parameter is required")
+    
+    if not token:
+        print("[ERROR] ❌ Verify token parameter is missing")
+        print("===================================================\n")
+        raise HTTPException(status_code=400, detail="Verify token parameter is required")
+    
+    if not challenge:
+        print("[ERROR] ❌ Challenge parameter is missing")
+        print("===================================================\n")
+        raise HTTPException(status_code=400, detail="Challenge parameter is required")
+    
+    if mode != "subscribe":
+        print(f"[ERROR] ❌ Invalid mode: {mode} (expected 'subscribe')")
+        print("===================================================\n")
+        raise HTTPException(status_code=403, detail="Invalid mode")
+    
+    if token != stored_token:
+        print(f"[ERROR] ❌ Token mismatch!")
+        print(f"  Received: '{token}'")
+        print(f"  Expected: '{stored_token}'")
+        print("===================================================\n")
         raise HTTPException(status_code=403, detail="Verification token mismatch")
+    
+    # Sucesso!
+    print(f"[SUCCESS] ✅ Verification successful!")
+    print(f"[RESPONSE] Returning challenge: {challenge}")
+    print("===================================================\n")
+    
+    # Retornar o challenge como texto simples (não JSON)
+    return PlainTextResponse(content=challenge, status_code=200)
 
 @api_router.post("/webhooks/whatsapp")
 async def whatsapp_webhook(request: Request):
