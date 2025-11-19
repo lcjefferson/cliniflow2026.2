@@ -82,15 +82,24 @@ export default function UsersPage() {
     }
   };
 
-  const handleDelete = async (userId) => {
-    if (!window.confirm("Tem certeza que deseja deletar este usuário?")) return;
+  const handleDelete = (user) => {
+    setUserToDelete(user);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!userToDelete) return;
 
     try {
-      await api.delete(`/users/${userId}`);
+      await api.delete(`/users/${userToDelete.id}`);
       toast.success("Usuário deletado!");
+      setShowDeleteDialog(false);
+      setUserToDelete(null);
       loadUsers();
     } catch (error) {
       toast.error("Erro ao deletar usuário");
+      setShowDeleteDialog(false);
+      setUserToDelete(null);
     }
   };
 
