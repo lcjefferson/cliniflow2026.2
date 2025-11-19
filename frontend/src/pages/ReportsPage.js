@@ -203,18 +203,12 @@ export default function ReportsPage() {
         const ws = XLSX.utils.json_to_sheet(excelData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Pacientes");
-        // Salvar Excel usando Blob (contorna sandbox)
-        const excelBlob = new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], {
-          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        });
-        const url = URL.createObjectURL(excelBlob);
+        // Salvar Excel usando data URL (compatível com sandbox)
+        const excelBinary = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
         const link = document.createElement('a');
-        link.href = url;
+        link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${excelBinary}`;
         link.download = `relatorio_pacientes_${new Date().toISOString().split('T')[0]}.xlsx`;
-        document.body.appendChild(link);
         link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
         toast.success("Relatório Excel gerado!");
       }
     } catch (error) {
