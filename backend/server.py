@@ -211,12 +211,12 @@ class Transaction(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class TransactionCreate(BaseModel):
-    patient_id: str
+    patient_id: Optional[str] = None
     appointment_id: Optional[str] = None
     amount: float
-    payment_method: str
-    description: str
-    transaction_date: str
+    payment_method: Optional[str] = None
+    description: Optional[str] = None
+    transaction_date: Optional[str] = None
     status: str = "paid"
 
 class MedicalRecord(BaseModel):
