@@ -104,7 +104,7 @@ export default function ReportsPage() {
         
         // Total
         const total = filteredData.reduce((sum, appt) => sum + (appt.amount || 0), 0);
-        const finalY = doc.previousAutoTable?.finalY || 35;
+        const finalY = doc.lastAutoTable?.finalY || 35;
         doc.setFontSize(12);
         doc.text(`Total: R$ ${total.toFixed(2)}`, 14, finalY + 10);
         
