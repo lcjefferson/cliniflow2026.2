@@ -116,7 +116,7 @@ export default function SettingsPageV2() {
     toast.success("Copiado para a área de transferência!");
   };
 
-  const webhookBaseUrl = window.location.origin;
+  const webhookBaseUrl = process.env.REACT_APP_BACKEND_URL;
 
   const tabs = [
     { id: "whatsapp", label: "WhatsApp", icon: "💬", color: "green" },
