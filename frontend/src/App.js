@@ -21,6 +21,7 @@ import ReportsPage from "./pages/ReportsPage";
 import RevenuePage from "./pages/RevenuePage";
 import UsersPage from "./pages/UsersPage";
 import SettingsPage from "./pages/SettingsPageV2";
+import WebhookTestPage from "./pages/WebhookTestPage";
 
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useAuth();
