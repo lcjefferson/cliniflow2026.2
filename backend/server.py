@@ -1096,11 +1096,12 @@ async def convert_lead_to_patient(lead_id: str, birthdate: str, address: Optiona
         raise HTTPException(status_code=404, detail="Lead not found")
     
     # Verificar se já existe paciente com mesmo email ou telefone
+    or_conditions = [{"phone": lead["phone"]}]
+    if lead.get("email"):
+        or_conditions.append({"email": lead["email"]})
+    
     existing_patient = await db.patients.find_one({
-        "$or": [
-            {"email": lead["email"]},
-            {"phone": lead["phone"]}
-        ]
+        "$or": or_conditions
     }, {"_id": 0})
     
     if existing_patient:
