@@ -66,6 +66,17 @@ export default function CalendarPage() {
     loadData();
   }, [currentDate]);
 
+  // Verificar conflitos automaticamente quando campos importantes mudarem
+  useEffect(() => {
+    if (showDialog && formData.professional_id && formData.room_id && formData.appointment_date && formData.appointment_time) {
+      const timer = setTimeout(() => {
+        checkConflicts();
+      }, 500); // Debounce de 500ms
+      
+      return () => clearTimeout(timer);
+    }
+  }, [formData.professional_id, formData.room_id, formData.appointment_date, formData.appointment_time, formData.appointment_time_end, showDialog]);
+
   const loadMonthAppointments = async () => {
     try {
       const year = currentDate.getFullYear();
