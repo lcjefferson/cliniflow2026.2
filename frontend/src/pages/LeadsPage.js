@@ -31,6 +31,8 @@ export default function LeadsPage() {
     birthdate: "",
     address: ""
   });
+  const [deleteDialog, setDeleteDialog] = useState(false);
+  const [leadToDelete, setLeadToDelete] = useState(null);
 
   useEffect(() => {
     loadLeads();
