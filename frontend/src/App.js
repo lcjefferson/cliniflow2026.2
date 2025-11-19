@@ -20,7 +20,7 @@ import MedicalRecordsPage from "./pages/MedicalRecordsPage";
 import ReportsPage from "./pages/ReportsPage";
 import RevenuePage from "./pages/RevenuePage";
 import UsersPage from "./pages/UsersPage";
-import SettingsPage from "./pages/SettingsPage";
+import SettingsPage from "./pages/SettingsPageV2";
 
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useAuth();
