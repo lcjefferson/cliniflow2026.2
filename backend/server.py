@@ -107,8 +107,8 @@ class Room(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class RoomCreate(BaseModel):
-    name: str
-    capacity: int
+    name: str  # Obrigatório
+    capacity: Optional[int] = None
 
 class Attachment(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
