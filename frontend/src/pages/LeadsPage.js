@@ -82,24 +82,23 @@ export default function LeadsPage() {
     setShowDialog(true);
   };
 
-  const handleDelete = async (id) => {
-    console.log("handleDelete called with id:", id);
-    const confirmed = window.confirm("Tem certeza que deseja remover este lead?");
-    console.log("User confirmed:", confirmed);
+  const handleDelete = async (lead) => {
+    setLeadToDelete(lead);
+    setDeleteDialog(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!leadToDelete) return;
     
-    if (confirmed) {
-      try {
-        console.log("Attempting to delete lead:", id);
-        const response = await api.delete(`/leads/${id}`);
-        console.log("Delete response:", response);
-        toast.success("Lead removido!");
-        loadLeads();
-      } catch (error) {
-        console.error("Error deleting lead:", error);
-        toast.error("Erro ao remover lead: " + (error.response?.data?.detail || error.message));
-      }
-    } else {
-      console.log("User cancelled deletion");
+    try {
+      await api.delete(`/leads/${leadToDelete.id}`);
+      toast.success("Lead removido!");
+      setDeleteDialog(false);
+      setLeadToDelete(null);
+      loadLeads();
+    } catch (error) {
+      console.error("Error deleting lead:", error);
+      toast.error("Erro ao remover lead: " + (error.response?.data?.detail || error.message));
     }
   };
 
