@@ -166,10 +166,10 @@ class Patient(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class PatientCreate(BaseModel):
-    name: str
-    email: EmailStr
-    phone: str
-    birthdate: str
+    name: str  # Obrigatório
+    email: Optional[EmailStr] = None
+    phone: str  # Obrigatório
+    birthdate: str  # Obrigatório
     address: Optional[str] = None
 
 class Appointment(BaseModel):
