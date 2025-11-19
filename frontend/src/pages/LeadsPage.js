@@ -324,11 +324,11 @@ export default function LeadsPage() {
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <Label>Nome</Label>
+                <Label>Nome *</Label>
                 <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
               </div>
               <div>
-                <Label>Telefone</Label>
+                <Label>Telefone *</Label>
                 <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
               </div>
               <div>
