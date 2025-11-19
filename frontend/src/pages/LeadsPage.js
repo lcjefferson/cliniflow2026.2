@@ -81,14 +81,23 @@ export default function LeadsPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Tem certeza que deseja deletar este lead?")) return;
+    console.log("handleDelete called with id:", id);
+    const confirmed = window.confirm("Tem certeza que deseja remover este lead?");
+    console.log("User confirmed:", confirmed);
     
-    try {
-      await api.delete(`/leads/${id}`);
-      toast.success("Lead removido!");
-      loadLeads();
-    } catch (error) {
-      toast.error("Erro ao remover lead");
+    if (confirmed) {
+      try {
+        console.log("Attempting to delete lead:", id);
+        const response = await api.delete(`/leads/${id}`);
+        console.log("Delete response:", response);
+        toast.success("Lead removido!");
+        loadLeads();
+      } catch (error) {
+        console.error("Error deleting lead:", error);
+        toast.error("Erro ao remover lead: " + (error.response?.data?.detail || error.message));
+      }
+    } else {
+      console.log("User cancelled deletion");
     }
   };
 
