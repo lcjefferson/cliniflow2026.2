@@ -235,7 +235,7 @@ export default function ReportsPage() {
         
         const totalPaid = filteredData.filter(t => t.status === "paid").reduce((sum, t) => sum + t.amount, 0);
         const totalPending = filteredData.filter(t => t.status === "pending").reduce((sum, t) => sum + t.amount, 0);
-        const finalY = doc.previousAutoTable?.finalY || 35;
+        const finalY = doc.lastAutoTable?.finalY || 35;
         
         doc.setFontSize(12);
         doc.text(`Total Recebido: R$ ${totalPaid.toFixed(2)}`, 14, finalY + 10);
