@@ -322,6 +322,108 @@ export default function SettingsPageV2() {
                 </Button>
               </div>
             </div>
+
+            {/* Webhook Setup Instructions */}
+            {whatsappConfig.verify_token && (
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-300 rounded-xl p-6">
+                <div className="flex items-start gap-3">
+                  <div className="bg-green-500 rounded-full p-2 flex-shrink-0">
+                    <CheckCircle className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-bold text-green-900 mb-3 text-lg">🎯 Como Configurar o Webhook no Meta for Developers</h4>
+                    
+                    <div className="space-y-4">
+                      <div className="bg-white rounded-lg p-4 border border-green-200">
+                        <p className="font-semibold text-green-900 mb-2">1️⃣ Acesse o Meta for Developers</p>
+                        <a 
+                          href="https://developers.facebook.com" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 text-green-600 hover:text-green-700 font-medium text-sm"
+                        >
+                          Abrir Meta Developers <ExternalLink className="w-4 h-4" />
+                        </a>
+                      </div>
+
+                      <div className="bg-white rounded-lg p-4 border border-green-200">
+                        <p className="font-semibold text-green-900 mb-2">2️⃣ Vá para Configuração do WhatsApp → Webhook</p>
+                      </div>
+
+                      <div className="bg-white rounded-lg p-4 border border-green-200">
+                        <p className="font-semibold text-green-900 mb-3">3️⃣ Cole suas credenciais:</p>
+                        
+                        <div className="space-y-3">
+                          <div>
+                            <Label className="text-xs text-gray-600">Callback URL:</Label>
+                            <div className="flex gap-2 mt-1">
+                              <Input
+                                type="text"
+                                value={`${webhookBaseUrl}/api/webhooks/whatsapp`}
+                                readOnly
+                                className="bg-gray-50 font-mono text-sm"
+                              />
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => copyToClipboard(`${webhookBaseUrl}/api/webhooks/whatsapp`)}
+                              >
+                                <Copy className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <Label className="text-xs text-gray-600">Verify Token:</Label>
+                            <div className="flex gap-2 mt-1">
+                              <Input
+                                type="text"
+                                value={whatsappConfig.verify_token}
+                                readOnly
+                                className="bg-yellow-50 border-yellow-300 font-mono text-sm font-bold"
+                              />
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => copyToClipboard(whatsappConfig.verify_token)}
+                              >
+                                <Copy className="w-4 h-4" />
+                              </Button>
+                            </div>
+                            <p className="text-xs text-orange-600 mt-1 font-medium">
+                              ⚠️ Use exatamente este token no Meta (case-sensitive)
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-lg p-4 border border-green-200">
+                        <p className="font-semibold text-green-900 mb-2">4️⃣ Clique em "Verificar e Salvar"</p>
+                        <p className="text-sm text-gray-700">O Meta vai validar a conexão automaticamente ✅</p>
+                      </div>
+
+                      <div className="bg-white rounded-lg p-4 border border-green-200">
+                        <p className="font-semibold text-green-900 mb-2">5️⃣ Inscreva-se nos eventos</p>
+                        <p className="text-sm text-gray-700">Marque: <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">messages</span> e <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">message_status</span></p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 p-3 bg-blue-100 rounded-lg border border-blue-300">
+                      <p className="text-sm text-blue-800">
+                        <strong>💡 Dica:</strong> Se encontrar erro de validação, certifique-se de que:
+                      </p>
+                      <ul className="text-xs text-blue-700 list-disc list-inside mt-2 space-y-1">
+                        <li>Você salvou as configurações acima antes de testar no Meta</li>
+                        <li>O verify token está exatamente igual (sem espaços)</li>
+                        <li>Sua aplicação está acessível publicamente (HTTPS obrigatório)</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
