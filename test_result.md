@@ -421,6 +421,30 @@ frontend:
         agent: "main"
         comment: "Interceptor implementado corretamente para redirecionar para login em caso de 401."
 
+  - task: "DELETE de Lead na página /leads"
+    implemented: true
+    working: true
+    file: "frontend/src/pages/LeadsPage.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO COMPLETAMENTE: Login com credenciais admin.final@cliniflow.com funcionando. Página de leads carregada com 2 leads (Lead Email Vazio 2, Leonel). Botões de delete identificados (seletor: button.text-red-500). DELETE executado com sucesso - lead removido da lista. Confirmação de exclusão processada corretamente. Nenhum erro JavaScript encontrado. Funcionalidade 100% operacional."
+
+  - task: "Download de Relatórios na página /reports"
+    implemented: true
+    working: true
+    file: "frontend/src/pages/ReportsPage.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTADO COMPLETAMENTE: Página de relatórios carregada corretamente. 3 tipos de relatório testados (Agendamentos, Pacientes, Financeiro). Seleção de tipo funcionando. Filtros de data funcionando (período 20/10/2025 a 19/11/2025). Botões 'Gerar PDF' e 'Gerar Excel' clicáveis para todos os tipos. Notificação 'Relatório Excel gerado!' aparecendo. Downloads iniciando corretamente. Sistema com 23 agendamentos, 8 pacientes, 0 transações, 1 profissional. Nenhum erro encontrado. Funcionalidade 100% operacional."
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
