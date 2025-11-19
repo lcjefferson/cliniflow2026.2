@@ -156,7 +156,7 @@ class Patient(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
-    email: EmailStr
+    email: Optional[EmailStr] = None
     phone: str
     birthdate: str
     address: Optional[str] = None
