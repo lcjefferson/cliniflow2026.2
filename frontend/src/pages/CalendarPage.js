@@ -944,6 +944,46 @@ export default function CalendarPage() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteDialog} onOpenChange={setDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirmar Exclusão</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">
+              <p className="text-gray-700">
+                Tem certeza que deseja excluir este agendamento?
+              </p>
+              {appointmentToDelete && (
+                <div className="mt-3 p-3 bg-gray-50 rounded">
+                  <p className="text-sm"><strong>Data:</strong> {appointmentToDelete.appointment_date}</p>
+                  <p className="text-sm"><strong>Horário:</strong> {appointmentToDelete.appointment_time}</p>
+                </div>
+              )}
+              <p className="text-sm text-gray-500 mt-2">
+                Esta ação não pode ser desfeita.
+              </p>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteDialog(false);
+                  setAppointmentToDelete(null);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={confirmDeleteAppointment}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Excluir Agendamento
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
