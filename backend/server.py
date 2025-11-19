@@ -188,12 +188,12 @@ class Appointment(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class AppointmentCreate(BaseModel):
-    patient_id: str
-    professional_id: str
-    service_id: str
-    room_id: str
-    appointment_date: str
-    appointment_time: str
+    patient_id: str  # Obrigatório (nome do paciente)
+    professional_id: str  # Obrigatório
+    service_id: Optional[str] = None
+    room_id: str  # Obrigatório
+    appointment_date: Optional[str] = None
+    appointment_time: Optional[str] = None
     amount: Optional[float] = None
     paid: bool = False
     notes: Optional[str] = None
