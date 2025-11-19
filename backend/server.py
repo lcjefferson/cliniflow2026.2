@@ -177,10 +177,11 @@ class Appointment(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     patient_id: str
     professional_id: str
-    service_id: str
+    service_id: Optional[str] = None
     room_id: str
     appointment_date: str
-    appointment_time: str
+    appointment_time: str  # Hora de início
+    appointment_time_end: Optional[str] = None  # Hora de fim
     status: str = "scheduled"  # scheduled, confirmed, completed, cancelled
     amount: Optional[float] = None  # Valor específico do agendamento
     paid: bool = False  # Se foi pago
@@ -193,7 +194,8 @@ class AppointmentCreate(BaseModel):
     service_id: Optional[str] = None
     room_id: str  # Obrigatório
     appointment_date: Optional[str] = None
-    appointment_time: Optional[str] = None
+    appointment_time: Optional[str] = None  # Hora de início
+    appointment_time_end: Optional[str] = None  # Hora de fim
     amount: Optional[float] = None
     paid: bool = False
     notes: Optional[str] = None
