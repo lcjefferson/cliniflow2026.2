@@ -674,7 +674,7 @@ export default function CalendarPage() {
                   />
                 </div>
                 <div>
-                  <Label>Profissional</Label>
+                  <Label>Profissional *</Label>
                   <select
                     className="input-field"
                     value={formData.professional_id}
@@ -693,14 +693,13 @@ export default function CalendarPage() {
                     className="input-field"
                     value={formData.service_id}
                     onChange={(e) => setFormData({...formData, service_id: e.target.value})}
-                    required
                   >
                     <option value="">Selecione</option>
                     {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
                 <div>
-                  <Label>Sala</Label>
+                  <Label>Sala *</Label>
                   <select
                     className="input-field"
                     value={formData.room_id}
@@ -719,7 +718,6 @@ export default function CalendarPage() {
                     type="date"
                     value={formData.appointment_date}
                     onChange={(e) => setFormData({...formData, appointment_date: e.target.value})}
-                    required
                   />
                 </div>
                 <div>
@@ -728,7 +726,6 @@ export default function CalendarPage() {
                     type="time"
                     value={formData.appointment_time}
                     onChange={(e) => setFormData({...formData, appointment_time: e.target.value})}
-                    required
                   />
                 </div>
               </div>
