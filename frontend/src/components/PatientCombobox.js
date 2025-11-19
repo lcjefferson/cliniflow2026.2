@@ -94,24 +94,20 @@ export default function PatientCombobox({
           <div className="max-h-64 overflow-y-auto">
             {filteredPatients.length === 0 ? (
               <div className="p-4 text-center text-gray-500 text-sm">
-                {searchTerm ? (
-                  <>
-                    <p className="mb-2">Nenhum paciente encontrado</p>
-                    {onCreateNew && (
-                      <Button
-                        type="button"
-                        onClick={handleCreateNew}
-                        variant="outline"
-                        size="sm"
-                        className="mx-auto"
-                      >
-                        <UserPlus className="w-4 h-4 mr-2" />
-                        Criar Novo Paciente
-                      </Button>
-                    )}
-                  </>
-                ) : (
-                  "Nenhum paciente cadastrado"
+                <p className="mb-2">
+                  {searchTerm ? "Nenhum paciente encontrado" : "Nenhum paciente cadastrado"}
+                </p>
+                {onCreateNew && (
+                  <Button
+                    type="button"
+                    onClick={handleCreateNew}
+                    variant="outline"
+                    size="sm"
+                    className="mx-auto"
+                  >
+                    <UserPlus className="w-4 h-4 mr-2" />
+                    Criar Novo Paciente
+                  </Button>
                 )}
               </div>
             ) : (
