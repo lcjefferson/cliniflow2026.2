@@ -94,10 +94,10 @@ class Service(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ServiceCreate(BaseModel):
-    name: str
-    description: str
-    duration_minutes: int
-    price: float
+    name: str  # Obrigatório
+    description: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    price: Optional[float] = None
 
 class Room(BaseModel):
     model_config = ConfigDict(extra="ignore")
