@@ -73,8 +73,8 @@ class Professional(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
-    specialty: str
-    email: EmailStr
+    specialty: Optional[str] = None
+    email: Optional[EmailStr] = None
     phone: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
