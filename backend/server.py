@@ -1519,6 +1519,13 @@ async def whatsapp_webhook(request: Request):
     try:
         body = await request.json()
         
+        # LOG DETALHADO para debug
+        print("\n" + "="*80)
+        print("🔔 WEBHOOK WHATSAPP RECEBIDO")
+        print(f"📅 Timestamp: {datetime.now(timezone.utc).isoformat()}")
+        print(f"📦 Body completo: {json.dumps(body, indent=2)}")
+        print("="*80 + "\n")
+        
         # Processar mensagens recebidas
         if body.get("object") == "whatsapp_business_account":
             for entry in body.get("entry", []):
