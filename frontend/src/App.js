@@ -62,6 +62,7 @@ function App() {
           <Route path="/settings" element={<PrivateRoute><SettingsPage /></PrivateRoute>} />
           <Route path="/webhook-test" element={<PrivateRoute><WebhookTestPage /></PrivateRoute>} />
           <Route path="/tunnel-webhook" element={<PrivateRoute><NgrokWebhookPage /></PrivateRoute>} />
+          <Route path="/webhook-monitor" element={<PrivateRoute><WebhookMonitor /></PrivateRoute>} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
