@@ -48,6 +48,8 @@ export default function CalendarPage() {
   });
   const [conflicts, setConflicts] = useState(null);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState(false);
+  const [appointmentToDelete, setAppointmentToDelete] = useState(null);
 
   // Cores para cada profissional
   const professionalColors = [
