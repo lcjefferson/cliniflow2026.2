@@ -178,8 +178,7 @@ export default function CalendarPage() {
       room_id: appointment.room_id,
       appointment_date: appointment.appointment_date,
       appointment_time: appointment.appointment_time,
-      amount: appointment.amount || "",
-      paid: appointment.paid || false,
+      appointment_time_end: appointment.appointment_time_end || "",
       notes: appointment.notes || ""
     });
     setShowDetailsDialog(false);
