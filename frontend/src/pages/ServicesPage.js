@@ -103,10 +103,6 @@ export default function ServicesPage() {
                       <span className="text-sm text-gray-500">Duração:</span>
                       <p className="text-blue-600 font-semibold">{service.duration_minutes} minutos</p>
                     </div>
-                    <div>
-                      <span className="text-sm text-gray-500">Preço:</span>
-                      <p className="text-green-600 font-semibold">R$ {service.price.toFixed(2)}</p>
-                    </div>
                   </div>
                 </div>
                 <div className="flex gap-2">
