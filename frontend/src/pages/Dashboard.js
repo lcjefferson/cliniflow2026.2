@@ -84,7 +84,7 @@ export default function Dashboard() {
               <span className="text-3xl font-bold">{stats.leadsTotal}</span>
             </div>
             <h3 className="font-medium opacity-90">Total de Leads</h3>
-            <p className="text-xs opacity-75 mt-1">Quentes: {stats.leadsHot}</p>
+            <p className="text-xs opacity-75 mt-1">{stats.leadsHot} lead(s) quente(s)</p>
           </div>
 
           <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-6 shadow-lg card-hover text-white" data-testid="patients-card">
