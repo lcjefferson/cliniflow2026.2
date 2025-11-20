@@ -14,7 +14,7 @@ export default function ServicesPage() {
   const [editingId, setEditingId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
-  const [formData, setFormData] = useState({ name: "", description: "", duration_minutes: "" });
+  const [formData, setFormData] = useState({ name: "", description: "" });
 
   useEffect(() => {
     loadServices();
