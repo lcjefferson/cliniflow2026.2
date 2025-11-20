@@ -1190,14 +1190,17 @@ async def generate_medical_record_pdf(data: dict, current_user: dict = Depends(g
                 if para.strip():
                     story.append(Paragraph(para, content_style))
         
-        # Dados do médico (alinhado à esquerda, antes do rodapé)
+        # Dados do profissional (alinhado à esquerda, antes do rodapé)
         story.append(Spacer(1, 0.6*cm))
-        if record.get("doctor_name") or record.get("crm"):
+        professional_registration = record.get("professional_registration") or record.get("crm")
+        council_type = record.get("professional_council_type", "CRM")
+        
+        if record.get("doctor_name") or professional_registration:
             story.append(Paragraph("<b>Profissional Responsável:</b>", label_style))
             if record.get("doctor_name"):
                 story.append(Paragraph(f"Dr(a). {record['doctor_name']}", content_style))
-            if record.get("crm"):
-                story.append(Paragraph(f"CRM: {record['crm']}", content_style))
+            if professional_registration:
+                story.append(Paragraph(f"{council_type}: {professional_registration}", content_style))
         
         # Função para criar rodapé em cada página
         def add_footer(canvas, doc):
