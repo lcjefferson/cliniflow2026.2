@@ -73,16 +73,23 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   const loadPatientData = async () => {
     try {
       setLoading(true);
-      const [recordsRes, profsRes, servicesRes, debtsRes] = await Promise.all([
+      const [recordsRes, profsRes, servicesRes, debtsRes, appointmentsRes] = await Promise.all([
         api.get(`/medical-records`),
         api.get(`/patients/${patient.id}/professionals`),
         api.get(`/services`),
-        api.get(`/patients/${patient.id}/debts`)
+        api.get(`/patients/${patient.id}/debts`),
+        api.get(`/appointments?patient_id=${patient.id}`)
       ]);
 
       // Filter records for this patient
       setMedicalRecords(recordsRes.data.filter(r => r.patient_id === patient.id));
-      setProfessionals(profsRes.data);
+      
+      // Get professionals from appointments automatically
+      const appointmentProfs = appointmentsRes.data || [];
+      const uniqueProfIds = [...new Set(appointmentProfs.map(a => a.professional_id).filter(Boolean))];
+      const profsFromAppointments = profsRes.data.filter(p => uniqueProfIds.includes(p.id));
+      setProfessionals(profsFromAppointments.length > 0 ? profsFromAppointments : profsRes.data);
+      
       setServices(servicesRes.data);
       setDebts(debtsRes.data);
 
