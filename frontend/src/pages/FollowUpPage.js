@@ -84,27 +84,13 @@ export default function FollowUpPage() {
   };
 
   const loadRules = async () => {
-    // Mock de regras - em produção viria do backend
-    setRules([
-      { 
-        id: "1", 
-        name: "Follow-up Lead Novo", 
-        type: "comercial", 
-        trigger: "lead_created", 
-        days_after: 1,
-        message_template: "Olá {nome}! Vimos que você demonstrou interesse em nossos serviços. Podemos agendar uma consulta?",
-        active: true 
-      },
-      { 
-        id: "2", 
-        name: "Lembrete de Consulta", 
-        type: "informativo", 
-        trigger: "appointment_created", 
-        days_after: 1,
-        message_template: "Olá {nome}! Lembramos que você tem uma consulta agendada para amanhã às {horario}.",
-        active: true 
-      }
-    ]);
+    try {
+      const response = await api.get("/followup-rules");
+      setRules(response.data);
+    } catch (error) {
+      console.error("Erro ao carregar regras:", error);
+      toast.error("Erro ao carregar regras de follow-up");
+    }
   };
 
   const handleSubmit = async (e) => {
