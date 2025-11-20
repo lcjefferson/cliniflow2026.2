@@ -92,12 +92,6 @@ export default function ServicesPage() {
                 <div className="flex-1">
                   <h3 className="text-xl font-bold text-gray-900">{service.name}</h3>
                   <p className="text-gray-600 mt-2">{service.description}</p>
-                  <div className="flex gap-6 mt-4">
-                    <div>
-                      <span className="text-sm text-gray-500">Duração:</span>
-                      <p className="text-blue-600 font-semibold">{service.duration_minutes} minutos</p>
-                    </div>
-                  </div>
                 </div>
                 <div className="flex gap-2">
                   <button 
