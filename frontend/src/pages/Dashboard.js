@@ -15,6 +15,10 @@ export default function Dashboard() {
     revenuePending: 0
   });
 
+  // Pegar usuário atual do localStorage
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const isAdmin = user?.role?.is_admin || false;
+
   useEffect(() => {
     loadStats();
   }, []);
