@@ -71,7 +71,9 @@ export default function ReportsPage() {
   const generateAppointmentsReport = (format) => {
     setLoading(true);
     try {
-      const filteredData = filterByDate(appointments, "appointment_date");
+      const filteredData = filterByDate(appointments, "appointment_date")
+        // Filtrar apenas agendamentos com pacientes válidos
+        .filter(appt => patients.find(p => p.id === appt.patient_id));
       
       if (format === "pdf") {
         const doc = new jsPDF();
