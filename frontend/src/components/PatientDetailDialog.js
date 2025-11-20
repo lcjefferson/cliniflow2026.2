@@ -1042,6 +1042,42 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Dialog de Confirmação de Exclusão */}
+    <Dialog open={showDeleteRecordDialog} onOpenChange={setShowDeleteRecordDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Confirmar Exclusão</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            Tem certeza que deseja excluir este prontuário?
+          </p>
+          <p className="text-sm text-red-600">
+            <strong>Atenção:</strong> Esta ação não pode ser desfeita.
+          </p>
+          <div className="flex gap-3 justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowDeleteRecordDialog(false);
+                setRecordToDelete(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="bg-red-500 hover:bg-red-600 text-white"
+              onClick={confirmDeleteRecord}
+            >
+              Confirmar Exclusão
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
     </>
   );
 }
