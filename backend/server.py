@@ -1660,18 +1660,20 @@ async def cleanup_duplicate_leads(current_user: dict = Depends(get_current_user)
     }
 
 # Conversation Routes (Mocked)
-@api_router.get("/conversations", response_model=List[Conversation])
+@api_router.get("/conversations")
 async def get_conversations(current_user: dict = Depends(get_current_user)):
-    query = {}
+    """Get all active conversations - consultores veem todas mas só podem responder as não atribuídas ou atribuídas a eles"""
+    query = {"status": "active"}
     
-    # If not admin, only show assigned conversations
-    if not current_user["role"]["is_admin"]:
-        query["assigned_to"] = current_user["id"]
+    # Consultores e Admins veem todas as conversas
+    # A restrição de interação é feita no frontend
     
     conversations = await db.conversations.find(query, {"_id": 0}).to_list(1000)
     for conv in conversations:
         if isinstance(conv['created_at'], str):
             conv['created_at'] = datetime.fromisoformat(conv['created_at'])
+        if isinstance(conv.get('last_message_at'), str):
+            conv['last_message_at'] = datetime.fromisoformat(conv.get('last_message_at'))
     return conversations
 
 @api_router.get("/conversations/{conversation_id}/messages", response_model=List[Message])
