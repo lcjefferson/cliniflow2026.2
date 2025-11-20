@@ -61,25 +61,56 @@ export default function UsersPage() {
     setShowDialog(true);
   };
 
+  const handleNewUser = () => {
+    setEditingUser(null);
+    setFormData({
+      name: "",
+      email: "",
+      password: "",
+      user_type: "consultor",
+      professional_id: "",
+      is_admin: false
+    });
+    setShowDialog(true);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       if (editingUser) {
-        await api.put(`/users/${editingUser.id}`, formData);
+        // Editar usuário existente
+        const updateData = {
+          name: formData.name,
+          email: formData.email,
+          user_type: formData.user_type,
+          professional_id: formData.professional_id,
+          is_admin: formData.is_admin
+        };
+        await api.put(`/users/${editingUser.id}`, updateData);
         toast.success("Usuário atualizado!");
+      } else {
+        // Criar novo usuário
+        if (!formData.password) {
+          toast.error("Senha é obrigatória para novo usuário");
+          return;
+        }
+        await api.post("/auth/register", formData);
+        toast.success("Usuário criado com sucesso!");
       }
       setShowDialog(false);
       setEditingUser(null);
       setFormData({
         name: "",
         email: "",
+        password: "",
         user_type: "consultor",
         professional_id: "",
         is_admin: false
       });
       loadUsers();
     } catch (error) {
-      toast.error("Erro ao atualizar usuário");
+      const errorMsg = error.response?.data?.detail || (editingUser ? "Erro ao atualizar usuário" : "Erro ao criar usuário");
+      toast.error(errorMsg);
     }
   };
 
