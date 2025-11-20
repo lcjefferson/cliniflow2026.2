@@ -163,25 +163,30 @@ export default function FollowUpPage() {
     }
   };
 
-  const handleRuleSubmit = (e) => {
+  const handleRuleSubmit = async (e) => {
     e.preventDefault();
-    if (editingRuleId) {
-      setRules(rules.map(r => r.id === editingRuleId ? { ...ruleFormData, id: editingRuleId } : r));
-      toast.success("Regra atualizada!");
-    } else {
-      setRules([...rules, { ...ruleFormData, id: Date.now().toString() }]);
-      toast.success("Regra criada!");
+    try {
+      if (editingRuleId) {
+        await api.put(`/followup-rules/${editingRuleId}`, ruleFormData);
+        toast.success("Regra atualizada!");
+      } else {
+        await api.post("/followup-rules", ruleFormData);
+        toast.success("Regra criada!");
+      }
+      setShowRuleDialog(false);
+      setEditingRuleId(null);
+      setRuleFormData({
+        name: "",
+        type: "comercial",
+        trigger: "lead_created",
+        days_after: 1,
+        message_template: "",
+        active: true
+      });
+      loadRules();
+    } catch (error) {
+      toast.error(editingRuleId ? "Erro ao atualizar regra" : "Erro ao criar regra");
     }
-    setShowRuleDialog(false);
-    setEditingRuleId(null);
-    setRuleFormData({
-      name: "",
-      type: "comercial",
-      trigger: "lead_created",
-      days_after: 1,
-      message_template: "",
-      active: true
-    });
   };
 
   const handleEditRule = (rule) => {
