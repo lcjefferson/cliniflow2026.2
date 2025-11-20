@@ -54,10 +54,14 @@ export default function ReportsPage() {
 
   const filterByDate = (data, dateField) => {
     return data.filter(item => {
-      if (!dateStart && !dateEnd) return true;
       const itemDate = item[dateField];
-      if (!itemDate) return true;
+      // Se não tem data, não incluir no relatório
+      if (!itemDate) return false;
       
+      // Se não tem filtro de data, retornar todos com data válida
+      if (!dateStart && !dateEnd) return true;
+      
+      // Aplicar filtros de data
       if (dateStart && itemDate < dateStart) return false;
       if (dateEnd && itemDate > dateEnd) return false;
       return true;
