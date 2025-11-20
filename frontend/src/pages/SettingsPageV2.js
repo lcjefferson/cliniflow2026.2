@@ -65,6 +65,56 @@ export default function SettingsPageV2() {
       console.log("Configurações não encontradas, usando padrão");
     }
   };
+  
+  const loadClinicSettings = async () => {
+    try {
+      const response = await api.get("/settings/clinic");
+      if (response.data) {
+        setClinicSettings(response.data);
+      }
+    } catch (error) {
+      console.log("Configurações da clínica não encontradas");
+    }
+  };
+  
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Logo muito grande! Tamanho máximo: 2MB");
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      toast.error("Apenas imagens são permitidas");
+      return;
+    }
+
+    try {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target.result;
+        setClinicSettings({ ...clinicSettings, logo: base64 });
+        toast.success("Logo carregada!");
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      toast.error("Erro ao carregar logo");
+    }
+  };
+  
+  const handleSaveClinicSettings = async () => {
+    setLoading(true);
+    try {
+      await api.post("/settings/clinic", clinicSettings);
+      toast.success("Configurações da clínica salvas!");
+    } catch (error) {
+      toast.error("Erro ao salvar configurações");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSaveWhatsApp = async () => {
     setLoading(true);
