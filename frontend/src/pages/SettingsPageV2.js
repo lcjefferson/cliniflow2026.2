@@ -179,9 +179,10 @@ export default function SettingsPageV2() {
   const webhookBaseUrl = process.env.REACT_APP_BACKEND_URL;
 
   const tabs = [
+    { id: "clinic", label: "Clínica", icon: "🏥", color: "blue" },
     { id: "whatsapp", label: "WhatsApp", icon: "💬", color: "green" },
     { id: "instagram", label: "Instagram", icon: "📷", color: "pink" },
-    { id: "messenger", label: "Messenger", icon: "💌", color: "blue" }
+    { id: "messenger", label: "Messenger", icon: "💌", color: "purple" }
   ];
 
   return (
