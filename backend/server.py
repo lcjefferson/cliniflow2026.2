@@ -346,6 +346,25 @@ class FollowUpCreate(BaseModel):
     contact_type: Optional[str] = None
     contact_reason: Optional[str] = None
 
+class FollowUpRule(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    type: str  # comercial, informativo
+    trigger: str  # lead_created, appointment_created, appointment_completed
+    days_after: int
+    message_template: str
+    active: bool = True
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class FollowUpRuleCreate(BaseModel):
+    name: str
+    type: str
+    trigger: str
+    days_after: int
+    message_template: str
+    active: bool = True
+
 class AutoMessageRequest(BaseModel):
     patient_id: str
     message_type: str  # birthday, appointment_reminder
