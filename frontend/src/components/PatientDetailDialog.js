@@ -52,6 +52,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
   // Medical Record form state
   const [showMedicalRecordDialog, setShowMedicalRecordDialog] = useState(false);
+  const [showDeleteRecordDialog, setShowDeleteRecordDialog] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null);
   const [medicalRecordForm, setMedicalRecordForm] = useState({
     record_type: "prontuario",
