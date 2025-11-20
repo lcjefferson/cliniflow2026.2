@@ -552,18 +552,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                           {/* Action buttons */}
                           <div className="flex gap-2 mt-4 pt-3 border-t">
                             <button
-                              onClick={() => handleViewPDF(record)}
-                              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
-                            >
-                              <FileText className="w-4 h-4" />
-                              Visualizar PDF
-                            </button>
-                            <button
                               onClick={() => handleDownloadPDF(record)}
                               className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition"
                             >
                               <Download className="w-4 h-4" />
-                              Baixar
+                              Baixar PDF
                             </button>
                             <button
                               onClick={() => handleEditRecord(record)}
@@ -571,6 +564,13 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                             >
                               <Edit className="w-4 h-4" />
                               Editar
+                            </button>
+                            <button
+                              onClick={() => handleDeleteRecord(record)}
+                              className="flex items-center gap-1 px-2 py-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition ml-auto"
+                              title="Excluir prontuário"
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
                         </div>
