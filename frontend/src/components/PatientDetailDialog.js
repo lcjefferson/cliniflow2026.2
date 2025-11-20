@@ -123,7 +123,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
         await api.post(`/patients/${patient.id}/attachments`, attachment);
         toast.success("Arquivo anexado com sucesso!");
-        onUpdate(); // Refresh patient data
+        loadPatientData(); // Reload patient data immediately
+        onUpdate(); // Refresh patient data in parent
       };
       reader.readAsDataURL(file);
     } catch (error) {
