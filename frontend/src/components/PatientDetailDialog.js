@@ -63,7 +63,9 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     medications: "",
     observations: "",
     doctor_name: "",
-    crm: "",
+    professional_council_type: "CRM",
+    professional_registration: "",
+    crm: "",  // Mantido para compatibilidade
     template_used: ""
   });
 
