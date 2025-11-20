@@ -1268,39 +1268,54 @@ async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(
         if not clean_phone.startswith('55'):
             clean_phone = '55' + clean_phone
         
-        # Gerar PDF
+        # Gerar PDF com layout melhorado
+        from reportlab.lib.colors import HexColor
+        from reportlab.platypus import Table, TableStyle
+        
         buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
+        doc = SimpleDocTemplate(
+            buffer, 
+            pagesize=A4, 
+            topMargin=1.5*cm, 
+            bottomMargin=3*cm,
+            leftMargin=2*cm,
+            rightMargin=2*cm
+        )
         story = []
         styles = getSampleStyleSheet()
         
-        # Estilo customizado
+        # Estilos customizados
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Heading1'],
-            fontSize=16,
-            textColor='#1e40af',
-            spaceAfter=12,
-            alignment=TA_CENTER
-        )
-        
-        header_style = ParagraphStyle(
-            'CustomHeader',
-            parent=styles['Normal'],
-            fontSize=10,
-            alignment=TA_CENTER,
-            spaceAfter=6
+            fontSize=18,
+            textColor=HexColor('#1e40af'),
+            spaceAfter=20,
+            spaceBefore=10,
+            alignment=TA_LEFT,
+            fontName='Helvetica-Bold'
         )
         
         content_style = ParagraphStyle(
             'CustomContent',
             parent=styles['Normal'],
             fontSize=11,
-            spaceAfter=12,
-            alignment=TA_LEFT
+            spaceAfter=15,
+            spaceBefore=5,
+            alignment=TA_LEFT,
+            leading=16
         )
         
-        # Logo (se existir)
+        label_style = ParagraphStyle(
+            'LabelStyle',
+            parent=styles['Normal'],
+            fontSize=11,
+            textColor=HexColor('#1e40af'),
+            fontName='Helvetica-Bold',
+            spaceAfter=8
+        )
+        
+        # Logo wide e alinhada à esquerda
         if clinic_config.get("logo"):
             try:
                 logo_data = clinic_config["logo"]
@@ -1308,28 +1323,32 @@ async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(
                     logo_data = logo_data.split(',')[1]
                 logo_bytes = base64.b64decode(logo_data)
                 logo_buffer = BytesIO(logo_bytes)
-                logo = RLImage(logo_buffer, width=3*cm, height=3*cm)
+                logo = RLImage(logo_buffer, width=8*cm, height=2*cm)
+                logo.hAlign = 'LEFT'
                 story.append(logo)
-                story.append(Spacer(1, 0.5*cm))
+                story.append(Spacer(1, 0.3*cm))
             except:
-                pass
+                clinic_name_header = Paragraph(
+                    f"<b>{clinic_config.get('clinic_name', 'Clínica')}</b>",
+                    ParagraphStyle('ClinicName', fontSize=16, textColor=HexColor('#1e40af'), alignment=TA_LEFT)
+                )
+                story.append(clinic_name_header)
+                story.append(Spacer(1, 0.3*cm))
+        else:
+            clinic_name_header = Paragraph(
+                f"<b>{clinic_config.get('clinic_name', 'Clínica')}</b>",
+                ParagraphStyle('ClinicName', fontSize=16, textColor=HexColor('#1e40af'), alignment=TA_LEFT)
+            )
+            story.append(clinic_name_header)
+            story.append(Spacer(1, 0.3*cm))
         
-        # Cabeçalho da clínica
-        clinic_name = clinic_config.get("clinic_name", "Clínica")
-        story.append(Paragraph(clinic_name, header_style))
-        
-        if clinic_config.get("address"):
-            story.append(Paragraph(clinic_config["address"], header_style))
-        
-        contact_info = []
-        if clinic_config.get("phone"):
-            contact_info.append(f"Tel: {clinic_config['phone']}")
-        if clinic_config.get("email"):
-            contact_info.append(f"Email: {clinic_config['email']}")
-        if contact_info:
-            story.append(Paragraph(" | ".join(contact_info), header_style))
-        
-        story.append(Spacer(1, 1*cm))
+        # Linha azul suave
+        line_table = Table([['']], colWidths=[16*cm])
+        line_table.setStyle(TableStyle([
+            ('LINEABOVE', (0, 0), (-1, 0), 1.5, HexColor('#93c5fd')),
+        ]))
+        story.append(line_table)
+        story.append(Spacer(1, 0.8*cm))
         
         # Tipo de documento
         record_type_label = {
@@ -1339,36 +1358,73 @@ async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(
         }.get(record.get("record_type", "prontuario"), "DOCUMENTO MÉDICO")
         
         story.append(Paragraph(record_type_label, title_style))
-        story.append(Spacer(1, 0.5*cm))
+        story.append(Spacer(1, 0.6*cm))
         
         # Informações do paciente
-        story.append(Paragraph(f"<b>Paciente:</b> {patient_name}", content_style))
-        story.append(Paragraph(f"<b>Data:</b> {datetime.now(timezone.utc).strftime('%d/%m/%Y')}", content_style))
-        story.append(Spacer(1, 0.5*cm))
+        story.append(Paragraph("<b>Paciente:</b>", label_style))
+        story.append(Paragraph(patient_name, content_style))
+        
+        story.append(Paragraph("<b>Data:</b>", label_style))
+        story.append(Paragraph(datetime.now(timezone.utc).strftime('%d/%m/%Y'), content_style))
         
         # Diagnóstico
         if record.get("diagnosis"):
-            story.append(Paragraph(f"<b>Diagnóstico:</b> {record['diagnosis']}", content_style))
             story.append(Spacer(1, 0.3*cm))
+            story.append(Paragraph("<b>Diagnóstico:</b>", label_style))
+            story.append(Paragraph(record['diagnosis'], content_style))
         
         # Conteúdo/Observações
         if record.get("observations"):
-            story.append(Paragraph("<b>Conteúdo:</b>", content_style))
-            # Dividir em parágrafos
+            story.append(Spacer(1, 0.3*cm))
+            story.append(Paragraph("<b>Descrição:</b>", label_style))
             for para in record["observations"].split('\n'):
                 if para.strip():
                     story.append(Paragraph(para, content_style))
-            story.append(Spacer(1, 0.5*cm))
         
-        # Rodapé com dados do médico
+        # Dados do médico
         story.append(Spacer(1, 1*cm))
-        if record.get("doctor_name"):
-            story.append(Paragraph(f"<b>Dr(a). {record['doctor_name']}</b>", content_style))
-        if record.get("crm"):
-            story.append(Paragraph(f"CRM: {record['crm']}", content_style))
+        if record.get("doctor_name") or record.get("crm"):
+            story.append(Paragraph("<b>Profissional Responsável:</b>", label_style))
+            if record.get("doctor_name"):
+                story.append(Paragraph(f"Dr(a). {record['doctor_name']}", content_style))
+            if record.get("crm"):
+                story.append(Paragraph(f"CRM: {record['crm']}", content_style))
         
-        # Gerar PDF
-        doc.build(story)
+        # Função para criar rodapé
+        def add_footer(canvas, doc):
+            canvas.saveState()
+            canvas.setStrokeColor(HexColor('#93c5fd'))
+            canvas.setLineWidth(1.5)
+            canvas.line(2*cm, 2.5*cm, A4[0] - 2*cm, 2.5*cm)
+            
+            canvas.setFont('Helvetica', 9)
+            canvas.setFillColor(HexColor('#4b5563'))
+            
+            footer_lines = []
+            if clinic_config.get("clinic_name"):
+                footer_lines.append(clinic_config["clinic_name"])
+            if clinic_config.get("address"):
+                footer_lines.append(clinic_config["address"])
+            
+            contact_parts = []
+            if clinic_config.get("phone"):
+                contact_parts.append(f"Tel: {clinic_config['phone']}")
+            if clinic_config.get("email"):
+                contact_parts.append(f"Email: {clinic_config['email']}")
+            if contact_parts:
+                footer_lines.append(" | ".join(contact_parts))
+            
+            y_position = 2*cm
+            for line in footer_lines:
+                text_width = canvas.stringWidth(line, 'Helvetica', 9)
+                x_position = (A4[0] - text_width) / 2
+                canvas.drawString(x_position, y_position, line)
+                y_position -= 0.4*cm
+            
+            canvas.restoreState()
+        
+        # Gerar PDF com rodapé
+        doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
         pdf_bytes = buffer.getvalue()
         buffer.close()
         
