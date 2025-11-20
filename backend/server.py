@@ -327,18 +327,24 @@ class MessageCreate(BaseModel):
 class FollowUp(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    lead_id: str
-    assigned_to: str
+    lead_id: Optional[str] = None
+    patient_id: Optional[str] = None
+    assigned_to: Optional[str] = None
     scheduled_date: str
-    notes: str
+    notes: Optional[str] = None
     status: str = "pending"  # pending, completed, cancelled
+    contact_type: Optional[str] = None  # whatsapp, phone, email
+    contact_reason: Optional[str] = None  # comercial, informativo
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class FollowUpCreate(BaseModel):
     lead_id: Optional[str] = None
+    patient_id: Optional[str] = None
     assigned_to: Optional[str] = None
-    scheduled_date: Optional[str] = None
+    scheduled_date: str
     notes: Optional[str] = None
+    contact_type: Optional[str] = None
+    contact_reason: Optional[str] = None
 
 class AutoMessageRequest(BaseModel):
     patient_id: str
