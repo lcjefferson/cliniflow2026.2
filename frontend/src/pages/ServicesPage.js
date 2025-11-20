@@ -59,8 +59,7 @@ export default function ServicesPage() {
     setFormData({
       name: service.name,
       description: service.description,
-      duration_minutes: service.duration_minutes.toString(),
-      price: service.price.toString()
+      duration_minutes: service.duration_minutes.toString()
     });
     setShowDialog(true);
   };
