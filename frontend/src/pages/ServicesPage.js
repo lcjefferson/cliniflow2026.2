@@ -126,10 +126,6 @@ export default function ServicesPage() {
                 <Label>Descrição</Label>
                 <Input value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} required />
               </div>
-              <div>
-                <Label>Duração (minutos)</Label>
-                <Input type="number" value={formData.duration_minutes} onChange={(e) => setFormData({...formData, duration_minutes: e.target.value})} required />
-              </div>
               <Button type="submit" className="w-full btn-primary">
                 {editingId ? "Atualizar" : "Cadastrar"}
               </Button>
