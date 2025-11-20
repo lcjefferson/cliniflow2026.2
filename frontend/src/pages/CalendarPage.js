@@ -853,28 +853,6 @@ export default function CalendarPage() {
                   Verificando disponibilidade...
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Valor (R$)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={formData.amount}
-                    onChange={(e) => setFormData({...formData, amount: e.target.value})}
-                    placeholder="0.00"
-                  />
-                </div>
-                <div className="flex items-center gap-2 pt-8">
-                  <input
-                    type="checkbox"
-                    id="paid"
-                    checked={formData.paid}
-                    onChange={(e) => setFormData({...formData, paid: e.target.checked})}
-                    className="w-4 h-4"
-                  />
-                  <Label htmlFor="paid">Já foi pago</Label>
-                </div>
-              </div>
               <div>
                 <Label>Observações</Label>
                 <Input
