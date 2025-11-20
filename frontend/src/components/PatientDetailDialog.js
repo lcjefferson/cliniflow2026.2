@@ -230,14 +230,23 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
   const handleAddMedicalRecord = async (sendWhatsApp = false) => {
     try {
-      const payload = {
-        ...medicalRecordForm,
-        patient_id: patient.id
-      };
-      const response = await api.post("/medical-records", payload);
-      const recordId = response.data.id;
+      let recordId;
       
-      toast.success("Prontuário criado com sucesso!");
+      if (editingRecord) {
+        // Editar prontuário existente
+        const response = await api.put(`/medical-records/${editingRecord.id}`, medicalRecordForm);
+        recordId = editingRecord.id;
+        toast.success("Prontuário atualizado com sucesso!");
+      } else {
+        // Criar novo prontuário
+        const payload = {
+          ...medicalRecordForm,
+          patient_id: patient.id
+        };
+        const response = await api.post("/medical-records", payload);
+        recordId = response.data.id;
+        toast.success("Prontuário criado com sucesso!");
+      }
       
       // Se deve enviar via WhatsApp
       if (sendWhatsApp && patient.phone) {
@@ -254,6 +263,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       }
       
       setShowMedicalRecordDialog(false);
+      setEditingRecord(null);
       setMedicalRecordForm({
         record_type: "prontuario",
         diagnosis: "",
@@ -267,7 +277,66 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       });
       loadPatientData(); // Reload to show new record
     } catch (error) {
-      toast.error("Erro ao criar prontuário");
+      toast.error(editingRecord ? "Erro ao atualizar prontuário" : "Erro ao criar prontuário");
+    }
+  };
+  
+  const handleEditRecord = (record) => {
+    setEditingRecord(record);
+    setMedicalRecordForm({
+      record_type: record.record_type || "prontuario",
+      diagnosis: record.diagnosis || "",
+      symptoms: record.symptoms || "",
+      treatment: record.treatment || "",
+      medications: record.medications || "",
+      observations: record.observations || "",
+      doctor_name: record.doctor_name || "",
+      crm: record.crm || "",
+      template_used: record.template_used || ""
+    });
+    setShowMedicalRecordDialog(true);
+  };
+  
+  const handleDownloadPDF = async (record) => {
+    try {
+      const response = await api.post("/medical-records/generate-pdf", {
+        record_id: record.id,
+        patient_name: patient.name
+      }, {
+        responseType: 'blob'
+      });
+      
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `prontuario_${patient.name}_${new Date().toISOString().split('T')[0]}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      
+      toast.success("PDF baixado com sucesso!");
+    } catch (error) {
+      toast.error("Erro ao baixar PDF");
+    }
+  };
+  
+  const handleViewPDF = async (record) => {
+    try {
+      const response = await api.post("/medical-records/generate-pdf", {
+        record_id: record.id,
+        patient_name: patient.name
+      }, {
+        responseType: 'blob'
+      });
+      
+      // Open in new tab
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      window.open(url, '_blank');
+      
+      toast.success("PDF aberto em nova aba!");
+    } catch (error) {
+      toast.error("Erro ao visualizar PDF");
     }
   };
 
