@@ -248,7 +248,9 @@ class MedicalRecord(BaseModel):
     medications: Optional[str] = None
     observations: Optional[str] = None
     doctor_name: Optional[str] = None
-    crm: Optional[str] = None
+    professional_council_type: Optional[str] = None  # CRM, CRO, COREN, CREFITO, CRP, etc
+    crm: Optional[str] = None  # Mantido para compatibilidade (deprecated - usar professional_registration)
+    professional_registration: Optional[str] = None  # Número do registro profissional
     prescription: Optional[str] = None
     medical_certificate: Optional[str] = None
     template_used: Optional[str] = None
@@ -265,7 +267,9 @@ class MedicalRecordCreate(BaseModel):
     medications: Optional[str] = None
     observations: Optional[str] = None
     doctor_name: Optional[str] = None
-    crm: Optional[str] = None
+    professional_council_type: Optional[str] = None  # CRM, CRO, COREN, CREFITO, CRP, etc
+    crm: Optional[str] = None  # Mantido para compatibilidade (deprecated - usar professional_registration)
+    professional_registration: Optional[str] = None  # Número do registro profissional
     prescription: Optional[str] = None
     medical_certificate: Optional[str] = None
     template_used: Optional[str] = None
