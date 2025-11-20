@@ -40,9 +40,19 @@ export default function SettingsPageV2() {
     verify_token: "",
     webhook_url: ""
   });
+  
+  const [clinicSettings, setClinicSettings] = useState({
+    clinic_name: "",
+    address: "",
+    phone: "",
+    email: "",
+    website: "",
+    logo: ""
+  });
 
   useEffect(() => {
     loadSettings();
+    loadClinicSettings();
   }, []);
 
   const loadSettings = async () => {
