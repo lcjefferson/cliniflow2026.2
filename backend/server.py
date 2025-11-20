@@ -1139,35 +1139,76 @@ async def generate_medical_record_pdf(data: dict, current_user: dict = Depends(g
         }.get(record.get("record_type", "prontuario"), "DOCUMENTO MÉDICO")
         
         story.append(Paragraph(record_type_label, title_style))
-        story.append(Spacer(1, 0.5*cm))
+        story.append(Spacer(1, 0.6*cm))
         
         # Informações do paciente
-        story.append(Paragraph(f"<b>Paciente:</b> {patient_name}", content_style))
-        story.append(Paragraph(f"<b>Data:</b> {datetime.now(timezone.utc).strftime('%d/%m/%Y')}", content_style))
-        story.append(Spacer(1, 0.5*cm))
+        story.append(Paragraph("<b>Paciente:</b>", label_style))
+        story.append(Paragraph(patient_name, content_style))
+        
+        story.append(Paragraph("<b>Data:</b>", label_style))
+        story.append(Paragraph(datetime.now(timezone.utc).strftime('%d/%m/%Y'), content_style))
         
         # Diagnóstico
         if record.get("diagnosis"):
-            story.append(Paragraph(f"<b>Diagnóstico:</b> {record['diagnosis']}", content_style))
             story.append(Spacer(1, 0.3*cm))
+            story.append(Paragraph("<b>Diagnóstico:</b>", label_style))
+            story.append(Paragraph(record['diagnosis'], content_style))
         
         # Conteúdo/Observações
         if record.get("observations"):
-            story.append(Paragraph("<b>Conteúdo:</b>", content_style))
+            story.append(Spacer(1, 0.3*cm))
+            story.append(Paragraph("<b>Descrição:</b>", label_style))
             for para in record["observations"].split('\n'):
                 if para.strip():
                     story.append(Paragraph(para, content_style))
-            story.append(Spacer(1, 0.5*cm))
         
-        # Rodapé com dados do médico
+        # Dados do médico (alinhado à esquerda, antes do rodapé)
         story.append(Spacer(1, 1*cm))
-        if record.get("doctor_name"):
-            story.append(Paragraph(f"<b>Dr(a). {record['doctor_name']}</b>", content_style))
-        if record.get("crm"):
-            story.append(Paragraph(f"CRM: {record['crm']}", content_style))
+        if record.get("doctor_name") or record.get("crm"):
+            story.append(Paragraph("<b>Profissional Responsável:</b>", label_style))
+            if record.get("doctor_name"):
+                story.append(Paragraph(f"Dr(a). {record['doctor_name']}", content_style))
+            if record.get("crm"):
+                story.append(Paragraph(f"CRM: {record['crm']}", content_style))
         
-        # Gerar PDF
-        doc.build(story)
+        # Função para criar rodapé em cada página
+        def add_footer(canvas, doc):
+            canvas.saveState()
+            
+            # Linha azul suave acima do rodapé
+            canvas.setStrokeColor(HexColor('#93c5fd'))
+            canvas.setLineWidth(1.5)
+            canvas.line(2*cm, 2.5*cm, A4[0] - 2*cm, 2.5*cm)
+            
+            # Texto do rodapé centralizado
+            canvas.setFont('Helvetica', 9)
+            canvas.setFillColor(HexColor('#4b5563'))
+            
+            footer_lines = []
+            if clinic_config.get("clinic_name"):
+                footer_lines.append(clinic_config["clinic_name"])
+            if clinic_config.get("address"):
+                footer_lines.append(clinic_config["address"])
+            
+            contact_parts = []
+            if clinic_config.get("phone"):
+                contact_parts.append(f"Tel: {clinic_config['phone']}")
+            if clinic_config.get("email"):
+                contact_parts.append(f"Email: {clinic_config['email']}")
+            if contact_parts:
+                footer_lines.append(" | ".join(contact_parts))
+            
+            y_position = 2*cm
+            for line in footer_lines:
+                text_width = canvas.stringWidth(line, 'Helvetica', 9)
+                x_position = (A4[0] - text_width) / 2
+                canvas.drawString(x_position, y_position, line)
+                y_position -= 0.4*cm
+            
+            canvas.restoreState()
+        
+        # Gerar PDF com rodapé
+        doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
         buffer.seek(0)
         
         return StreamingResponse(
