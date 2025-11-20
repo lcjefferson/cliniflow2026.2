@@ -478,10 +478,9 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                 <div className="space-y-4">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-semibold">Tratamentos Realizados</h3>
-                    <Button onClick={() => setShowTreatmentDialog(true)} className="btn-primary">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Adicionar Tratamento
-                    </Button>
+                    <p className="text-sm text-gray-500">
+                      Baseado nos agendamentos do paciente
+                    </p>
                   </div>
 
                   {patient.treatments && patient.treatments.length > 0 ? (
