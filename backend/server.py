@@ -1289,8 +1289,8 @@ async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(
             parent=styles['Heading1'],
             fontSize=18,
             textColor=HexColor('#1e40af'),
-            spaceAfter=20,
-            spaceBefore=10,
+            spaceAfter=12,
+            spaceBefore=6,
             alignment=TA_LEFT,
             fontName='Helvetica-Bold'
         )
@@ -1299,10 +1299,10 @@ async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(
             'CustomContent',
             parent=styles['Normal'],
             fontSize=11,
-            spaceAfter=15,
-            spaceBefore=5,
+            spaceAfter=6,
+            spaceBefore=0,
             alignment=TA_LEFT,
-            leading=16
+            leading=14
         )
         
         label_style = ParagraphStyle(
@@ -1311,7 +1311,8 @@ async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(
             fontSize=11,
             textColor=HexColor('#1e40af'),
             fontName='Helvetica-Bold',
-            spaceAfter=8
+            spaceAfter=4,
+            spaceBefore=8
         )
         
         # Logo wide e alinhada à esquerda
