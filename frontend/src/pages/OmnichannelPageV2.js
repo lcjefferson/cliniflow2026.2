@@ -380,7 +380,7 @@ export default function OmnichannelPageV2() {
               </div>
 
               {/* Message Input */}
-              {selectedConversation.status === "active" && selectedConversation.assigned_to === user?.id && (
+              {selectedConversation.status === "active" && (!selectedConversation.assigned_to || selectedConversation.assigned_to === user?.id) && (
                 <div className="bg-white border-t border-gray-200 p-4">
                   <form onSubmit={handleSendMessage} className="flex gap-2">
                     <Input
@@ -399,6 +399,11 @@ export default function OmnichannelPageV2() {
                       <Send className="w-5 h-5" />
                     </Button>
                   </form>
+                  {!selectedConversation.assigned_to && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      💡 Esta conversa não está atribuída. Assuma o atendimento para garantir que você é o responsável.
+                    </p>
+                  )}
                 </div>
               )}
               
@@ -408,9 +413,15 @@ export default function OmnichannelPageV2() {
                 </div>
               )}
               
-              {selectedConversation.assigned_to && selectedConversation.assigned_to !== user?.id && (
-                <div className="bg-yellow-50 border-t border-yellow-200 p-4 text-center text-yellow-800">
-                  Este atendimento está sendo realizado por {selectedConversation.assigned_to_name}
+              {selectedConversation.status === "active" && selectedConversation.assigned_to && selectedConversation.assigned_to !== user?.id && (
+                <div className="bg-yellow-50 border-t border-yellow-200 p-4 text-center">
+                  <AlertCircle className="w-5 h-5 inline-block mr-2 text-yellow-600" />
+                  <span className="text-yellow-800 font-medium">
+                    Este atendimento está sendo realizado por {selectedConversation.assigned_to_name || "outro consultor"}
+                  </span>
+                  <p className="text-sm text-yellow-700 mt-1">
+                    Você pode visualizar as mensagens mas não pode responder.
+                  </p>
                 </div>
               )}
             </div>
