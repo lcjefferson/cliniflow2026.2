@@ -916,10 +916,13 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     </Dialog>
 
     {/* Medical Record Dialog */}
-    <Dialog open={showMedicalRecordDialog} onOpenChange={setShowMedicalRecordDialog}>
+    <Dialog open={showMedicalRecordDialog} onOpenChange={(open) => {
+      setShowMedicalRecordDialog(open);
+      if (!open) setEditingRecord(null);
+    }}>
       <DialogContent className="max-w-3xl max-h-[90vh] w-[95vw] md:w-auto overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Novo Prontuário - {patient?.name}</DialogTitle>
+          <DialogTitle>{editingRecord ? "Editar Prontuário" : "Novo Prontuário"} - {patient?.name}</DialogTitle>
         </DialogHeader>
         
         {/* Templates Rápidos */}
