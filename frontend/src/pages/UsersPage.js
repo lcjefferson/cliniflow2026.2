@@ -327,7 +327,7 @@ export default function UsersPage() {
                 <Label htmlFor="is_admin">Permissão de Administrador</Label>
               </div>
               <Button type="submit" className="w-full btn-primary">
-                Salvar Alterações
+                {editingUser ? "Salvar Alterações" : "Criar Usuário"}
               </Button>
             </form>
           </DialogContent>
