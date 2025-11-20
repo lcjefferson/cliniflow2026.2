@@ -200,17 +200,28 @@ export default function FollowUpPage() {
     setDeleteRuleDialog(true);
   };
 
-  const confirmDeleteRule = () => {
+  const confirmDeleteRule = async () => {
     if (!ruleToDelete) return;
-    setRules(rules.filter(r => r.id !== ruleToDelete.id));
-    toast.success("Regra deletada!");
-    setDeleteRuleDialog(false);
-    setRuleToDelete(null);
+    
+    try {
+      await api.delete(`/followup-rules/${ruleToDelete.id}`);
+      toast.success("Regra deletada!");
+      setDeleteRuleDialog(false);
+      setRuleToDelete(null);
+      loadRules();
+    } catch (error) {
+      toast.error("Erro ao deletar regra");
+    }
   };
 
-  const toggleRuleActive = (id) => {
-    setRules(rules.map(r => r.id === id ? { ...r, active: !r.active } : r));
-    toast.success("Status da regra atualizado!");
+  const toggleRuleActive = async (id) => {
+    try {
+      await api.patch(`/followup-rules/${id}/toggle`);
+      toast.success("Status da regra atualizado!");
+      loadRules();
+    } catch (error) {
+      toast.error("Erro ao atualizar status da regra");
+    }
   };
 
   const getLeadName = (leadId) => {
