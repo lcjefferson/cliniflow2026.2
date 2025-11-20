@@ -61,9 +61,16 @@ export default function ReportsPage() {
       // Se não tem filtro de data, retornar todos com data válida
       if (!dateStart && !dateEnd) return true;
       
+      // Normalizar data para comparação (pode ser string ISO ou date string)
+      let normalizedDate = itemDate;
+      if (typeof itemDate === 'string') {
+        // Se for ISO datetime (2025-11-20T15:24:54), pegar só a data
+        normalizedDate = itemDate.split('T')[0];
+      }
+      
       // Aplicar filtros de data
-      if (dateStart && itemDate < dateStart) return false;
-      if (dateEnd && itemDate > dateEnd) return false;
+      if (dateStart && normalizedDate < dateStart) return false;
+      if (dateEnd && normalizedDate > dateEnd) return false;
       return true;
     });
   };
