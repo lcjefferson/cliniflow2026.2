@@ -3,7 +3,7 @@ import api from "../services/api";
 import { 
   FileText, Paperclip, Stethoscope, Activity, Users, 
   X, Upload, Trash2, Plus, Edit, Save, AlertCircle,
-  Download, CheckCircle, Clock
+  Download, CheckCircle, Clock, MessageSquare
 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
