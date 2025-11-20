@@ -228,7 +228,9 @@ export default function ReportsPage() {
   const generateFinancialReport = (format) => {
     setLoading(true);
     try {
-      const filteredData = filterByDate(transactions, "transaction_date");
+      const filteredData = filterByDate(transactions, "transaction_date")
+        // Filtrar apenas transações com pacientes válidos
+        .filter(trans => !trans.patient_id || patients.find(p => p.id === trans.patient_id));
       
       if (format === "pdf") {
         const doc = new jsPDF();
