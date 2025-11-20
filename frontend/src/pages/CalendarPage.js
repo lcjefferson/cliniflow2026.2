@@ -604,19 +604,11 @@ export default function CalendarPage() {
                         getProfessionalColor(apt.professional_id)
                       }`}
                     >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="text-2xl font-bold mb-2">{apt.appointment_time}</div>
-                          <div className="text-lg font-semibold">{getPatientName(apt.patient_id)}</div>
-                          <div className="text-sm opacity-90">{getProfessionalName(apt.professional_id)}</div>
-                          <div className="text-sm opacity-80">{getServiceName(apt.service_id)}</div>
-                        </div>
-                        {apt.amount && (
-                          <div className="text-right">
-                            <div className="text-lg font-bold">R$ {apt.amount.toFixed(2)}</div>
-                            {apt.paid && <div className="text-xs">✓ Pago</div>}
-                          </div>
-                        )}
+                      <div>
+                        <div className="text-2xl font-bold mb-2">{apt.appointment_time}</div>
+                        <div className="text-lg font-semibold">{getPatientName(apt.patient_id)}</div>
+                        <div className="text-sm opacity-90">{getProfessionalName(apt.professional_id)}</div>
+                        <div className="text-sm opacity-80">{getServiceName(apt.service_id)}</div>
                       </div>
                     </button>
                   ))}
