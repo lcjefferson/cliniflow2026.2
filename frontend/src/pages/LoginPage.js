@@ -5,29 +5,21 @@ import { toast } from "sonner";
 import { Eye, EyeOff } from "lucide-react";
 
 export default function LoginPage() {
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   
   const navigate = useNavigate();
-  const { login, register } = useAuth();
+  const { login } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      if (isLogin) {
-        await login(email, password);
-        toast.success("Login realizado com sucesso!");
-      } else {
-        await register(name, email, password, isAdmin);
-        toast.success("Cadastro realizado com sucesso!");
-      }
+      await login(email, password);
+      toast.success("Login realizado com sucesso!");
       navigate("/");
     } catch (error) {
       toast.error(error.response?.data?.detail || "Erro ao processar requisição");
