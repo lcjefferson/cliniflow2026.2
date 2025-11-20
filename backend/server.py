@@ -1411,14 +1411,17 @@ async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(
                 if para.strip():
                     story.append(Paragraph(para, content_style))
         
-        # Dados do médico
+        # Dados do profissional
         story.append(Spacer(1, 0.6*cm))
-        if record.get("doctor_name") or record.get("crm"):
+        professional_registration = record.get("professional_registration") or record.get("crm")
+        council_type = record.get("professional_council_type", "CRM")
+        
+        if record.get("doctor_name") or professional_registration:
             story.append(Paragraph("<b>Profissional Responsável:</b>", label_style))
             if record.get("doctor_name"):
                 story.append(Paragraph(f"Dr(a). {record['doctor_name']}", content_style))
-            if record.get("crm"):
-                story.append(Paragraph(f"CRM: {record['crm']}", content_style))
+            if professional_registration:
+                story.append(Paragraph(f"{council_type}: {professional_registration}", content_style))
         
         # Função para criar rodapé
         def add_footer(canvas, doc):
