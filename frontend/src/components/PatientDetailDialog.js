@@ -865,33 +865,16 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
           </div>
 
           <div>
-            <Label>Tratamento Proposto</Label>
+            <Label>Conteúdo Completo do Prontuário</Label>
             <textarea
-              className="input-field min-h-[80px]"
-              value={medicalRecordForm.treatment}
-              onChange={(e) => setMedicalRecordForm({...medicalRecordForm, treatment: e.target.value})}
-              placeholder="Descreva o tratamento recomendado"
-            />
-          </div>
-
-          <div>
-            <Label>Medicações Prescritas</Label>
-            <textarea
-              className="input-field min-h-[80px]"
-              value={medicalRecordForm.medications}
-              onChange={(e) => setMedicalRecordForm({...medicalRecordForm, medications: e.target.value})}
-              placeholder="Liste as medicações e posologia"
-            />
-          </div>
-
-          <div>
-            <Label>Observações / Conteúdo Completo</Label>
-            <textarea
-              className="input-field min-h-[200px] font-mono text-sm"
+              className="input-field min-h-[300px] font-mono text-sm"
               value={medicalRecordForm.observations}
               onChange={(e) => setMedicalRecordForm({...medicalRecordForm, observations: e.target.value})}
-              placeholder="Observações adicionais ou conteúdo completo do documento"
+              placeholder="Inclua todos os detalhes: sintomas, diagnóstico, tratamento proposto, medicações prescritas, observações, etc."
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Dica: Inclua tratamento, medicações e todas as informações relevantes aqui
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
