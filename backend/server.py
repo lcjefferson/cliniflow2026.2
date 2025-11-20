@@ -2135,6 +2135,9 @@ async def whatsapp_webhook(request: Request):
                             message_text = message.get("text", {}).get("body", "")
                             timestamp = message.get("timestamp")
                             
+                            print(f"📱 Número: {from_number}")
+                            print(f"💬 Mensagem: {message_text}")
+                            
                             # Extrair nome do perfil do WhatsApp (se disponível no payload)
                             # O Meta envia o nome do perfil em change.value.contacts[].profile.name
                             whatsapp_name = None
@@ -2143,6 +2146,8 @@ async def whatsapp_webhook(request: Request):
                                 if contact.get("wa_id") == from_number:
                                     whatsapp_name = contact.get("profile", {}).get("name")
                                     break
+                            
+                            print(f"👤 Nome do WhatsApp: {whatsapp_name or 'Não fornecido'}")
                             
                             # Buscar ou criar lead
                             lead = await db.leads.find_one({"phone": from_number}, {"_id": 0})
