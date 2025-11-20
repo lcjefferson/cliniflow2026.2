@@ -773,16 +773,158 @@ export default function SettingsPageV2() {
         {/* Messenger Tab */}
         {activeTab === "messenger" && (
           <div className="space-y-6">
+            {/* Status Card */}
+            <div className={`rounded-xl p-6 ${messengerConfig.enabled ? "bg-blue-50 border-2 border-blue-200" : "bg-gray-50 border-2 border-gray-200"}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {messengerConfig.enabled ? (
+                    <CheckCircle className="w-8 h-8 text-blue-600" />
+                  ) : (
+                    <XCircle className="w-8 h-8 text-gray-400" />
+                  )}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Status: {messengerConfig.enabled ? "Ativo" : "Inativo"}
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      {messengerConfig.enabled ? "Messenger API conectado" : "Configure para ativar"}
+                    </p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={messengerConfig.enabled}
+                    onChange={(e) => setMessengerConfig({...messengerConfig, enabled: e.target.checked})}
+                    className="sr-only peer"
+                  />
+                  <div className="w-14 h-7 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+            </div>
+
+            {/* Instructions */}
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
               <div className="flex items-start gap-3">
                 <Info className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="font-semibold text-blue-900 mb-2">Messenger (Facebook Messenger)</h4>
-                  <p className="text-sm text-blue-800">
-                    A configuração do Messenger é similar ao Instagram. Use o mesmo processo com o produto "Messenger" no Meta Developers.
-                  </p>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-blue-900 mb-2">Como obter as credenciais do Messenger:</h4>
+                  <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800">
+                    <li>Acesse <a href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">Meta Developers</a></li>
+                    <li>Crie ou use um app existente</li>
+                    <li>Adicione o produto "Messenger"</li>
+                    <li>Conecte uma página do Facebook</li>
+                    <li>Copie o Page ID e Page Access Token</li>
+                    <li>Configure o webhook com a URL fornecida abaixo</li>
+                    <li>Solicite permissões: pages_messaging, pages_manage_metadata</li>
+                  </ol>
+                  <a 
+                    href="https://developers.facebook.com/docs/messenger-platform" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 mt-3 text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Documentação Completa <ExternalLink className="w-4 h-4" />
+                  </a>
                 </div>
               </div>
+            </div>
+
+            {/* Configuration Form */}
+            <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Configuração da API</h3>
+              
+              <div>
+                <Label>Page ID *</Label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 123456789012345"
+                  value={messengerConfig.page_id}
+                  onChange={(e) => setMessengerConfig({...messengerConfig, page_id: e.target.value})}
+                />
+                <p className="text-xs text-gray-500 mt-1">ID da página do Facebook</p>
+              </div>
+
+              <div>
+                <Label>Page Access Token *</Label>
+                <div className="relative">
+                  <Input
+                    type={showMessengerToken ? "text" : "password"}
+                    placeholder="EAAxxxxxxxxxxxxx..."
+                    value={messengerConfig.access_token}
+                    onChange={(e) => setMessengerConfig({...messengerConfig, access_token: e.target.value})}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowMessengerToken(!showMessengerToken)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showMessengerToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Token de acesso da página</p>
+              </div>
+
+              <div>
+                <Label>Verify Token *</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    placeholder="Ex: meu_token_secreto_messenger"
+                    value={messengerConfig.verify_token}
+                    onChange={(e) => setMessengerConfig({...messengerConfig, verify_token: e.target.value})}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setMessengerConfig({...messengerConfig, verify_token: `verify_${Math.random().toString(36).substr(2, 9)}`})}
+                  >
+                    Gerar
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Token para validação do webhook (escolha um aleatório)</p>
+              </div>
+
+              <div>
+                <Label>Webhook URL (Copie para o Meta)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    value={`${webhookBaseUrl}/api/webhooks/messenger`}
+                    readOnly
+                    className="bg-gray-50 font-mono text-sm"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => copyToClipboard(`${webhookBaseUrl}/api/webhooks/messenger`)}
+                  >
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <Button
+                onClick={handleSaveMessenger}
+                disabled={loading || !messengerConfig.page_id || !messengerConfig.access_token || !messengerConfig.verify_token}
+                className="btn-primary flex-1"
+              >
+                <Save className="w-5 h-5 mr-2" />
+                {loading ? "Salvando..." : "Salvar Configurações"}
+              </Button>
+              <Button
+                onClick={() => handleTestConnection('messenger')}
+                disabled={loading}
+                variant="outline"
+              >
+                <Activity className="w-5 h-5 mr-2" />
+                Testar Conexão
+              </Button>
             </div>
           </div>
         )}
