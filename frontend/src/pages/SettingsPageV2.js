@@ -3,7 +3,7 @@ import Layout from "../components/Layout";
 import api from "../services/api";
 import { 
   Settings as SettingsIcon, MessageSquare, CheckCircle, XCircle, 
-  RefreshCw, Copy, ExternalLink, AlertCircle, Info, Save, Eye, EyeOff
+  RefreshCw, Copy, ExternalLink, AlertCircle, Info, Save, Eye, EyeOff, Activity
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
