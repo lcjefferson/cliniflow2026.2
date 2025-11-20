@@ -1,7 +1,7 @@
 import requests
 
 def test_unauthorized():
-    base_url = "https://cliniflow-fix.preview.emergentagent.com/api"
+    base_url = "https://clinic-portal-9.preview.emergentagent.com/api"
     
     endpoints = [
         'professionals',

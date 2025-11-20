@@ -3,7 +3,7 @@ import json
 
 class EdgeCaseTester:
     def __init__(self):
-        self.base_url = "https://cliniflow-fix.preview.emergentagent.com/api"
+        self.base_url = "https://clinic-portal-9.preview.emergentagent.com/api"
         self.token = None
         
     def authenticate(self):
