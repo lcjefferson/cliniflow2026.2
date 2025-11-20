@@ -40,22 +40,6 @@ export default function LoginPage() {
           </div>
 
           <form onSubmit={handleSubmit} data-testid="login-form" className="space-y-6">
-            {!isLogin && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nome Completo
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  data-testid="name-input"
-                  className="input-field"
-                  required
-                />
-              </div>
-            )}
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Email
@@ -93,40 +77,18 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {!isLogin && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="isAdmin"
-                  checked={isAdmin}
-                  onChange={(e) => setIsAdmin(e.target.checked)}
-                  data-testid="admin-checkbox"
-                  className="w-4 h-4 text-blue-600 rounded"
-                />
-                <label htmlFor="isAdmin" className="text-sm text-gray-700">
-                  Cadastrar como Administrador
-                </label>
-              </div>
-            )}
-
             <button
               type="submit"
               disabled={loading}
               data-testid="submit-button"
               className="btn-primary w-full disabled:opacity-50"
             >
-              {loading ? "Processando..." : isLogin ? "Entrar" : "Cadastrar"}
+              {loading ? "Processando..." : "Entrar"}
             </button>
           </form>
 
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => setIsLogin(!isLogin)}
-              data-testid="toggle-mode-button"
-              className="text-blue-600 hover:text-blue-700 font-medium"
-            >
-              {isLogin ? "Não tem conta? Cadastre-se" : "Já tem conta? Faça login"}
-            </button>
+          <div className="mt-6 text-center text-sm text-gray-600">
+            Não tem acesso? Contate o administrador do sistema.
           </div>
         </div>
       </div>
