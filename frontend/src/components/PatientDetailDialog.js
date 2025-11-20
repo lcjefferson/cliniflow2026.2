@@ -920,10 +920,25 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
             </div>
           </div>
 
-          <Button onClick={handleAddMedicalRecord} className="w-full btn-primary">
-            <Save className="w-5 h-5 mr-2" />
-            Criar Prontuário
-          </Button>
+          <div className="grid grid-cols-2 gap-3">
+            <Button onClick={() => handleAddMedicalRecord(false)} variant="outline">
+              <Save className="w-5 h-5 mr-2" />
+              Salvar
+            </Button>
+            <Button 
+              onClick={() => handleAddMedicalRecord(true)} 
+              className="btn-primary"
+              disabled={!patient.phone}
+            >
+              <MessageSquare className="w-5 h-5 mr-2" />
+              Salvar e Enviar WhatsApp
+            </Button>
+          </div>
+          {!patient.phone && (
+            <p className="text-xs text-amber-600 text-center mt-2">
+              ⚠️ Paciente não tem telefone cadastrado
+            </p>
+          )}
         </div>
       </DialogContent>
     </Dialog>
