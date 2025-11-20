@@ -227,14 +227,31 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }
   };
 
-  const handleAddMedicalRecord = async () => {
+  const handleAddMedicalRecord = async (sendWhatsApp = false) => {
     try {
       const payload = {
         ...medicalRecordForm,
         patient_id: patient.id
       };
-      await api.post("/medical-records", payload);
+      const response = await api.post("/medical-records", payload);
+      const recordId = response.data.id;
+      
       toast.success("Prontuário criado com sucesso!");
+      
+      // Se deve enviar via WhatsApp
+      if (sendWhatsApp && patient.phone) {
+        try {
+          await api.post("/medical-records/send-whatsapp", {
+            record_id: recordId,
+            patient_phone: patient.phone,
+            patient_name: patient.name
+          });
+          toast.success("Prontuário enviado via WhatsApp!");
+        } catch (error) {
+          toast.error("Erro ao enviar via WhatsApp. Prontuário salvo.");
+        }
+      }
+      
       setShowMedicalRecordDialog(false);
       setMedicalRecordForm({
         record_type: "prontuario",
