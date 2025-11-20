@@ -29,12 +29,12 @@ export default function Layout({ children }) {
 
   // Define menus baseado no tipo de usuário
   const allMenuItems = [
-    { path: "/", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "consultor"] },
+    { path: "/", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "consultor", "profissional"] },
     { path: "/omnichannel", icon: MessageSquare, label: "Omnichannel", roles: ["admin", "consultor"] },
     { path: "/calendar", icon: Calendar, label: "Calendário", roles: ["admin", "consultor", "profissional"] },
     { path: "/leads", icon: Users, label: "Leads", roles: ["admin", "consultor"] },
     { path: "/followup", icon: ClipboardList, label: "Follow-up", roles: ["admin", "consultor"] },
-    { path: "/patients", icon: UserPlus, label: "Pacientes", roles: ["admin", "consultor"] },
+    { path: "/patients", icon: UserPlus, label: "Pacientes", roles: ["admin", "consultor", "profissional"] },
     { path: "/professionals", icon: Briefcase, label: "Profissionais", roles: ["admin"] },
     { path: "/services", icon: Activity, label: "Serviços", roles: ["admin"] },
     { path: "/rooms", icon: DoorOpen, label: "Salas", roles: ["admin"] },
