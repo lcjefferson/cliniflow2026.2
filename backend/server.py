@@ -1358,7 +1358,7 @@ async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(
         }.get(record.get("record_type", "prontuario"), "DOCUMENTO MÉDICO")
         
         story.append(Paragraph(record_type_label, title_style))
-        story.append(Spacer(1, 0.6*cm))
+        story.append(Spacer(1, 0.4*cm))
         
         # Informações do paciente
         story.append(Paragraph("<b>Paciente:</b>", label_style))
@@ -1369,20 +1369,18 @@ async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(
         
         # Diagnóstico
         if record.get("diagnosis"):
-            story.append(Spacer(1, 0.3*cm))
             story.append(Paragraph("<b>Diagnóstico:</b>", label_style))
             story.append(Paragraph(record['diagnosis'], content_style))
         
         # Conteúdo/Observações
         if record.get("observations"):
-            story.append(Spacer(1, 0.3*cm))
             story.append(Paragraph("<b>Descrição:</b>", label_style))
             for para in record["observations"].split('\n'):
                 if para.strip():
                     story.append(Paragraph(para, content_style))
         
         # Dados do médico
-        story.append(Spacer(1, 1*cm))
+        story.append(Spacer(1, 0.6*cm))
         if record.get("doctor_name") or record.get("crm"):
             story.append(Paragraph("<b>Profissional Responsável:</b>", label_style))
             if record.get("doctor_name"):
