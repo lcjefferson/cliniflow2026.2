@@ -215,8 +215,7 @@ export default function CalendarPage() {
       room_id: "",
       appointment_date: new Date().toISOString().split('T')[0],
       appointment_time: "",
-      amount: "",
-      paid: false,
+      appointment_time_end: "",
       notes: ""
     });
   };
