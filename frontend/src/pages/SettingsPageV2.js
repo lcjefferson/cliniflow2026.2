@@ -14,6 +14,7 @@ export default function SettingsPageV2() {
   const [activeTab, setActiveTab] = useState("clinic");
   const [showWhatsAppToken, setShowWhatsAppToken] = useState(false);
   const [showInstagramToken, setShowInstagramToken] = useState(false);
+  const [showMessengerToken, setShowMessengerToken] = useState(false);
   const [loading, setLoading] = useState(false);
   
   const [whatsappConfig, setWhatsappConfig] = useState({
