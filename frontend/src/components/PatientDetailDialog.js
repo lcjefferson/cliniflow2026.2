@@ -297,6 +297,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       medications: record.medications || "",
       observations: record.observations || "",
       doctor_name: record.doctor_name || "",
+      professional_council_type: record.professional_council_type || "CRM",
+      professional_registration: record.professional_registration || record.crm || "",
       crm: record.crm || "",
       template_used: record.template_used || ""
     });
