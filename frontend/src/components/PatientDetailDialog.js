@@ -542,12 +542,37 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                               <p className="text-gray-600">{record.diagnosis}</p>
                             </div>
                           )}
-                          {record.symptoms && (
+                          {record.observations && (
                             <div className="mt-2">
-                              <span className="font-semibold text-gray-700">Sintomas:</span>
-                              <p className="text-gray-600">{record.symptoms}</p>
+                              <span className="font-semibold text-gray-700">Conteúdo:</span>
+                              <p className="text-gray-600 line-clamp-2">{record.observations}</p>
                             </div>
                           )}
+                          
+                          {/* Action buttons */}
+                          <div className="flex gap-2 mt-4 pt-3 border-t">
+                            <button
+                              onClick={() => handleViewPDF(record)}
+                              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+                            >
+                              <FileText className="w-4 h-4" />
+                              Visualizar PDF
+                            </button>
+                            <button
+                              onClick={() => handleDownloadPDF(record)}
+                              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition"
+                            >
+                              <Download className="w-4 h-4" />
+                              Baixar
+                            </button>
+                            <button
+                              onClick={() => handleEditRecord(record)}
+                              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-amber-500 text-white rounded hover:bg-amber-600 transition"
+                            >
+                              <Edit className="w-4 h-4" />
+                              Editar
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
