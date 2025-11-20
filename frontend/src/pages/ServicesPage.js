@@ -77,7 +77,7 @@ export default function ServicesPage() {
   const handleCloseDialog = () => {
     setShowDialog(false);
     setEditingId(null);
-    setFormData({ name: "", description: "", duration_minutes: "", price: "" });
+    setFormData({ name: "", description: "", duration_minutes: "" });
   };
 
   return (
