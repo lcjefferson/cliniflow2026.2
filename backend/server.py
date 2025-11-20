@@ -1013,7 +1013,16 @@ async def generate_document(data: GenerateDocumentRequest, current_user: dict = 
 
 @api_router.post("/medical-records/send-whatsapp")
 async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(get_current_user)):
-    """Envia prontuário via WhatsApp para o paciente"""
+    """Envia prontuário em PDF via WhatsApp para o paciente"""
+    import requests
+    import base64
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    
     try:
         record_id = data.get("record_id")
         patient_phone = data.get("patient_phone")
@@ -1040,66 +1049,166 @@ async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(
         if not access_token or not phone_number_id:
             raise HTTPException(status_code=400, detail="Credenciais do WhatsApp incompletas")
         
-        # Formatar telefone (remover caracteres especiais, adicionar código do país se necessário)
+        # Formatar telefone
         clean_phone = ''.join(filter(str.isdigit, patient_phone))
         if not clean_phone.startswith('55'):
             clean_phone = '55' + clean_phone
         
-        # Gerar conteúdo do PDF (texto formatado)
+        # Gerar PDF
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # Estilo customizado
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=16,
+            textColor='#1e40af',
+            spaceAfter=12,
+            alignment=TA_CENTER
+        )
+        
+        header_style = ParagraphStyle(
+            'CustomHeader',
+            parent=styles['Normal'],
+            fontSize=10,
+            alignment=TA_CENTER,
+            spaceAfter=6
+        )
+        
+        content_style = ParagraphStyle(
+            'CustomContent',
+            parent=styles['Normal'],
+            fontSize=11,
+            spaceAfter=12,
+            alignment=TA_LEFT
+        )
+        
+        # Logo (se existir)
+        if clinic_config.get("logo"):
+            try:
+                logo_data = clinic_config["logo"]
+                if logo_data.startswith('data:image'):
+                    logo_data = logo_data.split(',')[1]
+                logo_bytes = base64.b64decode(logo_data)
+                logo_buffer = BytesIO(logo_bytes)
+                logo = RLImage(logo_buffer, width=3*cm, height=3*cm)
+                story.append(logo)
+                story.append(Spacer(1, 0.5*cm))
+            except:
+                pass
+        
+        # Cabeçalho da clínica
         clinic_name = clinic_config.get("clinic_name", "Clínica")
+        story.append(Paragraph(clinic_name, header_style))
+        
+        if clinic_config.get("address"):
+            story.append(Paragraph(clinic_config["address"], header_style))
+        
+        contact_info = []
+        if clinic_config.get("phone"):
+            contact_info.append(f"Tel: {clinic_config['phone']}")
+        if clinic_config.get("email"):
+            contact_info.append(f"Email: {clinic_config['email']}")
+        if contact_info:
+            story.append(Paragraph(" | ".join(contact_info), header_style))
+        
+        story.append(Spacer(1, 1*cm))
+        
+        # Tipo de documento
         record_type_label = {
             "prontuario": "PRONTUÁRIO MÉDICO",
             "receita": "RECEITA MÉDICA", 
             "atestado": "ATESTADO MÉDICO"
         }.get(record.get("record_type", "prontuario"), "DOCUMENTO MÉDICO")
         
-        pdf_content = f"""
-{record_type_label}
-
-{clinic_name}
-{clinic_config.get("address", "")}
-Tel: {clinic_config.get("phone", "")}
-Email: {clinic_config.get("email", "")}
-
----
-
-Paciente: {patient_name}
-Data: {datetime.now(timezone.utc).strftime("%d/%m/%Y")}
-
-{record.get("observations", "")}
-
----
-
-Dr(a). {record.get("doctor_name", "")}
-CRM: {record.get("crm", "")}
-        """.strip()
+        story.append(Paragraph(record_type_label, title_style))
+        story.append(Spacer(1, 0.5*cm))
         
-        # Enviar mensagem via WhatsApp
-        import requests
-        url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
-        headers = {
+        # Informações do paciente
+        story.append(Paragraph(f"<b>Paciente:</b> {patient_name}", content_style))
+        story.append(Paragraph(f"<b>Data:</b> {datetime.now(timezone.utc).strftime('%d/%m/%Y')}", content_style))
+        story.append(Spacer(1, 0.5*cm))
+        
+        # Diagnóstico
+        if record.get("diagnosis"):
+            story.append(Paragraph(f"<b>Diagnóstico:</b> {record['diagnosis']}", content_style))
+            story.append(Spacer(1, 0.3*cm))
+        
+        # Conteúdo/Observações
+        if record.get("observations"):
+            story.append(Paragraph("<b>Conteúdo:</b>", content_style))
+            # Dividir em parágrafos
+            for para in record["observations"].split('\n'):
+                if para.strip():
+                    story.append(Paragraph(para, content_style))
+            story.append(Spacer(1, 0.5*cm))
+        
+        # Rodapé com dados do médico
+        story.append(Spacer(1, 1*cm))
+        if record.get("doctor_name"):
+            story.append(Paragraph(f"<b>Dr(a). {record['doctor_name']}</b>", content_style))
+        if record.get("crm"):
+            story.append(Paragraph(f"CRM: {record['crm']}", content_style))
+        
+        # Gerar PDF
+        doc.build(story)
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        
+        # Upload do PDF para WhatsApp (via URL ou diretamente)
+        # Primeiro: fazer upload do media
+        media_url = f"https://graph.facebook.com/v21.0/{phone_number_id}/media"
+        
+        files = {
+            'file': ('prontuario.pdf', pdf_bytes, 'application/pdf'),
+            'messaging_product': (None, 'whatsapp')
+        }
+        headers_upload = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        upload_response = requests.post(media_url, headers=headers_upload, files=files)
+        
+        if upload_response.status_code != 200:
+            print(f"Erro ao fazer upload: {upload_response.text}")
+            raise HTTPException(status_code=400, detail=f"Erro ao fazer upload do PDF: {upload_response.text}")
+        
+        media_id = upload_response.json().get('id')
+        
+        # Enviar documento via WhatsApp
+        send_url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+        headers_send = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
+        
         payload = {
             "messaging_product": "whatsapp",
+            "recipient_type": "individual",
             "to": clean_phone,
-            "type": "text",
-            "text": {
-                "body": f"📄 *{record_type_label}*\n\nOlá {patient_name}, segue seu documento:\n\n{pdf_content}"
+            "type": "document",
+            "document": {
+                "id": media_id,
+                "caption": f"📄 {record_type_label}\n\nOlá {patient_name}, segue seu documento médico.",
+                "filename": f"{record_type_label.lower().replace(' ', '_')}.pdf"
             }
         }
         
-        response = requests.post(url, headers=headers, json=payload)
+        send_response = requests.post(send_url, headers=headers_send, json=payload)
         
-        if response.status_code == 200:
-            return {"success": True, "message": "Prontuário enviado via WhatsApp"}
+        if send_response.status_code == 200:
+            return {"success": True, "message": "PDF enviado via WhatsApp com sucesso!"}
         else:
-            print(f"Erro WhatsApp: {response.text}")
-            raise HTTPException(status_code=400, detail=f"Erro ao enviar: {response.text}")
+            print(f"Erro ao enviar WhatsApp: {send_response.text}")
+            raise HTTPException(status_code=400, detail=f"Erro ao enviar: {send_response.text}")
             
     except Exception as e:
         print(f"Erro ao enviar prontuário via WhatsApp: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/medical-records", response_model=List[MedicalRecord])
