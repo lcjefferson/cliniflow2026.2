@@ -141,6 +141,7 @@ export default function UsersPage() {
     setFormData({
       name: "",
       email: "",
+      password: "",
       user_type: "consultor",
       professional_id: "",
       is_admin: false
