@@ -239,22 +239,36 @@ class MedicalRecord(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     patient_id: str
-    professional_id: str
-    appointment_id: str
-    diagnosis: str
-    treatment: str
+    record_type: Optional[str] = "prontuario"  # prontuario, receita, atestado
+    professional_id: Optional[str] = None
+    appointment_id: Optional[str] = None
+    diagnosis: Optional[str] = None
+    symptoms: Optional[str] = None
+    treatment: Optional[str] = None
+    medications: Optional[str] = None
+    observations: Optional[str] = None
+    doctor_name: Optional[str] = None
+    crm: Optional[str] = None
     prescription: Optional[str] = None
     medical_certificate: Optional[str] = None
+    template_used: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class MedicalRecordCreate(BaseModel):
     patient_id: Optional[str] = None
+    record_type: Optional[str] = "prontuario"
     professional_id: Optional[str] = None
     appointment_id: Optional[str] = None
     diagnosis: Optional[str] = None
+    symptoms: Optional[str] = None
     treatment: Optional[str] = None
+    medications: Optional[str] = None
+    observations: Optional[str] = None
+    doctor_name: Optional[str] = None
+    crm: Optional[str] = None
     prescription: Optional[str] = None
     medical_certificate: Optional[str] = None
+    template_used: Optional[str] = None
 
 class Lead(BaseModel):
     model_config = ConfigDict(extra="ignore")
