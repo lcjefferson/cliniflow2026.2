@@ -251,30 +251,45 @@ export default function UsersPage() {
           </div>
         )}
 
-        {/* Modal de Editar Usuário */}
+        {/* Modal de Criar/Editar Usuário */}
         <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Editar Usuário</DialogTitle>
+              <DialogTitle>{editingUser ? "Editar Usuário" : "Adicionar Novo Usuário"}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <Label>Nome</Label>
+                <Label>Nome *</Label>
                 <Input 
                   value={formData.name} 
                   onChange={(e) => setFormData({...formData, name: e.target.value})} 
                   required 
+                  placeholder="Nome completo do usuário"
                 />
               </div>
               <div>
-                <Label>Email</Label>
+                <Label>Email *</Label>
                 <Input 
                   type="email" 
                   value={formData.email} 
                   onChange={(e) => setFormData({...formData, email: e.target.value})} 
                   required 
+                  placeholder="email@exemplo.com"
                 />
               </div>
+              {!editingUser && (
+                <div>
+                  <Label>Senha *</Label>
+                  <Input 
+                    type="password" 
+                    value={formData.password} 
+                    onChange={(e) => setFormData({...formData, password: e.target.value})} 
+                    required 
+                    placeholder="Mínimo 6 caracteres"
+                    minLength={6}
+                  />
+                </div>
+              )}
               <div>
                 <Label>Tipo de Usuário</Label>
                 <select
