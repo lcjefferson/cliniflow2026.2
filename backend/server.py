@@ -1011,6 +1011,147 @@ async def generate_document(data: GenerateDocumentRequest, current_user: dict = 
     
     return {"document": response, "type": data.document_type}
 
+@api_router.post("/medical-records/generate-pdf")
+async def generate_medical_record_pdf(data: dict, current_user: dict = Depends(get_current_user)):
+    """Gera PDF do prontuário para visualização/download"""
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from fastapi.responses import StreamingResponse
+    import base64
+    
+    try:
+        record_id = data.get("record_id")
+        patient_name = data.get("patient_name")
+        
+        # Buscar prontuário
+        record = await db.medical_records.find_one({"id": record_id}, {"_id": 0})
+        if not record:
+            raise HTTPException(status_code=404, detail="Prontuário não encontrado")
+        
+        # Buscar configurações da clínica
+        clinic_settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
+        clinic_config = clinic_settings.get("config", {}) if clinic_settings else {}
+        
+        # Gerar PDF
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # Estilos customizados
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=16,
+            textColor='#1e40af',
+            spaceAfter=12,
+            alignment=TA_CENTER
+        )
+        
+        header_style = ParagraphStyle(
+            'CustomHeader',
+            parent=styles['Normal'],
+            fontSize=10,
+            alignment=TA_CENTER,
+            spaceAfter=6
+        )
+        
+        content_style = ParagraphStyle(
+            'CustomContent',
+            parent=styles['Normal'],
+            fontSize=11,
+            spaceAfter=12,
+            alignment=TA_LEFT
+        )
+        
+        # Logo (se existir)
+        if clinic_config.get("logo"):
+            try:
+                logo_data = clinic_config["logo"]
+                if logo_data.startswith('data:image'):
+                    logo_data = logo_data.split(',')[1]
+                logo_bytes = base64.b64decode(logo_data)
+                logo_buffer = BytesIO(logo_bytes)
+                logo = RLImage(logo_buffer, width=3*cm, height=3*cm)
+                story.append(logo)
+                story.append(Spacer(1, 0.5*cm))
+            except:
+                pass
+        
+        # Cabeçalho da clínica
+        clinic_name = clinic_config.get("clinic_name", "Clínica")
+        story.append(Paragraph(clinic_name, header_style))
+        
+        if clinic_config.get("address"):
+            story.append(Paragraph(clinic_config["address"], header_style))
+        
+        contact_info = []
+        if clinic_config.get("phone"):
+            contact_info.append(f"Tel: {clinic_config['phone']}")
+        if clinic_config.get("email"):
+            contact_info.append(f"Email: {clinic_config['email']}")
+        if contact_info:
+            story.append(Paragraph(" | ".join(contact_info), header_style))
+        
+        story.append(Spacer(1, 1*cm))
+        
+        # Tipo de documento
+        record_type_label = {
+            "prontuario": "PRONTUÁRIO MÉDICO",
+            "receita": "RECEITA MÉDICA", 
+            "atestado": "ATESTADO MÉDICO"
+        }.get(record.get("record_type", "prontuario"), "DOCUMENTO MÉDICO")
+        
+        story.append(Paragraph(record_type_label, title_style))
+        story.append(Spacer(1, 0.5*cm))
+        
+        # Informações do paciente
+        story.append(Paragraph(f"<b>Paciente:</b> {patient_name}", content_style))
+        story.append(Paragraph(f"<b>Data:</b> {datetime.now(timezone.utc).strftime('%d/%m/%Y')}", content_style))
+        story.append(Spacer(1, 0.5*cm))
+        
+        # Diagnóstico
+        if record.get("diagnosis"):
+            story.append(Paragraph(f"<b>Diagnóstico:</b> {record['diagnosis']}", content_style))
+            story.append(Spacer(1, 0.3*cm))
+        
+        # Conteúdo/Observações
+        if record.get("observations"):
+            story.append(Paragraph("<b>Conteúdo:</b>", content_style))
+            for para in record["observations"].split('\n'):
+                if para.strip():
+                    story.append(Paragraph(para, content_style))
+            story.append(Spacer(1, 0.5*cm))
+        
+        # Rodapé com dados do médico
+        story.append(Spacer(1, 1*cm))
+        if record.get("doctor_name"):
+            story.append(Paragraph(f"<b>Dr(a). {record['doctor_name']}</b>", content_style))
+        if record.get("crm"):
+            story.append(Paragraph(f"CRM: {record['crm']}", content_style))
+        
+        # Gerar PDF
+        doc.build(story)
+        buffer.seek(0)
+        
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"inline; filename=prontuario_{patient_name.replace(' ', '_')}.pdf"
+            }
+        )
+            
+    except Exception as e:
+        print(f"Erro ao gerar PDF: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api_router.post("/medical-records/send-whatsapp")
 async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(get_current_user)):
     """Envia prontuário em PDF via WhatsApp para o paciente"""
