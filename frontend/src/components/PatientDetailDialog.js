@@ -323,22 +323,22 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }
   };
   
-  const handleViewPDF = async (record) => {
+  const handleDeleteRecord = (record) => {
+    setRecordToDelete(record);
+    setShowDeleteRecordDialog(true);
+  };
+  
+  const confirmDeleteRecord = async () => {
+    if (!recordToDelete) return;
+    
     try {
-      const response = await api.post("/medical-records/generate-pdf", {
-        record_id: record.id,
-        patient_name: patient.name
-      }, {
-        responseType: 'blob'
-      });
-      
-      // Open in new tab
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      window.open(url, '_blank');
-      
-      toast.success("PDF aberto em nova aba!");
+      await api.delete(`/medical-records/${recordToDelete.id}`);
+      toast.success("Prontuário excluído com sucesso!");
+      setShowDeleteRecordDialog(false);
+      setRecordToDelete(null);
+      loadPatientData();
     } catch (error) {
-      toast.error("Erro ao visualizar PDF");
+      toast.error("Erro ao excluir prontuário");
     }
   };
 
