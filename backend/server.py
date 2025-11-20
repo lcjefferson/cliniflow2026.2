@@ -2135,13 +2135,22 @@ async def whatsapp_webhook(request: Request):
                             message_text = message.get("text", {}).get("body", "")
                             timestamp = message.get("timestamp")
                             
+                            # Extrair nome do perfil do WhatsApp (se disponível no payload)
+                            # O Meta envia o nome do perfil em change.value.contacts[].profile.name
+                            whatsapp_name = None
+                            contacts = change.get("value", {}).get("contacts", [])
+                            for contact in contacts:
+                                if contact.get("wa_id") == from_number:
+                                    whatsapp_name = contact.get("profile", {}).get("name")
+                                    break
+                            
                             # Buscar ou criar lead
                             lead = await db.leads.find_one({"phone": from_number}, {"_id": 0})
                             if not lead:
-                                # Criar novo lead
+                                # Criar novo lead com nome do WhatsApp se disponível
                                 lead = {
                                     "id": str(uuid.uuid4()),
-                                    "name": f"Lead WhatsApp {from_number[-4:]}",
+                                    "name": whatsapp_name or f"Lead WhatsApp {from_number[-4:]}",
                                     "phone": from_number,
                                     "email": None,
                                     "status": "novo",
@@ -2149,6 +2158,14 @@ async def whatsapp_webhook(request: Request):
                                     "created_at": datetime.now(timezone.utc).isoformat()
                                 }
                                 await db.leads.insert_one(lead)
+                            else:
+                                # Atualizar nome do lead se veio do WhatsApp e está diferente
+                                if whatsapp_name and lead.get("name", "").startswith("Lead WhatsApp"):
+                                    await db.leads.update_one(
+                                        {"id": lead["id"]},
+                                        {"$set": {"name": whatsapp_name}}
+                                    )
+                                    lead["name"] = whatsapp_name
                             
                             # Buscar ou criar conversa
                             conversation = await db.conversations.find_one(
