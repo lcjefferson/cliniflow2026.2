@@ -1037,8 +1037,19 @@ async def generate_medical_record_pdf(data: dict, current_user: dict = Depends(g
         clinic_config = clinic_settings.get("config", {}) if clinic_settings else {}
         
         # Gerar PDF
+        from reportlab.lib.colors import HexColor
+        from reportlab.platypus import Table, TableStyle
+        from reportlab.lib import colors
+        
         buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
+        doc = SimpleDocTemplate(
+            buffer, 
+            pagesize=A4, 
+            topMargin=1.5*cm, 
+            bottomMargin=3*cm,
+            leftMargin=2*cm,
+            rightMargin=2*cm
+        )
         story = []
         styles = getSampleStyleSheet()
         
@@ -1046,29 +1057,42 @@ async def generate_medical_record_pdf(data: dict, current_user: dict = Depends(g
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Heading1'],
-            fontSize=16,
-            textColor='#1e40af',
-            spaceAfter=12,
-            alignment=TA_CENTER
+            fontSize=18,
+            textColor=HexColor('#1e40af'),
+            spaceAfter=20,
+            spaceBefore=10,
+            alignment=TA_LEFT,
+            fontName='Helvetica-Bold'
         )
         
-        header_style = ParagraphStyle(
-            'CustomHeader',
+        footer_style = ParagraphStyle(
+            'FooterStyle',
             parent=styles['Normal'],
-            fontSize=10,
+            fontSize=9,
             alignment=TA_CENTER,
-            spaceAfter=6
+            textColor=HexColor('#4b5563')
         )
         
         content_style = ParagraphStyle(
             'CustomContent',
             parent=styles['Normal'],
             fontSize=11,
-            spaceAfter=12,
-            alignment=TA_LEFT
+            spaceAfter=15,
+            spaceBefore=5,
+            alignment=TA_LEFT,
+            leading=16
         )
         
-        # Logo (se existir)
+        label_style = ParagraphStyle(
+            'LabelStyle',
+            parent=styles['Normal'],
+            fontSize=11,
+            textColor=HexColor('#1e40af'),
+            fontName='Helvetica-Bold',
+            spaceAfter=8
+        )
+        
+        # Logo (se existir) - Wide e alinhada à esquerda
         if clinic_config.get("logo"):
             try:
                 logo_data = clinic_config["logo"]
@@ -1076,28 +1100,36 @@ async def generate_medical_record_pdf(data: dict, current_user: dict = Depends(g
                     logo_data = logo_data.split(',')[1]
                 logo_bytes = base64.b64decode(logo_data)
                 logo_buffer = BytesIO(logo_bytes)
-                logo = RLImage(logo_buffer, width=3*cm, height=3*cm)
+                # Logo wide com proporção 4:1 (largura:altura)
+                logo = RLImage(logo_buffer, width=8*cm, height=2*cm)
+                logo.hAlign = 'LEFT'
                 story.append(logo)
-                story.append(Spacer(1, 0.5*cm))
+                story.append(Spacer(1, 0.3*cm))
             except:
-                pass
+                # Se falhar, adiciona nome da clínica
+                clinic_name_header = Paragraph(
+                    f"<b>{clinic_config.get('clinic_name', 'Clínica')}</b>",
+                    ParagraphStyle('ClinicName', fontSize=16, textColor=HexColor('#1e40af'), alignment=TA_LEFT)
+                )
+                story.append(clinic_name_header)
+                story.append(Spacer(1, 0.3*cm))
+        else:
+            # Se não tem logo, adiciona nome da clínica
+            clinic_name_header = Paragraph(
+                f"<b>{clinic_config.get('clinic_name', 'Clínica')}</b>",
+                ParagraphStyle('ClinicName', fontSize=16, textColor=HexColor('#1e40af'), alignment=TA_LEFT)
+            )
+            story.append(clinic_name_header)
+            story.append(Spacer(1, 0.3*cm))
         
-        # Cabeçalho da clínica
-        clinic_name = clinic_config.get("clinic_name", "Clínica")
-        story.append(Paragraph(clinic_name, header_style))
-        
-        if clinic_config.get("address"):
-            story.append(Paragraph(clinic_config["address"], header_style))
-        
-        contact_info = []
-        if clinic_config.get("phone"):
-            contact_info.append(f"Tel: {clinic_config['phone']}")
-        if clinic_config.get("email"):
-            contact_info.append(f"Email: {clinic_config['email']}")
-        if contact_info:
-            story.append(Paragraph(" | ".join(contact_info), header_style))
-        
-        story.append(Spacer(1, 1*cm))
+        # Linha azul suave abaixo da logo
+        from reportlab.platypus import Table, TableStyle
+        line_table = Table([['']], colWidths=[16*cm])
+        line_table.setStyle(TableStyle([
+            ('LINEABOVE', (0, 0), (-1, 0), 1.5, HexColor('#93c5fd')),
+        ]))
+        story.append(line_table)
+        story.append(Spacer(1, 0.8*cm))
         
         # Tipo de documento
         record_type_label = {
