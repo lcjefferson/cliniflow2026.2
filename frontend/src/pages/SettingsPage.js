@@ -44,6 +44,16 @@ export default function SettingsPage() {
     from_email: "",
     from_name: "CliniFlow"
   });
+  
+  const [clinicSettings, setClinicSettings] = useState({
+    clinic_name: "",
+    address: "",
+    phone: "",
+    email: "",
+    website: "",
+    logo: ""
+  });
+  
   const [userForm, setUserForm] = useState({
     name: "",
     email: "",
