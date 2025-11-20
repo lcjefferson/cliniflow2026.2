@@ -75,7 +75,7 @@ export default function Dashboard() {
               <span className="text-3xl font-bold">{stats.appointmentsToday}</span>
             </div>
             <h3 className="font-medium opacity-90">Agendamentos Hoje</h3>
-            <p className="text-xs opacity-75 mt-1">Total: {stats.appointmentsTotal}</p>
+            <p className="text-xs opacity-75 mt-1">Total geral: {stats.appointmentsTotal} agendamentos</p>
           </div>
 
           <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-6 shadow-lg card-hover text-white" data-testid="leads-card">
