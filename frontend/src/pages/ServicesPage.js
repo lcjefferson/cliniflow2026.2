@@ -53,8 +53,7 @@ export default function ServicesPage() {
     setEditingId(service.id);
     setFormData({
       name: service.name,
-      description: service.description,
-      duration_minutes: service.duration_minutes.toString()
+      description: service.description
     });
     setShowDialog(true);
   };
