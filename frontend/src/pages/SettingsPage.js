@@ -199,6 +199,126 @@ export default function SettingsPage() {
               </TabsTrigger>
             </TabsList>
 
+            {/* Clínica Tab */}
+            <TabsContent value="clinic" className="p-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Configurações da Clínica</h2>
+              
+              <div className="space-y-6">
+                {/* Logo Upload */}
+                <div className="border-b pb-6">
+                  <Label className="text-lg font-semibold mb-3 block">Logo da Clínica</Label>
+                  <div className="flex items-center gap-6">
+                    {clinicSettings.logo ? (
+                      <div className="w-32 h-32 border-2 border-gray-200 rounded-lg overflow-hidden bg-white">
+                        <img 
+                          src={clinicSettings.logo} 
+                          alt="Logo da clínica" 
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-32 h-32 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50">
+                        <Settings className="w-12 h-12 text-gray-400" />
+                      </div>
+                    )}
+                    <div>
+                      <input
+                        type="file"
+                        id="logo-upload"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                      />
+                      <Button
+                        onClick={() => document.getElementById('logo-upload').click()}
+                        variant="outline"
+                        className="mb-2"
+                      >
+                        Fazer Upload da Logo
+                      </Button>
+                      <p className="text-xs text-gray-500">
+                        Recomendado: PNG ou JPG, máximo 2MB
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Informações da Clínica */}
+                <div>
+                  <Label className="text-lg font-semibold mb-4 block">Informações da Clínica</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <Label>Nome da Clínica *</Label>
+                      <Input
+                        value={clinicSettings.clinic_name}
+                        onChange={(e) => setClinicSettings({ ...clinicSettings, clinic_name: e.target.value })}
+                        placeholder="Ex: Clínica Odontológica São Paulo"
+                        className="mt-1"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <Label>Endereço Completo</Label>
+                      <Input
+                        value={clinicSettings.address}
+                        onChange={(e) => setClinicSettings({ ...clinicSettings, address: e.target.value })}
+                        placeholder="Rua, número, bairro, cidade - UF, CEP"
+                        className="mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Telefone</Label>
+                      <Input
+                        value={clinicSettings.phone}
+                        onChange={(e) => setClinicSettings({ ...clinicSettings, phone: e.target.value })}
+                        placeholder="(85) 98765-4321"
+                        className="mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <Label>E-mail</Label>
+                      <Input
+                        type="email"
+                        value={clinicSettings.email}
+                        onChange={(e) => setClinicSettings({ ...clinicSettings, email: e.target.value })}
+                        placeholder="contato@clinica.com.br"
+                        className="mt-1"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <Label>Website (Opcional)</Label>
+                      <Input
+                        value={clinicSettings.website}
+                        onChange={(e) => setClinicSettings({ ...clinicSettings, website: e.target.value })}
+                        placeholder="https://www.clinica.com.br"
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Box */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-blue-800">
+                    <strong>ℹ️ Informação:</strong> Estas configurações serão usadas em todos os PDFs gerados 
+                    (receitas, atestados, prontuários). A logo aparecerá no topo e as informações no rodapé.
+                  </p>
+                </div>
+                
+                <Button 
+                  onClick={handleSaveClinicSettings} 
+                  disabled={!clinicSettings.clinic_name}
+                  className="w-full btn-primary"
+                >
+                  <Save className="w-5 h-5 mr-2" />
+                  Salvar Configurações da Clínica
+                </Button>
+              </div>
+            </TabsContent>
+
             {/* Usuários Tab */}
             <TabsContent value="users" className="p-6">
               <div className="flex justify-between items-center mb-6">
