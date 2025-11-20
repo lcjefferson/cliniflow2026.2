@@ -32,22 +32,17 @@ export default function ServicesPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const payload = {
-        ...formData,
-        duration_minutes: parseInt(formData.duration_minutes)
-      };
-      
       if (editingId) {
-        await api.put(`/services/${editingId}`, payload);
+        await api.put(`/services/${editingId}`, formData);
         toast.success("Serviço atualizado!");
       } else {
-        await api.post("/services", payload);
+        await api.post("/services", formData);
         toast.success("Serviço cadastrado!");
       }
       
       setShowDialog(false);
       setEditingId(null);
-      setFormData({ name: "", description: "", duration_minutes: "" });
+      setFormData({ name: "", description: "" });
       loadServices();
     } catch (error) {
       toast.error(editingId ? "Erro ao atualizar serviço" : "Erro ao cadastrar serviço");
