@@ -96,14 +96,17 @@ export default function Dashboard() {
             <p className="text-xs opacity-75 mt-1">Cadastrados</p>
           </div>
 
-          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-6 shadow-lg card-hover text-white" data-testid="revenue-card">
-            <div className="flex items-center justify-between mb-4">
-              <DollarSign className="w-10 h-10 opacity-80" />
-              <span className="text-2xl font-bold">R$ {stats.revenuePaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+          {/* Card de Faturamento - Apenas para Admins */}
+          {isAdmin && (
+            <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-6 shadow-lg card-hover text-white" data-testid="revenue-card">
+              <div className="flex items-center justify-between mb-4">
+                <DollarSign className="w-10 h-10 opacity-80" />
+                <span className="text-2xl font-bold">R$ {stats.revenuePaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <h3 className="font-medium opacity-90">Receita Recebida</h3>
+              <p className="text-xs opacity-75 mt-1">Pendente: R$ {stats.revenuePending.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
             </div>
-            <h3 className="font-medium opacity-90">Receita Recebida</h3>
-            <p className="text-xs opacity-75 mt-1">Pendente: R$ {stats.revenuePending.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-          </div>
+          )}
         </div>
       </div>
     </Layout>
