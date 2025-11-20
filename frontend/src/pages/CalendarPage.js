@@ -161,8 +161,6 @@ export default function CalendarPage() {
         appointment_date: new Date().toISOString().split('T')[0],
         appointment_time: "",
         appointment_time_end: "",
-        amount: "",
-        paid: false,
         notes: ""
       });
       loadMonthAppointments();
