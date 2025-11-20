@@ -1827,6 +1827,73 @@ async def delete_followup(followup_id: str, current_user: dict = Depends(get_cur
         raise HTTPException(status_code=404, detail="FollowUp not found")
     return {"message": "FollowUp deleted successfully"}
 
+# FollowUp Rules Routes
+@api_router.post("/followup-rules", response_model=FollowUpRule)
+async def create_followup_rule(data: FollowUpRuleCreate, current_user: dict = Depends(get_current_user)):
+    # Only admins can create rules
+    if not current_user["role"]["is_admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    rule = FollowUpRule(**data.model_dump())
+    doc = rule.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.followup_rules.insert_one(doc)
+    return rule
+
+@api_router.get("/followup-rules", response_model=List[FollowUpRule])
+async def get_followup_rules(current_user: dict = Depends(get_current_user)):
+    # Only admins can view rules
+    if not current_user["role"]["is_admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    rules = await db.followup_rules.find({}, {"_id": 0}).to_list(1000)
+    for rule in rules:
+        if isinstance(rule['created_at'], str):
+            rule['created_at'] = datetime.fromisoformat(rule['created_at'])
+    return rules
+
+@api_router.put("/followup-rules/{rule_id}")
+async def update_followup_rule(rule_id: str, data: FollowUpRuleCreate, current_user: dict = Depends(get_current_user)):
+    # Only admins can update rules
+    if not current_user["role"]["is_admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    result = await db.followup_rules.update_one(
+        {"id": rule_id},
+        {"$set": data.model_dump()}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="FollowUp Rule not found")
+    return {"message": "FollowUp Rule updated successfully"}
+
+@api_router.delete("/followup-rules/{rule_id}")
+async def delete_followup_rule(rule_id: str, current_user: dict = Depends(get_current_user)):
+    # Only admins can delete rules
+    if not current_user["role"]["is_admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    result = await db.followup_rules.delete_one({"id": rule_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="FollowUp Rule not found")
+    return {"message": "FollowUp Rule deleted successfully"}
+
+@api_router.patch("/followup-rules/{rule_id}/toggle")
+async def toggle_followup_rule(rule_id: str, current_user: dict = Depends(get_current_user)):
+    # Only admins can toggle rules
+    if not current_user["role"]["is_admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    rule = await db.followup_rules.find_one({"id": rule_id}, {"_id": 0})
+    if not rule:
+        raise HTTPException(status_code=404, detail="FollowUp Rule not found")
+    
+    new_active_status = not rule.get("active", True)
+    await db.followup_rules.update_one(
+        {"id": rule_id},
+        {"$set": {"active": new_active_status}}
+    )
+    return {"message": "FollowUp Rule toggled successfully", "active": new_active_status}
+
 # Auto Messages with AI
 @api_router.post("/auto-messages/send")
 async def send_auto_message(data: AutoMessageRequest, current_user: dict = Depends(get_current_user)):
