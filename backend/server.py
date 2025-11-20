@@ -97,7 +97,7 @@ class Service(BaseModel):
     name: str
     description: str
     duration_minutes: int
-    price: float
+    price: Optional[float] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ServiceCreate(BaseModel):
