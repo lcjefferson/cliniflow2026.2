@@ -1059,8 +1059,8 @@ async def generate_medical_record_pdf(data: dict, current_user: dict = Depends(g
             parent=styles['Heading1'],
             fontSize=18,
             textColor=HexColor('#1e40af'),
-            spaceAfter=20,
-            spaceBefore=10,
+            spaceAfter=12,
+            spaceBefore=6,
             alignment=TA_LEFT,
             fontName='Helvetica-Bold'
         )
@@ -1077,10 +1077,10 @@ async def generate_medical_record_pdf(data: dict, current_user: dict = Depends(g
             'CustomContent',
             parent=styles['Normal'],
             fontSize=11,
-            spaceAfter=15,
-            spaceBefore=5,
+            spaceAfter=6,
+            spaceBefore=0,
             alignment=TA_LEFT,
-            leading=16
+            leading=14
         )
         
         label_style = ParagraphStyle(
@@ -1089,7 +1089,8 @@ async def generate_medical_record_pdf(data: dict, current_user: dict = Depends(g
             fontSize=11,
             textColor=HexColor('#1e40af'),
             fontName='Helvetica-Bold',
-            spaceAfter=8
+            spaceAfter=4,
+            spaceBefore=8
         )
         
         # Logo (se existir) - Wide e alinhada à esquerda
