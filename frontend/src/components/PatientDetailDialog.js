@@ -1007,21 +1007,52 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <div>
-              <Label>Nome do Médico</Label>
+              <Label>Nome do Profissional</Label>
               <Input
                 value={medicalRecordForm.doctor_name}
                 onChange={(e) => setMedicalRecordForm({...medicalRecordForm, doctor_name: e.target.value})}
                 placeholder="Dr(a). Nome Completo"
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
             <div>
-              <Label>CRM</Label>
+              <Label>Tipo de Registro</Label>
+              <select
+                value={medicalRecordForm.professional_council_type}
+                onChange={(e) => setMedicalRecordForm({...medicalRecordForm, professional_council_type: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="CRM">CRM - Médico</option>
+                <option value="CRO">CRO - Odontologia</option>
+                <option value="COREN">COREN - Enfermagem</option>
+                <option value="CREFITO">CREFITO - Fisioterapia</option>
+                <option value="CRP">CRP - Psicologia</option>
+                <option value="CREFONO">CREFONO - Fonoaudiologia</option>
+                <option value="CRN">CRN - Nutrição</option>
+                <option value="CRBM">CRBM - Biomedicina</option>
+                <option value="CRBIO">CRBIO - Biologia</option>
+                <option value="CRFA">CRFA - Farmácia</option>
+                <option value="CREFITO">CREFITO - Fisioterapia</option>
+                <option value="COFFITO">COFFITO - Terapia Ocupacional</option>
+                <option value="OUTRO">Outro</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <Label>Número de Registro</Label>
               <Input
-                value={medicalRecordForm.crm}
-                onChange={(e) => setMedicalRecordForm({...medicalRecordForm, crm: e.target.value})}
-                placeholder="CRM/UF"
+                value={medicalRecordForm.professional_registration}
+                onChange={(e) => {
+                  setMedicalRecordForm({
+                    ...medicalRecordForm, 
+                    professional_registration: e.target.value,
+                    crm: e.target.value  // Mantém sincronizado para compatibilidade
+                  });
+                }}
+                placeholder={`${medicalRecordForm.professional_council_type}/UF (ex: 12345/SP)`}
               />
             </div>
           </div>
