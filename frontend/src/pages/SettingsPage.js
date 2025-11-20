@@ -64,6 +64,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (user?.role?.is_admin) {
       loadUsers();
+      loadClinicSettings();
     }
   }, [user]);
 
@@ -74,6 +75,53 @@ export default function SettingsPage() {
     } catch (error) {
       // Endpoint não existe ainda, vamos mockar
       setUsers([user]);
+    }
+  };
+  
+  const loadClinicSettings = async () => {
+    try {
+      const response = await api.get("/settings/clinic");
+      if (response.data) {
+        setClinicSettings(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading clinic settings:", error);
+    }
+  };
+  
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Logo muito grande! Tamanho máximo: 2MB");
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      toast.error("Apenas imagens são permitidas");
+      return;
+    }
+
+    try {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target.result;
+        setClinicSettings({ ...clinicSettings, logo: base64 });
+        toast.success("Logo carregada!");
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      toast.error("Erro ao carregar logo");
+    }
+  };
+  
+  const handleSaveClinicSettings = async () => {
+    try {
+      await api.post("/settings/clinic", clinicSettings);
+      toast.success("Configurações da clínica salvas!");
+    } catch (error) {
+      toast.error("Erro ao salvar configurações");
     }
   };
 
