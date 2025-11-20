@@ -34,8 +34,7 @@ export default function ServicesPage() {
     try {
       const payload = {
         ...formData,
-        duration_minutes: parseInt(formData.duration_minutes),
-        price: parseFloat(formData.price)
+        duration_minutes: parseInt(formData.duration_minutes)
       };
       
       if (editingId) {
@@ -48,7 +47,7 @@ export default function ServicesPage() {
       
       setShowDialog(false);
       setEditingId(null);
-      setFormData({ name: "", description: "", duration_minutes: "", price: "" });
+      setFormData({ name: "", description: "", duration_minutes: "" });
       loadServices();
     } catch (error) {
       toast.error(editingId ? "Erro ao atualizar serviço" : "Erro ao cadastrar serviço");
