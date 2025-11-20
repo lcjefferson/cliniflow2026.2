@@ -1011,6 +1011,97 @@ async def generate_document(data: GenerateDocumentRequest, current_user: dict = 
     
     return {"document": response, "type": data.document_type}
 
+@api_router.post("/medical-records/send-whatsapp")
+async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(get_current_user)):
+    """Envia prontuário via WhatsApp para o paciente"""
+    try:
+        record_id = data.get("record_id")
+        patient_phone = data.get("patient_phone")
+        patient_name = data.get("patient_name")
+        
+        # Buscar prontuário
+        record = await db.medical_records.find_one({"id": record_id}, {"_id": 0})
+        if not record:
+            raise HTTPException(status_code=404, detail="Prontuário não encontrado")
+        
+        # Buscar configurações da clínica
+        clinic_settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
+        clinic_config = clinic_settings.get("config", {}) if clinic_settings else {}
+        
+        # Buscar configurações do WhatsApp
+        whatsapp_settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+        if not whatsapp_settings or not whatsapp_settings.get("whatsapp"):
+            raise HTTPException(status_code=400, detail="WhatsApp não configurado")
+        
+        whatsapp_config = whatsapp_settings["whatsapp"]
+        access_token = whatsapp_config.get("access_token")
+        phone_number_id = whatsapp_config.get("phone_number_id")
+        
+        if not access_token or not phone_number_id:
+            raise HTTPException(status_code=400, detail="Credenciais do WhatsApp incompletas")
+        
+        # Formatar telefone (remover caracteres especiais, adicionar código do país se necessário)
+        clean_phone = ''.join(filter(str.isdigit, patient_phone))
+        if not clean_phone.startswith('55'):
+            clean_phone = '55' + clean_phone
+        
+        # Gerar conteúdo do PDF (texto formatado)
+        clinic_name = clinic_config.get("clinic_name", "Clínica")
+        record_type_label = {
+            "prontuario": "PRONTUÁRIO MÉDICO",
+            "receita": "RECEITA MÉDICA", 
+            "atestado": "ATESTADO MÉDICO"
+        }.get(record.get("record_type", "prontuario"), "DOCUMENTO MÉDICO")
+        
+        pdf_content = f"""
+{record_type_label}
+
+{clinic_name}
+{clinic_config.get("address", "")}
+Tel: {clinic_config.get("phone", "")}
+Email: {clinic_config.get("email", "")}
+
+---
+
+Paciente: {patient_name}
+Data: {datetime.now(timezone.utc).strftime("%d/%m/%Y")}
+
+{record.get("observations", "")}
+
+---
+
+Dr(a). {record.get("doctor_name", "")}
+CRM: {record.get("crm", "")}
+        """.strip()
+        
+        # Enviar mensagem via WhatsApp
+        import requests
+        url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": clean_phone,
+            "type": "text",
+            "text": {
+                "body": f"📄 *{record_type_label}*\n\nOlá {patient_name}, segue seu documento:\n\n{pdf_content}"
+            }
+        }
+        
+        response = requests.post(url, headers=headers, json=payload)
+        
+        if response.status_code == 200:
+            return {"success": True, "message": "Prontuário enviado via WhatsApp"}
+        else:
+            print(f"Erro WhatsApp: {response.text}")
+            raise HTTPException(status_code=400, detail=f"Erro ao enviar: {response.text}")
+            
+    except Exception as e:
+        print(f"Erro ao enviar prontuário via WhatsApp: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api_router.get("/medical-records", response_model=List[MedicalRecord])
 async def get_all_medical_records(current_user: dict = Depends(get_current_user)):
     records = await db.medical_records.find({}, {"_id": 0}).to_list(1000)
