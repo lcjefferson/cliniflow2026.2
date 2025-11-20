@@ -2249,12 +2249,20 @@ async def instagram_webhook(request: Request):
     try:
         body = await request.json()
         
+        print("\n" + "="*80)
+        print("📸 WEBHOOK INSTAGRAM RECEBIDO")
+        print(f"📦 Body: {json.dumps(body, indent=2)}")
+        print("="*80 + "\n")
+        
         if body.get("object") == "instagram":
             for entry in body.get("entry", []):
                 for messaging in entry.get("messaging", []):
                     sender_id = messaging.get("sender", {}).get("id")
                     message = messaging.get("message", {})
                     message_text = message.get("text", "")
+                    
+                    print(f"📱 Sender ID: {sender_id}")
+                    print(f"💬 Mensagem: {message_text}")
                     
                     if sender_id and message_text:
                         # Buscar ou criar lead
