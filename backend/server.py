@@ -1463,6 +1463,25 @@ async def test_connection(channel: str, current_user: dict = Depends(get_current
     # Por enquanto, retornamos sucesso simulado
     return {"success": True, "message": f"Connection to {channel} tested successfully"}
 
+# Clinic Settings Routes
+@api_router.get("/settings/clinic")
+async def get_clinic_settings(current_user: dict = Depends(get_current_user)):
+    """Busca configurações da clínica"""
+    settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
+    if settings:
+        return settings.get("config", {})
+    return {}
+
+@api_router.post("/settings/clinic")
+async def save_clinic_settings(config: dict, current_user: dict = Depends(get_current_user)):
+    """Salva configurações da clínica"""
+    await db.settings.update_one(
+        {"type": "clinic"},
+        {"$set": {"config": config, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    return {"message": "Clinic settings saved successfully"}
+
 # Webhook Routes (para Meta/Facebook)
 @api_router.get("/webhooks/whatsapp")
 async def verify_whatsapp_webhook(request: Request):
