@@ -425,6 +425,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 # Authentication Routes
 @api_router.post("/auth/register", response_model=TokenResponse)
 async def register(user_data: UserRegister):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
     # Check if user exists
     existing_user = await db.users.find_one({"email": user_data.email}, {"_id": 0})
     if existing_user:
@@ -461,6 +463,8 @@ async def register(user_data: UserRegister):
 
 @api_router.post("/auth/login", response_model=TokenResponse)
 async def login(credentials: UserLogin):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
     user = await db.users.find_one({"email": credentials.email}, {"_id": 0})
     if not user or not verify_password(credentials.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")

@@ -11,7 +11,7 @@ services:
       - key: DB_NAME
         value: "clinicflow"
       - key: CORS_ORIGINS
-        value: "*"
+        value: "https://cliniflow-frontend.onrender.com,http://localhost:3000"
 
   - type: web
     name: cliniflow-frontend
