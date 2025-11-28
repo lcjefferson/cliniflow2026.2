@@ -2451,10 +2451,19 @@ async def health():
 
 app.include_router(api_router)
 
+# CORS configuration
+cors_origins_env = os.environ.get('CORS_ORIGINS', '*')
+origins = [o.strip() for o in cors_origins_env.split(',')] if cors_origins_env else ['*']
+allow_credentials_env = os.environ.get('CORS_ALLOW_CREDENTIALS', 'false').lower() == 'true'
+
+# If wildcard origins with credentials, disable credentials to comply with CORS spec
+if len(origins) == 1 and origins[0] == '*' and allow_credentials_env:
+    allow_credentials_env = False
+
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_credentials=allow_credentials_env,
+    allow_origins=origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
