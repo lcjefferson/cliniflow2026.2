@@ -12,7 +12,13 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 import jwt
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+try:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+except Exception:
+    LlmChat = None
+    class UserMessage:
+        def __init__(self, text: str):
+            self.text = text
 import httpx
 import json
 
@@ -1018,19 +1024,23 @@ async def generate_document(data: GenerateDocumentRequest, current_user: dict = 
     
     # Use AI to generate document
     api_key = os.environ.get('EMERGENT_LLM_KEY')
-    chat = LlmChat(
-        api_key=api_key,
-        session_id=str(uuid.uuid4()),
-        system_message="You are a medical document assistant. Generate professional medical documents."
-    ).with_model("openai", "gpt-4o-mini")
-    
-    if data.document_type == "prescription":
-        prompt = f"Generate a medical prescription for patient {patient['name']} based on: Diagnosis: {record['diagnosis']}, Treatment: {record['treatment']}"
+    if LlmChat and api_key:
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=str(uuid.uuid4()),
+            system_message="You are a medical document assistant. Generate professional medical documents."
+        ).with_model("openai", "gpt-4o-mini")
+        if data.document_type == "prescription":
+            prompt = f"Generate a medical prescription for patient {patient['name']} based on: Diagnosis: {record['diagnosis']}, Treatment: {record['treatment']}"
+        else:
+            prompt = f"Generate a medical certificate for patient {patient['name']} based on: Diagnosis: {record['diagnosis']}"
+        message = UserMessage(text=prompt)
+        response = await chat.send_message(message)
     else:
-        prompt = f"Generate a medical certificate for patient {patient['name']} based on: Diagnosis: {record['diagnosis']}"
-    
-    message = UserMessage(text=prompt)
-    response = await chat.send_message(message)
+        if data.document_type == "prescription":
+            response = f"Prescrição para {patient['name']}: Diagnóstico: {record.get('diagnosis') or ''}. Tratamento: {record.get('treatment') or ''}."
+        else:
+            response = f"Atestado para {patient['name']}: Diagnóstico: {record.get('diagnosis') or ''}."
     
     # Update record with generated document
     field = "prescription" if data.document_type == "prescription" else "medical_certificate"
@@ -1915,25 +1925,34 @@ async def send_auto_message(data: AutoMessageRequest, current_user: dict = Depen
         raise HTTPException(status_code=404, detail="Patient not found")
     
     api_key = os.environ.get('EMERGENT_LLM_KEY')
-    chat = LlmChat(
-        api_key=api_key,
-        session_id=str(uuid.uuid4()),
-        system_message="You are a friendly clinic assistant. Generate warm, professional messages."
-    ).with_model("openai", "gpt-4o-mini")
-    
     if data.message_type == "birthday":
-        prompt = f"Generate a warm birthday message for patient {patient['name']}"
+        if LlmChat and api_key:
+            chat = LlmChat(
+                api_key=api_key,
+                session_id=str(uuid.uuid4()),
+                system_message="You are a friendly clinic assistant. Generate warm, professional messages."
+            ).with_model("openai", "gpt-4o-mini")
+            message = UserMessage(text=f"Generate a warm birthday message for patient {patient['name']}")
+            response = await chat.send_message(message)
+        else:
+            response = f"Feliz aniversário, {patient['name']}! Desejamos muita saúde e felicidades."
     elif data.message_type == "appointment_reminder":
         appointment = await db.appointments.find_one({"id": data.appointment_id}, {"_id": 0})
         if appointment:
-            prompt = f"Generate an appointment reminder message for patient {patient['name']} on {appointment['appointment_date']} at {appointment['appointment_time']}"
+            if LlmChat and api_key:
+                chat = LlmChat(
+                    api_key=api_key,
+                    session_id=str(uuid.uuid4()),
+                    system_message="You are a friendly clinic assistant. Generate warm, professional messages."
+                ).with_model("openai", "gpt-4o-mini")
+                message = UserMessage(text=f"Generate an appointment reminder message for patient {patient['name']} on {appointment['appointment_date']} at {appointment['appointment_time']}")
+                response = await chat.send_message(message)
+            else:
+                response = f"Lembrete de consulta para {patient['name']} em {appointment.get('appointment_date')} às {appointment.get('appointment_time')}"
         else:
             raise HTTPException(status_code=404, detail="Appointment not found")
     else:
         raise HTTPException(status_code=400, detail="Invalid message type")
-    
-    message = UserMessage(text=prompt)
-    response = await chat.send_message(message)
     
     return {
         "message": response,
