@@ -356,7 +356,7 @@ class FollowUpRule(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     type: str  # comercial, informativo
-    trigger: str  # lead_created, appointment_created, appointment_completed
+    trigger: str  # lead_created, appointment_created, appointment_completed, patient_birthday
     days_after: int
     message_template: str
     active: bool = True
@@ -2416,6 +2416,10 @@ async def messenger_webhook(request: Request):
         print(f"Erro no webhook Messenger: {e}")
         return {"status": "ok"}
 
+@api_router.get("/health")
+async def health():
+    return {"status": "ok"}
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -2435,3 +2439,57 @@ logger = logging.getLogger(__name__)
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+def _is_birthday_with_offset(birthdate_str: str, offset_days: int) -> bool:
+    try:
+        bd = datetime.fromisoformat(birthdate_str)
+    except Exception:
+        return False
+    target = (datetime.now(timezone.utc) + timedelta(days=offset_days)).date()
+    return bd.month == target.month and bd.day == target.day
+
+@api_router.post("/followups/dispatch-birthday")
+async def dispatch_birthday_followups(current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    rules = await db.followup_rules.find({"active": True, "trigger": "patient_birthday"}, {"_id": 0}).to_list(1000)
+    if not rules:
+        return {"created": 0, "sent": 0}
+    patients = await db.patients.find({}, {"_id": 0}).to_list(10000)
+    created = 0
+    sent = 0
+    for rule in rules:
+        offset = int(rule.get("days_after", 0))
+        message_template = rule.get("message_template", "")
+        for p in patients:
+            if _is_birthday_with_offset(p.get("birthdate", ""), offset):
+                name = p.get("name", "")
+                msg = message_template.replace("{nome}", name)
+                followup = FollowUp(
+                    lead_id=None,
+                    patient_id=p.get("id"),
+                    assigned_to=None,
+                    scheduled_date=datetime.now(timezone.utc).date().isoformat(),
+                    notes=msg,
+                    status="pending",
+                    contact_type="whatsapp",
+                    contact_reason=rule.get("type")
+                )
+                await db.followups.insert_one({**followup.model_dump(), "created_at": followup.created_at.isoformat()})
+                created += 1
+                try:
+                    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+                    whatsapp = settings.get("whatsapp") if settings else None
+                    if whatsapp and whatsapp.get("access_token") and whatsapp.get("phone_number_id") and p.get("phone"):
+                        clean = "".join(filter(str.isdigit, p.get("phone")))
+                        if not clean.startswith("55"):
+                            clean = "55" + clean
+                        send_url = f"https://graph.facebook.com/v21.0/{whatsapp['phone_number_id']}/messages"
+                        headers = {"Authorization": f"Bearer {whatsapp['access_token']}", "Content-Type": "application/json"}
+                        payload = {"messaging_product": "whatsapp", "to": clean, "type": "text", "text": {"body": msg or f"Parabéns {name}!"}}
+                        async with httpx.AsyncClient() as client:
+                            r = await client.post(send_url, json=payload, headers=headers, timeout=10)
+                            if r.status_code == 200:
+                                sent += 1
+                except Exception:
+                    pass
+    return {"created": created, "sent": sent}

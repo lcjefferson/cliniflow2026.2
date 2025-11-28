@@ -508,7 +508,7 @@ export default function FollowUpPage() {
                   </select>
                 </div>
                 <div>
-                  <Label>Disparar após *</Label>
+                  <Label>Disparar *</Label>
                   <select
                     className="input-field"
                     value={ruleFormData.trigger}
@@ -517,18 +517,23 @@ export default function FollowUpPage() {
                     <option value="lead_created">Lead Criado</option>
                     <option value="appointment_created">Agendamento Criado</option>
                     <option value="appointment_completed">Consulta Concluída</option>
+                    <option value="patient_birthday">Pacientes Aniversariantes</option>
                   </select>
                 </div>
               </div>
               <div>
-                <Label>Aguardar (dias) *</Label>
-                <Input
-                  type="number"
+                <Label>Aguardar *</Label>
+                <select
+                  className="input-field"
                   value={ruleFormData.days_after}
                   onChange={(e) => setRuleFormData({...ruleFormData, days_after: parseInt(e.target.value)})}
-                  min="0"
-                  required
-                />
+                >
+                  <option value={0}>No dia</option>
+                  <option value={1}>1 dia depois</option>
+                  <option value={2}>2 dias depois</option>
+                  <option value={-1}>1 dia antes</option>
+                  <option value={-2}>2 dias antes</option>
+                </select>
               </div>
               <div>
                 <Label>Template da Mensagem *</Label>
