@@ -5,6 +5,7 @@ import { MessageSquare, Send } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import io from "socket.io-client";
 
 export default function OmnichannelPage() {
   const [conversations, setConversations] = useState([]);
@@ -15,6 +16,26 @@ export default function OmnichannelPage() {
   useEffect(() => {
     loadConversations();
   }, []);
+
+  useEffect(() => {
+    if (!selectedConv) return;
+
+    const socket = io("http://localhost:8000");
+
+    socket.on("connect", () => {
+      console.log("Socket.IO connected");
+    });
+
+    socket.on("new_message", (message) => {
+      if (message.conversation_id === selectedConv) {
+        setMessages((prevMessages) => [...prevMessages, message]);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [selectedConv]);
 
   const loadConversations = async () => {
     try {
@@ -45,7 +66,6 @@ export default function OmnichannelPage() {
         content: newMessage
       });
       setNewMessage("");
-      loadMessages(selectedConv);
       toast.success("Mensagem enviada (mockado)");
     } catch (error) {
       toast.error("Erro ao enviar mensagem");

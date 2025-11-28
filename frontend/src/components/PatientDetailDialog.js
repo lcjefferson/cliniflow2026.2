@@ -79,7 +79,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     try {
       setLoading(true);
       const [recordsRes, profsRes, servicesRes, debtsRes, appointmentsRes] = await Promise.all([
-        api.get(`/medical-records`),
+        api.get(`/patients/${patient.id}/medical-records`),
         api.get(`/patients/${patient.id}/professionals`),
         api.get(`/services`),
         api.get(`/patients/${patient.id}/debts`),
@@ -87,7 +87,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       ]);
 
       // Filter records for this patient
-      setMedicalRecords(recordsRes.data.filter(r => r.patient_id === patient.id));
+      setMedicalRecords(recordsRes.data);
       
       // Get professionals from appointments automatically
       const appointmentProfs = appointmentsRes.data || [];
