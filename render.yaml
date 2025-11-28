@@ -1,7 +1,7 @@
 services:
   - type: web
     name: clinicflow
-    env: python
+    runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
@@ -17,11 +17,12 @@ services:
       - key: CORS_ORIGINS
         value: "*"
 
-  - type: static_site
+  - type: web
     name: cliniflow-frontend
+    runtime: static
     rootDir: frontend
     buildCommand: yarn && yarn build
-    publishPath: build
+    staticPublishPath: build
     routes:
       - type: rewrite
         source: /*
