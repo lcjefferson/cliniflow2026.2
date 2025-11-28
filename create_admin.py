@@ -7,17 +7,22 @@ Uso: python3 create_admin.py
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import argparse
 from dotenv import load_dotenv
 from passlib.context import CryptContext
 from datetime import datetime, timezone
 import uuid
 
 # Load environment
-load_dotenv('/app/backend/.env')
+try:
+    load_dotenv('/app/backend/.env')
+except Exception:
+    pass
+load_dotenv()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-async def create_admin():
+async def create_admin(email: str, password: str, name: str):
     mongo_url = os.environ.get('MONGO_URL')
     db_name = os.environ.get('DB_NAME')
     
@@ -31,37 +36,29 @@ async def create_admin():
     db = client[db_name]
     
     # Check if admin already exists
-    existing_admin = await db.users.find_one({'email': 'admin@cliniflow.com'}, {'_id': 0})
+    existing_admin = await db.users.find_one({'email': email}, {'_id': 0})
     
     if existing_admin:
-        print("⚠️  Usuário admin@cliniflow.com já existe!")
-        print(f"   Nome: {existing_admin.get('name')}")
+        print("⚠️  Usuário administrador já existe!")
+        print(f"   Email: {email}")
+        print(f"   Nome atual: {existing_admin.get('name')}")
         
-        # Ask if want to reset password
-        response = input("\n🔄 Deseja redefinir a senha? (s/n): ")
-        if response.lower() == 's':
-            new_password = "Admin@2024"
-            hashed = pwd_context.hash(new_password)
-            
-            await db.users.update_one(
-                {'email': 'admin@cliniflow.com'},
-                {'$set': {'password_hash': hashed}}
-            )
-            
-            print(f"✅ Senha redefinida!")
-            print(f"   Email: admin@cliniflow.com")
-            print(f"   Senha: {new_password}")
-        else:
-            print("❌ Operação cancelada")
+        hashed = pwd_context.hash(password)
+        await db.users.update_one(
+            {'email': email},
+            {'$set': {'password_hash': hashed, 'name': name, 'role.is_admin': True, 'user_type': 'admin'}}
+        )
+        print(f"✅ Senha redefinida e perfil atualizado!")
+        print(f"   Email: {email}")
+        print(f"   Senha: {password}")
     else:
         # Create new admin
-        password = "Admin@2024"
         hashed = pwd_context.hash(password)
         
         admin_user = {
             "id": str(uuid.uuid4()),
-            "name": "Administrador",
-            "email": "admin@cliniflow.com",
+            "name": name,
+            "email": email,
             "password_hash": hashed,
             "role": {
                 "is_admin": True,
@@ -75,7 +72,7 @@ async def create_admin():
         await db.users.insert_one(admin_user)
         
         print("✅ Administrador criado com sucesso!")
-        print(f"   Email: admin@cliniflow.com")
+        print(f"   Email: {email}")
         print(f"   Senha: {password}")
         print("\n⚠️  IMPORTANTE: Altere esta senha após o primeiro login!")
     
@@ -87,7 +84,17 @@ if __name__ == "__main__":
     print("=" * 60)
     print()
     
-    asyncio.run(create_admin())
+    parser = argparse.ArgumentParser(description="Criar/atualizar usuário administrador")
+    parser.add_argument("--email", type=str, help="Email do administrador")
+    parser.add_argument("--password", type=str, help="Senha do administrador")
+    parser.add_argument("--name", type=str, help="Nome do administrador")
+    args = parser.parse_args()
+    
+    email = args.email or os.environ.get("ADMIN_EMAIL") or "admin@cliniflow.com"
+    password = args.password or os.environ.get("ADMIN_PASSWORD") or "Admin@2024"
+    name = args.name or os.environ.get("ADMIN_NAME") or "Administrador"
+    
+    asyncio.run(create_admin(email=email, password=password, name=name))
     
     print()
     print("=" * 60)
