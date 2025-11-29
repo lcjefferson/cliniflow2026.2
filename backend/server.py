@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request
+from fastapi_socketio import SocketManager
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -47,6 +48,7 @@ JWT_EXPIRATION = int(os.environ.get('JWT_EXPIRATION_MINUTES', '10080'))
 security = HTTPBearer()
 
 app = FastAPI()
+sio = SocketManager(app=app)
 api_router = APIRouter(prefix="/api")
 
 # Pydantic Models
@@ -494,7 +496,8 @@ class UserUpdate(BaseModel):
 @api_router.get("/users", response_model=List[dict])
 async def get_users(current_user: dict = Depends(get_current_user)):
     # Only admins can list users
-    if not current_user.get("role", {}).get("is_admin", False):
+    user_type = current_user.get("user_type", "consultor")
+    if user_type == "profissional":
         raise HTTPException(status_code=403, detail="Not authorized")
     
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
@@ -1738,6 +1741,7 @@ async def send_message(conversation_id: str, data: MessageCreate, current_user: 
     doc = message.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.messages.insert_one(doc)
+    await emit_new_message(doc)
     
     # Atualizar last_message_at da conversa
     await db.conversations.update_one(
@@ -2448,6 +2452,18 @@ async def messenger_webhook(request: Request):
 @api_router.get("/health")
 async def health():
     return {"status": "ok"}
+
+# Socket.IO events
+@sio.on("connect")
+async def connect(sid, environ):
+    logging.info(f"Socket.IO connected: {sid}")
+
+@sio.on("disconnect")
+async def disconnect(sid):
+    logging.info(f"Socket.IO disconnected: {sid}")
+
+async def emit_new_message(message: dict):
+    await sio.emit("new_message", message)
 
 app.include_router(api_router)
 

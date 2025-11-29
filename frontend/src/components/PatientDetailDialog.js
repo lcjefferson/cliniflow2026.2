@@ -80,7 +80,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       setLoading(true);
       const [recordsRes, profsRes, servicesRes, debtsRes, appointmentsRes] = await Promise.all([
         api.get(`/patients/${patient.id}/medical-records`),
-        api.get(`/patients/${patient.id}/professionals`),
+        api.get(`/professionals`),
         api.get(`/services`),
         api.get(`/patients/${patient.id}/debts`),
         api.get(`/appointments?patient_id=${patient.id}`)
