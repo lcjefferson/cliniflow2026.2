@@ -11,6 +11,7 @@ import PatientDetailDialog from "../components/PatientDetailDialog";
 
 export default function PatientsPage() {
   const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -26,6 +27,7 @@ export default function PatientsPage() {
   }, []);
 
   const loadPatients = async () => {
+    setLoading(true);
     try {
       const response = await api.get("/patients");
       setPatients(response.data);
@@ -43,6 +45,8 @@ export default function PatientsPage() {
       setPatientDebts(debtsMap);
     } catch (error) {
       toast.error("Erro ao carregar pacientes");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -162,7 +166,11 @@ export default function PatientsPage() {
         </div>
 
         <div className="grid gap-6">
-          {patients
+          {loading ? (
+            <div className="flex justify-center items-center p-10">
+              <p className="text-lg text-gray-600">Carregando pacientes...</p>
+            </div>
+          ) : patients
             .filter(p => {
               if (!searchTerm) return true;
               return p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
