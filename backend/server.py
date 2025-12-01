@@ -1,4 +1,8 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request
+from fastapi.responses import StreamingResponse
+import io
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
 from fastapi_socketio import SocketManager
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
@@ -1252,6 +1256,61 @@ async def save_omnichannel_settings(data: OmnichannelSettings, current_user: dic
         upsert=True
     )
     return {"message": "Settings saved"}
+
+# Medical Records PDF Generation
+class GeneratePdfRequest(BaseModel):
+    record_id: str
+    patient_name: str
+
+@api_router.post("/medical-records/generate-pdf")
+async def generate_pdf(request: GeneratePdfRequest):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    record = await db.medical_records.find_one({"id": request.record_id})
+    if not record:
+        raise HTTPException(status_code=404, detail="Medical record not found")
+
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    # Title
+    p.setFont("Helvetica-Bold", 16)
+    p.drawString(100, height - 100, f"Prontuário de {request.patient_name}")
+
+    # Content
+    p.setFont("Helvetica", 12)
+    y = height - 150
+    
+    fields = [
+        ("Data de Criação", record.get("created_at", "N/A")),
+        ("Tipo de Registro", record.get("record_type", "N/A")),
+        ("Nome do Médico", record.get("doctor_name", "N/A")),
+        ("CRM", record.get("crm", "N/A")),
+        ("Diagnóstico", record.get("diagnosis", "N/A")),
+        ("Sintomas", record.get("symptoms", "N/A")),
+        ("Tratamento", record.get("treatment", "N/A")),
+        ("Medicamentos", record.get("medications", "N/A")),
+        ("Observações", record.get("observations", "N/A")),
+        ("Template Utilizado", record.get("template_used", "N/A")),
+    ]
+
+    for label, value in fields:
+        if y < 100:  # New page if content is too long
+            p.showPage()
+            p.setFont("Helvetica", 12)
+            y = height - 100
+            
+        p.drawString(100, y, f"{label}: {value}")
+        y -= 20
+
+    p.save()
+    buffer.seek(0)
+
+    return StreamingResponse(buffer, media_type="application/pdf", headers={
+        "Content-Disposition": f"attachment; filename=prontuario_{request.patient_name}.pdf"
+    })
 
 # Socket.IO Events
 @sio.on('connect')

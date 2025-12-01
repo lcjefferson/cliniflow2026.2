@@ -46,7 +46,9 @@ export default function PatientsPage() {
     } catch (error) {
       toast.error("Erro ao carregar pacientes");
     } finally {
-      setLoading(false);
+      setTimeout(() => {
+        setLoading(false);
+      }, 500); // Adiciona um pequeno atraso para exibir o loading
     }
   };
 
