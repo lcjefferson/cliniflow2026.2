@@ -156,12 +156,20 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }
   };
 
-  const handleDownloadAttachment = (attachment) => {
-    const link = document.createElement('a');
-    link.href = `data:${attachment.file_type};base64,${attachment.file_data}`;
-    link.download = attachment.filename;
-    link.click();
-  };
+  const handleDownloadAttachment = async (attachment) => {
+        try {
+            const response = await api.get(`/patients/${patient.id}/attachments/${attachment.id}`);
+            const fullAttachment = response.data;
+
+            const link = document.createElement('a');
+            link.href = `data:${fullAttachment.file_type};base64,${fullAttachment.file_data}`;
+            link.download = fullAttachment.filename;
+            link.click();
+        } catch (error) {
+            toast.error('Erro ao baixar o anexo.');
+            console.error('Erro ao baixar o anexo:', error);
+        }
+    };
 
   const handleSaveAnamnese = async () => {
     try {
