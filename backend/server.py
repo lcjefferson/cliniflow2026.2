@@ -124,6 +124,10 @@ app = FastAPI(lifespan=lifespan)
 sio = SocketManager(app=app)
 api_router = APIRouter(prefix="/api")
 
+@api_router.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 # Pydantic Models
 class UserRole(BaseModel):
     is_admin: bool = False
