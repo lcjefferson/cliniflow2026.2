@@ -13,6 +13,9 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 import jwt
+from apscheduler import AsyncScheduler
+from apscheduler.triggers.cron import CronTrigger
+from contextlib import asynccontextmanager
 try:
     from emergentintegrations.llm.chat import LlmChat, UserMessage
 except Exception:
@@ -29,12 +32,17 @@ load_dotenv(ROOT_DIR / '.env')
 # MongoDB connection
 mongo_url = os.environ.get('MONGO_URL', '').strip()
 db_name = os.environ.get('DB_NAME', 'clinicflow').strip()
+client: Optional[AsyncIOMotorClient] = None
 db = None
 if mongo_url:
+    client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
     try:
-        client = AsyncIOMotorClient(mongo_url)
-        db = client[db_name]
-    except Exception:
+        db = client.get_database(db_name)
+        # Force connection test
+        client.admin.command('ping') 
+    except Exception as e:
+        print(f"Error connecting to MongoDB: {e}")
+        client = None
         db = None
 
 # Password hashing
@@ -47,7 +55,72 @@ JWT_EXPIRATION = int(os.environ.get('JWT_EXPIRATION_MINUTES', '10080'))
 
 security = HTTPBearer()
 
-app = FastAPI()
+scheduler = AsyncScheduler()
+
+# Automation: Follow-up rules and birthday greetings
+def _is_birthday_with_offset(birthdate_str, days_offset):
+    if not birthdate_str:
+        return False
+    try:
+        birth_date = datetime.fromisoformat(birthdate_str).date()
+        # The logic should be: today is birthday + offset. So, today - offset is birthday.
+        check_date = datetime.now(timezone.utc).date() - timedelta(days=days_offset)
+        return birth_date.month == check_date.month and birth_date.day == check_date.day
+    except (ValueError, TypeError):
+        return False
+
+async def check_and_send_birthday_greetings():
+    if db is None:
+        logging.warning("Database unavailable, skipping birthday check.")
+        return
+    
+    logging.info("Checking for birthday greetings...")
+    
+    try:
+        rules = await db.follow_up_rules.find({"trigger": "patient_birthday", "active": True}).to_list(100)
+        if not rules:
+            logging.info("No active birthday follow-up rules found.")
+            return
+
+        patients_cursor = db.patients.find({}, {"_id": 0, "id": 1, "name": 1, "birthdate": 1, "phone": 1})
+        
+        async for patient in patients_cursor:
+            for rule in rules:
+                days_offset = rule.get('days_after', 0)
+                
+                if _is_birthday_with_offset(patient.get('birthdate'), days_offset):
+                    message = rule['message_template'].format(patient_name=patient['name'])
+                    
+                    # Here, you would integrate with a messaging service (e.g., WhatsApp)
+                    # to send the message to patient['phone']
+                    logging.info(f"Sending birthday greeting to {patient['name']} (phone: {patient['phone']}): {message}")
+                    
+                    # Optional: Create a follow-up record for tracking
+                    follow_up = FollowUp(
+                        patient_id=patient['id'],
+                        scheduled_date=datetime.now(timezone.utc).isoformat(),
+                        notes=f"Mensagem de aniversário enviada: {message}",
+                        status="completed",
+                        contact_type="whatsapp", # Assuming WhatsApp
+                        contact_reason="informativo"
+                    )
+                    doc = follow_up.model_dump()
+                    doc['created_at'] = doc['created_at'].isoformat()
+                    await db.follow_ups.insert_one(doc)
+
+    except Exception as e:
+        logging.error(f"Error during birthday check: {e}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await scheduler.__aenter__()
+    await scheduler.add_schedule(check_and_send_birthday_greetings, CronTrigger(hour=9, minute=0), id="birthday_check")
+    yield
+    # Shutdown
+    await scheduler.__aexit__(None, None, None)
+
+app = FastAPI(lifespan=lifespan)
 sio = SocketManager(app=app)
 api_router = APIRouter(prefix="/api")
 
@@ -254,7 +327,7 @@ class MedicalRecord(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     patient_id: str
-    record_type: Optional[str] = "prontuario"  # prontuario, receita, atestado
+    record_type: Optional[str] = "prontuario"
     professional_id: Optional[str] = None
     appointment_id: Optional[str] = None
     diagnosis: Optional[str] = None
@@ -263,13 +336,14 @@ class MedicalRecord(BaseModel):
     medications: Optional[str] = None
     observations: Optional[str] = None
     doctor_name: Optional[str] = None
-    professional_council_type: Optional[str] = None  # CRM, CRO, COREN, CREFITO, CRP, etc
-    crm: Optional[str] = None  # Mantido para compatibilidade (deprecated - usar professional_registration)
-    professional_registration: Optional[str] = None  # Número do registro profissional
+    professional_council_type: Optional[str] = None
+    crm: Optional[str] = None
+    professional_registration: Optional[str] = None
     prescription: Optional[str] = None
     medical_certificate: Optional[str] = None
     template_used: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_updated: Optional[datetime] = None
 
 class MedicalRecordCreate(BaseModel):
     patient_id: Optional[str] = None
@@ -554,30 +628,42 @@ async def create_professional(data: ProfessionalCreate, current_user: dict = Dep
     await db.professionals.insert_one(doc)
     return professional
 
-@api_router.get("/professionals", response_model=List[Professional])
+@api_router.get("/professionals", response_model=List[dict])
 async def get_professionals(current_user: dict = Depends(get_current_user)):
     professionals = await db.professionals.find({}, {"_id": 0}).to_list(1000)
-    for prof in professionals:
-        if isinstance(prof['created_at'], str):
-            prof['created_at'] = datetime.fromisoformat(prof['created_at'])
+    for p in professionals:
+        if isinstance(p.get('created_at'), str):
+            p['created_at'] = datetime.fromisoformat(p['created_at'])
     return professionals
 
-@api_router.put("/professionals/{professional_id}", response_model=Professional)
+@api_router.get("/professionals/{professional_id}", response_model=dict)
+async def get_professional(professional_id: str, current_user: dict = Depends(get_current_user)):
+    professional = await db.professionals.find_one({"id": professional_id}, {"_id": 0})
+    if not professional:
+        raise HTTPException(status_code=404, detail="Professional not found")
+    if isinstance(professional.get('created_at'), str):
+        professional['created_at'] = datetime.fromisoformat(professional['created_at'])
+    return professional
+
+@api_router.put("/professionals/{professional_id}")
 async def update_professional(professional_id: str, data: ProfessionalCreate, current_user: dict = Depends(get_current_user)):
-    result = await db.professionals.update_one(
-        {"id": professional_id},
-        {"$set": data.model_dump()}
-    )
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    update_data = data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    result = await db.professionals.update_one({"id": professional_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Professional not found")
-    
-    updated = await db.professionals.find_one({"id": professional_id}, {"_id": 0})
-    if isinstance(updated['created_at'], str):
-        updated['created_at'] = datetime.fromisoformat(updated['created_at'])
-    return Professional(**updated)
+    return {"message": "Professional updated successfully"}
 
 @api_router.delete("/professionals/{professional_id}")
 async def delete_professional(professional_id: str, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
     result = await db.professionals.delete_one({"id": professional_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Professional not found")
@@ -592,30 +678,33 @@ async def create_service(data: ServiceCreate, current_user: dict = Depends(get_c
     await db.services.insert_one(doc)
     return service
 
-@api_router.get("/services", response_model=List[Service])
+@api_router.get("/services", response_model=List[dict])
 async def get_services(current_user: dict = Depends(get_current_user)):
     services = await db.services.find({}, {"_id": 0}).to_list(1000)
-    for service in services:
-        if isinstance(service['created_at'], str):
-            service['created_at'] = datetime.fromisoformat(service['created_at'])
+    for s in services:
+        if isinstance(s.get('created_at'), str):
+            s['created_at'] = datetime.fromisoformat(s['created_at'])
     return services
 
-@api_router.put("/services/{service_id}", response_model=Service)
+@api_router.put("/services/{service_id}")
 async def update_service(service_id: str, data: ServiceCreate, current_user: dict = Depends(get_current_user)):
-    result = await db.services.update_one(
-        {"id": service_id},
-        {"$set": data.model_dump()}
-    )
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    update_data = data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    result = await db.services.update_one({"id": service_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Service not found")
-    
-    updated = await db.services.find_one({"id": service_id}, {"_id": 0})
-    if isinstance(updated['created_at'], str):
-        updated['created_at'] = datetime.fromisoformat(updated['created_at'])
-    return Service(**updated)
+    return {"message": "Service updated successfully"}
 
 @api_router.delete("/services/{service_id}")
 async def delete_service(service_id: str, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
     result = await db.services.delete_one({"id": service_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Service not found")
@@ -630,30 +719,33 @@ async def create_room(data: RoomCreate, current_user: dict = Depends(get_current
     await db.rooms.insert_one(doc)
     return room
 
-@api_router.get("/rooms", response_model=List[Room])
+@api_router.get("/rooms", response_model=List[dict])
 async def get_rooms(current_user: dict = Depends(get_current_user)):
     rooms = await db.rooms.find({}, {"_id": 0}).to_list(1000)
-    for room in rooms:
-        if isinstance(room['created_at'], str):
-            room['created_at'] = datetime.fromisoformat(room['created_at'])
+    for r in rooms:
+        if isinstance(r.get('created_at'), str):
+            r['created_at'] = datetime.fromisoformat(r['created_at'])
     return rooms
 
-@api_router.put("/rooms/{room_id}", response_model=Room)
+@api_router.put("/rooms/{room_id}")
 async def update_room(room_id: str, data: RoomCreate, current_user: dict = Depends(get_current_user)):
-    result = await db.rooms.update_one(
-        {"id": room_id},
-        {"$set": data.model_dump()}
-    )
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    update_data = data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    result = await db.rooms.update_one({"id": room_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Room not found")
-    
-    updated = await db.rooms.find_one({"id": room_id}, {"_id": 0})
-    if isinstance(updated['created_at'], str):
-        updated['created_at'] = datetime.fromisoformat(updated['created_at'])
-    return Room(**updated)
+    return {"message": "Room updated successfully"}
 
 @api_router.delete("/rooms/{room_id}")
 async def delete_room(room_id: str, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
     result = await db.rooms.delete_one({"id": room_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Room not found")
@@ -668,234 +760,80 @@ async def create_patient(data: PatientCreate, current_user: dict = Depends(get_c
     await db.patients.insert_one(doc)
     return patient
 
-@api_router.get("/patients", response_model=List[Patient])
+@api_router.get("/patients", response_model=List[dict])
 async def get_patients(current_user: dict = Depends(get_current_user)):
-    patients = await db.patients.find({}, {"_id": 0}).to_list(1000)
-    for patient in patients:
-        if isinstance(patient['created_at'], str):
-            patient['created_at'] = datetime.fromisoformat(patient['created_at'])
+    patients = await db.patients.find({}, {"_id": 0}).to_list(10000)
+    for p in patients:
+        if isinstance(p.get('created_at'), str):
+            p['created_at'] = datetime.fromisoformat(p['created_at'])
     return patients
 
-@api_router.get("/patients/{patient_id}", response_model=Patient)
+@api_router.get("/patients/{patient_id}/medical-records", response_model=List[dict])
+async def get_patient_medical_records(patient_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    records = await db.medical_records.find({"patient_id": patient_id}, {"_id": 0}).to_list(1000)
+    for r in records:
+        if isinstance(r.get('created_at'), str):
+            r['created_at'] = datetime.fromisoformat(r['created_at'])
+        if isinstance(r.get('last_updated'), str):
+            r['last_updated'] = datetime.fromisoformat(r['last_updated'])
+    return records
+
+@api_router.get("/patients/{patient_id}/debts", response_model=List[dict])
+async def get_patient_debts(patient_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    transactions = await db.transactions.find({"patient_id": patient_id}, {"_id": 0}).to_list(1000)
+    for t in transactions:
+        if isinstance(t.get('created_at'), str):
+            t['created_at'] = datetime.fromisoformat(t['created_at'])
+    return transactions
+
+@api_router.get("/patients/{patient_id}", response_model=dict)
 async def get_patient(patient_id: str, current_user: dict = Depends(get_current_user)):
     patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
-    if isinstance(patient['created_at'], str):
+    if isinstance(patient.get('created_at'), str):
         patient['created_at'] = datetime.fromisoformat(patient['created_at'])
-    return Patient(**patient)
+    return patient
 
-@api_router.put("/patients/{patient_id}", response_model=Patient)
+@api_router.put("/patients/{patient_id}")
 async def update_patient(patient_id: str, data: PatientCreate, current_user: dict = Depends(get_current_user)):
-    result = await db.patients.update_one(
-        {"id": patient_id},
-        {"$set": data.model_dump()}
-    )
+    update_data = data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    result = await db.patients.update_one({"id": patient_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Patient not found")
-    
-    updated = await db.patients.find_one({"id": patient_id}, {"_id": 0})
-    if isinstance(updated['created_at'], str):
-        updated['created_at'] = datetime.fromisoformat(updated['created_at'])
-    return Patient(**updated)
+    return {"message": "Patient updated successfully"}
 
 @api_router.delete("/patients/{patient_id}")
 async def delete_patient(patient_id: str, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
     result = await db.patients.delete_one({"id": patient_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Patient not found")
     return {"message": "Patient deleted successfully"}
 
-# Patient Attachments
-@api_router.post("/patients/{patient_id}/attachments")
-async def add_attachment(patient_id: str, attachment: Attachment, current_user: dict = Depends(get_current_user)):
-    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
-    if not patient:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    
-    attachment_dict = attachment.model_dump()
-    attachment_dict['upload_date'] = attachment_dict['upload_date'].isoformat()
-    
-    await db.patients.update_one(
-        {"id": patient_id},
-        {"$push": {"attachments": attachment_dict}}
-    )
-    return {"message": "Attachment added successfully", "attachment": attachment}
-
-@api_router.delete("/patients/{patient_id}/attachments/{attachment_id}")
-async def delete_attachment(patient_id: str, attachment_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.patients.update_one(
-        {"id": patient_id},
-        {"$pull": {"attachments": {"id": attachment_id}}}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    return {"message": "Attachment deleted successfully"}
-
-# Patient Treatments
-@api_router.post("/patients/{patient_id}/treatments")
-async def add_treatment(patient_id: str, treatment: Treatment, current_user: dict = Depends(get_current_user)):
-    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
-    if not patient:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    
-    await db.patients.update_one(
-        {"id": patient_id},
-        {"$push": {"treatments": treatment.model_dump()}}
-    )
-    return {"message": "Treatment added successfully", "treatment": treatment}
-
-@api_router.put("/patients/{patient_id}/treatments/{treatment_id}")
-async def update_treatment(patient_id: str, treatment_id: str, treatment: Treatment, current_user: dict = Depends(get_current_user)):
-    result = await db.patients.update_one(
-        {"id": patient_id, "treatments.id": treatment_id},
-        {"$set": {
-            "treatments.$.date": treatment.date,
-            "treatments.$.service_id": treatment.service_id,
-            "treatments.$.service_name": treatment.service_name,
-            "treatments.$.description": treatment.description,
-            "treatments.$.professional_id": treatment.professional_id,
-            "treatments.$.professional_name": treatment.professional_name,
-            "treatments.$.status": treatment.status
-        }}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Patient or treatment not found")
-    return {"message": "Treatment updated successfully"}
-
-@api_router.delete("/patients/{patient_id}/treatments/{treatment_id}")
-async def delete_treatment(patient_id: str, treatment_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.patients.update_one(
-        {"id": patient_id},
-        {"$pull": {"treatments": {"id": treatment_id}}}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    return {"message": "Treatment deleted successfully"}
-
-# Patient Anamnese
+# Anamnese Routes
 @api_router.put("/patients/{patient_id}/anamnese")
-async def update_anamnese(patient_id: str, anamnese: Anamnese, current_user: dict = Depends(get_current_user)):
-    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
-    if not patient:
+async def update_anamnese(patient_id: str, anamnese_data: Anamnese, current_user: dict = Depends(get_current_user)):
+    anamnese_data.last_updated = datetime.now(timezone.utc)
+    update_data = {"anamnese": anamnese_data.model_dump()}
+    
+    result = await db.patients.update_one({"id": patient_id}, {"$set": update_data})
+    if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Patient not found")
-    
-    anamnese_dict = anamnese.model_dump()
-    anamnese_dict['last_updated'] = anamnese_dict['last_updated'].isoformat()
-    
-    await db.patients.update_one(
-        {"id": patient_id},
-        {"$set": {"anamnese": anamnese_dict}}
-    )
-    return {"message": "Anamnese updated successfully", "anamnese": anamnese}
-
-# Patient Debts
-@api_router.get("/patients/{patient_id}/debts")
-async def get_patient_debts(patient_id: str, current_user: dict = Depends(get_current_user)):
-    # Get unpaid appointments
-    unpaid_appointments = await db.appointments.find(
-        {"patient_id": patient_id, "paid": False},
-        {"_id": 0}
-    ).to_list(1000)
-    
-    total_debt = sum(app.get('amount', 0) for app in unpaid_appointments)
-    
-    return {
-        "patient_id": patient_id,
-        "total_debt": total_debt,
-        "unpaid_appointments": unpaid_appointments,
-        "debt_count": len(unpaid_appointments)
-    }
-
-# Get professionals who attended a patient
-@api_router.get("/patients/{patient_id}/professionals")
-async def get_patient_professionals(patient_id: str, current_user: dict = Depends(get_current_user)):
-    # Get all appointments for this patient
-    appointments = await db.appointments.find(
-        {"patient_id": patient_id},
-        {"_id": 0, "professional_id": 1}
-    ).to_list(1000)
-    
-    # Get unique professional IDs
-    professional_ids = list(set(app['professional_id'] for app in appointments if app.get('professional_id')))
-    
-    # Get professional details
-    professionals = []
-    for prof_id in professional_ids:
-        prof = await db.professionals.find_one({"id": prof_id}, {"_id": 0})
-        if prof:
-            # Count appointments with this professional
-            appointment_count = sum(1 for app in appointments if app.get('professional_id') == prof_id)
-            prof['appointment_count'] = appointment_count
-            professionals.append(prof)
-    
-    return professionals
+    return {"message": "Anamnese updated successfully"}
 
 # Appointment Routes
-@api_router.get("/appointments/check-conflicts")
-async def check_appointment_conflicts(
-    professional_id: str,
-    room_id: str,
-    appointment_date: str,
-    appointment_time: str,
-    appointment_time_end: Optional[str] = None,
-    exclude_appointment_id: Optional[str] = None,
-    current_user: dict = Depends(get_current_user)
-):
-    """Verifica conflitos de horário para profissional e sala"""
-    conflicts = {"professional_conflicts": [], "room_conflicts": []}
-    
-    # Buscar agendamentos do mesmo dia
-    query = {
-        "appointment_date": appointment_date,
-        "status": {"$ne": "cancelled"}
-    }
-    if exclude_appointment_id:
-        query["id"] = {"$ne": exclude_appointment_id}
-    
-    appointments = await db.appointments.find(query, {"_id": 0}).to_list(1000)
-    
-    def times_overlap(start1, end1, start2, end2):
-        """Verifica se dois intervalos de tempo se sobrepõem"""
-        if not end1 or not end2:
-            # Se não tem hora final, considera conflito se a hora inicial é igual
-            return start1 == start2
-        return start1 < end2 and end1 > start2
-    
-    for apt in appointments:
-        apt_start = apt.get("appointment_time")
-        apt_end = apt.get("appointment_time_end")
-        
-        if not apt_start:
-            continue
-        
-        # Verificar conflito de profissional
-        if apt.get("professional_id") == professional_id:
-            if times_overlap(appointment_time, appointment_time_end, apt_start, apt_end):
-                # Buscar nome do paciente
-                patient = await db.patients.find_one({"id": apt["patient_id"]}, {"_id": 0})
-                conflicts["professional_conflicts"].append({
-                    "time": apt_start,
-                    "time_end": apt_end,
-                    "patient_name": patient["name"] if patient else "Desconhecido"
-                })
-        
-        # Verificar conflito de sala
-        if apt.get("room_id") == room_id:
-            if times_overlap(appointment_time, appointment_time_end, apt_start, apt_end):
-                # Buscar nome do paciente
-                patient = await db.patients.find_one({"id": apt["patient_id"]}, {"_id": 0})
-                conflicts["room_conflicts"].append({
-                    "time": apt_start,
-                    "time_end": apt_end,
-                    "patient_name": patient["name"] if patient else "Desconhecido"
-                })
-    
-    return {
-        "has_conflicts": len(conflicts["professional_conflicts"]) > 0 or len(conflicts["room_conflicts"]) > 0,
-        "conflicts": conflicts
-    }
-
 @api_router.post("/appointments", response_model=Appointment)
 async def create_appointment(data: AppointmentCreate, current_user: dict = Depends(get_current_user)):
     appointment = Appointment(**data.model_dump())
@@ -904,39 +842,24 @@ async def create_appointment(data: AppointmentCreate, current_user: dict = Depen
     await db.appointments.insert_one(doc)
     return appointment
 
-@api_router.get("/appointments", response_model=List[Appointment])
-async def get_appointments(
-    professional_id: Optional[str] = None,
-    date: Optional[str] = None,
-    current_user: dict = Depends(get_current_user)
-):
-    query = {}
-    if professional_id:
-        query["professional_id"] = professional_id
-    if date:
-        query["appointment_date"] = date
-    
-    appointments = await db.appointments.find(query, {"_id": 0}).to_list(1000)
-    for apt in appointments:
-        if isinstance(apt['created_at'], str):
-            apt['created_at'] = datetime.fromisoformat(apt['created_at'])
+@api_router.get("/appointments", response_model=List[dict])
+async def get_appointments(current_user: dict = Depends(get_current_user)):
+    appointments = await db.appointments.find({}, {"_id": 0}).to_list(1000)
+    for a in appointments:
+        if isinstance(a.get('created_at'), str):
+            a['created_at'] = datetime.fromisoformat(a['created_at'])
     return appointments
 
-@api_router.put("/appointments/{appointment_id}", response_model=Appointment)
+@api_router.put("/appointments/{appointment_id}")
 async def update_appointment(appointment_id: str, data: AppointmentCreate, current_user: dict = Depends(get_current_user)):
-    update_data = data.model_dump()
-    
-    result = await db.appointments.update_one(
-        {"id": appointment_id},
-        {"$set": update_data}
-    )
+    update_data = data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    result = await db.appointments.update_one({"id": appointment_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Appointment not found")
-    
-    updated = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
-    if isinstance(updated['created_at'], str):
-        updated['created_at'] = datetime.fromisoformat(updated['created_at'])
-    return Appointment(**updated)
+    return {"message": "Appointment updated successfully"}
 
 @api_router.delete("/appointments/{appointment_id}")
 async def delete_appointment(appointment_id: str, current_user: dict = Depends(get_current_user)):
@@ -945,69 +868,22 @@ async def delete_appointment(appointment_id: str, current_user: dict = Depends(g
         raise HTTPException(status_code=404, detail="Appointment not found")
     return {"message": "Appointment deleted successfully"}
 
-# Transaction/Payment Routes
+# Transaction Routes
 @api_router.post("/transactions", response_model=Transaction)
 async def create_transaction(data: TransactionCreate, current_user: dict = Depends(get_current_user)):
     transaction = Transaction(**data.model_dump())
     doc = transaction.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.transactions.insert_one(doc)
-    
-    # Se vinculado a um agendamento, marcar como pago
-    if data.appointment_id:
-        await db.appointments.update_one(
-            {"id": data.appointment_id},
-            {"$set": {"paid": True, "amount": data.amount}}
-        )
-    
     return transaction
 
-@api_router.get("/transactions", response_model=List[Transaction])
-async def get_transactions(patient_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    query = {}
-    if patient_id:
-        query["patient_id"] = patient_id
-    
-    transactions = await db.transactions.find(query, {"_id": 0}).to_list(1000)
-    for trans in transactions:
-        if isinstance(trans['created_at'], str):
-            trans['created_at'] = datetime.fromisoformat(trans['created_at'])
+@api_router.get("/transactions", response_model=List[dict])
+async def get_transactions(current_user: dict = Depends(get_current_user)):
+    transactions = await db.transactions.find({}, {"_id": 0}).to_list(1000)
+    for t in transactions:
+        if isinstance(t.get('created_at'), str):
+            t['created_at'] = datetime.fromisoformat(t['created_at'])
     return transactions
-
-@api_router.put("/transactions/{transaction_id}", response_model=Transaction)
-async def update_transaction(transaction_id: str, data: TransactionCreate, current_user: dict = Depends(get_current_user)):
-    result = await db.transactions.update_one(
-        {"id": transaction_id},
-        {"$set": data.model_dump()}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    
-    updated = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
-    if isinstance(updated['created_at'], str):
-        updated['created_at'] = datetime.fromisoformat(updated['created_at'])
-    return Transaction(**updated)
-
-@api_router.delete("/transactions/{transaction_id}")
-async def delete_transaction(transaction_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.transactions.delete_one({"id": transaction_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    return {"message": "Transaction deleted successfully"}
-
-@api_router.get("/revenue/total")
-async def get_total_revenue(current_user: dict = Depends(get_current_user)):
-    # Only admins can see revenue
-    if not current_user["role"]["is_admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
-    transactions = await db.transactions.find({}, {"_id": 0}).to_list(10000)
-    total = sum(t.get('amount', 0) for t in transactions)
-    
-    return {
-        "total_revenue": total,
-        "transaction_count": len(transactions)
-    }
 
 # Medical Record Routes
 @api_router.post("/medical-records", response_model=MedicalRecord)
@@ -1018,1532 +894,357 @@ async def create_medical_record(data: MedicalRecordCreate, current_user: dict = 
     await db.medical_records.insert_one(doc)
     return record
 
-@api_router.get("/medical-records/patient/{patient_id}", response_model=List[MedicalRecord])
-async def get_patient_records(patient_id: str, current_user: dict = Depends(get_current_user)):
+@api_router.get("/medical-records", response_model=List[dict])
+async def get_medical_records(patient_id: str, current_user: dict = Depends(get_current_user)):
     records = await db.medical_records.find({"patient_id": patient_id}, {"_id": 0}).to_list(1000)
-    for record in records:
-        if isinstance(record['created_at'], str):
-            record['created_at'] = datetime.fromisoformat(record['created_at'])
+    for r in records:
+        if isinstance(r.get('created_at'), str):
+            r['created_at'] = datetime.fromisoformat(r['created_at'])
     return records
 
-@api_router.post("/medical-records/generate-document")
-async def generate_document(data: GenerateDocumentRequest, current_user: dict = Depends(get_current_user)):
-    record = await db.medical_records.find_one({"id": data.record_id}, {"_id": 0})
-    if not record:
-        raise HTTPException(status_code=404, detail="Medical record not found")
-    
-    patient = await db.patients.find_one({"id": record["patient_id"]}, {"_id": 0})
-    professional = await db.professionals.find_one({"id": record["professional_id"]}, {"_id": 0})
-    
-    # Use AI to generate document
-    api_key = os.environ.get('EMERGENT_LLM_KEY')
-    if LlmChat and api_key:
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=str(uuid.uuid4()),
-            system_message="You are a medical document assistant. Generate professional medical documents."
-        ).with_model("openai", "gpt-4o-mini")
-        if data.document_type == "prescription":
-            prompt = f"Generate a medical prescription for patient {patient['name']} based on: Diagnosis: {record['diagnosis']}, Treatment: {record['treatment']}"
-        else:
-            prompt = f"Generate a medical certificate for patient {patient['name']} based on: Diagnosis: {record['diagnosis']}"
-        message = UserMessage(text=prompt)
-        response = await chat.send_message(message)
-    else:
-        if data.document_type == "prescription":
-            response = f"Prescrição para {patient['name']}: Diagnóstico: {record.get('diagnosis') or ''}. Tratamento: {record.get('treatment') or ''}."
-        else:
-            response = f"Atestado para {patient['name']}: Diagnóstico: {record.get('diagnosis') or ''}."
-    
-    # Update record with generated document
-    field = "prescription" if data.document_type == "prescription" else "medical_certificate"
-    await db.medical_records.update_one(
-        {"id": data.record_id},
-        {"$set": {field: response}}
-    )
-    
-    return {"document": response, "type": data.document_type}
-
-@api_router.post("/medical-records/generate-pdf")
-async def generate_medical_record_pdf(data: dict, current_user: dict = Depends(get_current_user)):
-    """Gera PDF do prontuário para visualização/download"""
-    from io import BytesIO
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import cm
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
-    from fastapi.responses import StreamingResponse
-    import base64
-    
-    try:
-        record_id = data.get("record_id")
-        patient_name = data.get("patient_name")
-        
-        # Buscar prontuário
-        record = await db.medical_records.find_one({"id": record_id}, {"_id": 0})
-        if not record:
-            raise HTTPException(status_code=404, detail="Prontuário não encontrado")
-        
-        # Buscar configurações da clínica
-        clinic_settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
-        clinic_config = clinic_settings.get("config", {}) if clinic_settings else {}
-        
-        # Gerar PDF
-        from reportlab.lib.colors import HexColor
-        from reportlab.platypus import Table, TableStyle
-        from reportlab.lib import colors
-        
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(
-            buffer, 
-            pagesize=A4, 
-            topMargin=1.5*cm, 
-            bottomMargin=3*cm,
-            leftMargin=2*cm,
-            rightMargin=2*cm
-        )
-        story = []
-        styles = getSampleStyleSheet()
-        
-        # Estilos customizados
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=18,
-            textColor=HexColor('#1e40af'),
-            spaceAfter=12,
-            spaceBefore=6,
-            alignment=TA_LEFT,
-            fontName='Helvetica-Bold'
-        )
-        
-        footer_style = ParagraphStyle(
-            'FooterStyle',
-            parent=styles['Normal'],
-            fontSize=9,
-            alignment=TA_CENTER,
-            textColor=HexColor('#4b5563')
-        )
-        
-        content_style = ParagraphStyle(
-            'CustomContent',
-            parent=styles['Normal'],
-            fontSize=11,
-            spaceAfter=6,
-            spaceBefore=0,
-            alignment=TA_LEFT,
-            leading=14
-        )
-        
-        label_style = ParagraphStyle(
-            'LabelStyle',
-            parent=styles['Normal'],
-            fontSize=11,
-            textColor=HexColor('#1e40af'),
-            fontName='Helvetica-Bold',
-            spaceAfter=4,
-            spaceBefore=8
-        )
-        
-        # Logo (se existir) - Wide e alinhada à esquerda
-        if clinic_config.get("logo"):
-            try:
-                logo_data = clinic_config["logo"]
-                if logo_data.startswith('data:image'):
-                    logo_data = logo_data.split(',')[1]
-                logo_bytes = base64.b64decode(logo_data)
-                logo_buffer = BytesIO(logo_bytes)
-                # Logo wide com proporção 4:1 (largura:altura)
-                logo = RLImage(logo_buffer, width=8*cm, height=2*cm)
-                logo.hAlign = 'LEFT'
-                story.append(logo)
-                story.append(Spacer(1, 0.3*cm))
-            except:
-                # Se falhar, adiciona nome da clínica
-                clinic_name_header = Paragraph(
-                    f"<b>{clinic_config.get('clinic_name', 'Clínica')}</b>",
-                    ParagraphStyle('ClinicName', fontSize=16, textColor=HexColor('#1e40af'), alignment=TA_LEFT)
-                )
-                story.append(clinic_name_header)
-                story.append(Spacer(1, 0.3*cm))
-        else:
-            # Se não tem logo, adiciona nome da clínica
-            clinic_name_header = Paragraph(
-                f"<b>{clinic_config.get('clinic_name', 'Clínica')}</b>",
-                ParagraphStyle('ClinicName', fontSize=16, textColor=HexColor('#1e40af'), alignment=TA_LEFT)
-            )
-            story.append(clinic_name_header)
-            story.append(Spacer(1, 0.3*cm))
-        
-        # Linha azul suave abaixo da logo
-        from reportlab.platypus import Table, TableStyle
-        line_table = Table([['']], colWidths=[16*cm])
-        line_table.setStyle(TableStyle([
-            ('LINEABOVE', (0, 0), (-1, 0), 1.5, HexColor('#93c5fd')),
-        ]))
-        story.append(line_table)
-        story.append(Spacer(1, 0.8*cm))
-        
-        # Tipo de documento
-        record_type_label = {
-            "prontuario": "PRONTUÁRIO MÉDICO",
-            "receita": "RECEITA MÉDICA", 
-            "atestado": "ATESTADO MÉDICO"
-        }.get(record.get("record_type", "prontuario"), "DOCUMENTO MÉDICO")
-        
-        story.append(Paragraph(record_type_label, title_style))
-        story.append(Spacer(1, 0.4*cm))
-        
-        # Informações do paciente
-        story.append(Paragraph("<b>Paciente:</b>", label_style))
-        story.append(Paragraph(patient_name, content_style))
-        
-        story.append(Paragraph("<b>Data:</b>", label_style))
-        story.append(Paragraph(datetime.now(timezone.utc).strftime('%d/%m/%Y'), content_style))
-        
-        # Diagnóstico
-        if record.get("diagnosis"):
-            story.append(Paragraph("<b>Diagnóstico:</b>", label_style))
-            story.append(Paragraph(record['diagnosis'], content_style))
-        
-        # Conteúdo/Observações
-        if record.get("observations"):
-            story.append(Paragraph("<b>Descrição:</b>", label_style))
-            for para in record["observations"].split('\n'):
-                if para.strip():
-                    story.append(Paragraph(para, content_style))
-        
-        # Dados do profissional (alinhado à esquerda, antes do rodapé)
-        story.append(Spacer(1, 0.6*cm))
-        professional_registration = record.get("professional_registration") or record.get("crm")
-        council_type = record.get("professional_council_type", "CRM")
-        
-        if record.get("doctor_name") or professional_registration:
-            story.append(Paragraph("<b>Profissional Responsável:</b>", label_style))
-            if record.get("doctor_name"):
-                story.append(Paragraph(f"Dr(a). {record['doctor_name']}", content_style))
-            if professional_registration:
-                story.append(Paragraph(f"{council_type}: {professional_registration}", content_style))
-        
-        # Função para criar rodapé em cada página
-        def add_footer(canvas, doc):
-            canvas.saveState()
-            
-            # Linha azul suave acima do rodapé
-            canvas.setStrokeColor(HexColor('#93c5fd'))
-            canvas.setLineWidth(1.5)
-            canvas.line(2*cm, 2.5*cm, A4[0] - 2*cm, 2.5*cm)
-            
-            # Texto do rodapé centralizado
-            canvas.setFont('Helvetica', 9)
-            canvas.setFillColor(HexColor('#4b5563'))
-            
-            footer_lines = []
-            if clinic_config.get("clinic_name"):
-                footer_lines.append(clinic_config["clinic_name"])
-            if clinic_config.get("address"):
-                footer_lines.append(clinic_config["address"])
-            
-            contact_parts = []
-            if clinic_config.get("phone"):
-                contact_parts.append(f"Tel: {clinic_config['phone']}")
-            if clinic_config.get("email"):
-                contact_parts.append(f"Email: {clinic_config['email']}")
-            if contact_parts:
-                footer_lines.append(" | ".join(contact_parts))
-            
-            y_position = 2*cm
-            for line in footer_lines:
-                text_width = canvas.stringWidth(line, 'Helvetica', 9)
-                x_position = (A4[0] - text_width) / 2
-                canvas.drawString(x_position, y_position, line)
-                y_position -= 0.4*cm
-            
-            canvas.restoreState()
-        
-        # Gerar PDF com rodapé
-        doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
-        buffer.seek(0)
-        
-        return StreamingResponse(
-            buffer,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"inline; filename=prontuario_{patient_name.replace(' ', '_')}.pdf"
-            }
-        )
-            
-    except Exception as e:
-        print(f"Erro ao gerar PDF: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.post("/medical-records/send-whatsapp")
-async def send_medical_record_whatsapp(data: dict, current_user: dict = Depends(get_current_user)):
-    """Envia prontuário em PDF via WhatsApp para o paciente"""
-    import requests
-    import base64
-    from io import BytesIO
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import cm
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
-    
-    try:
-        record_id = data.get("record_id")
-        patient_phone = data.get("patient_phone")
-        patient_name = data.get("patient_name")
-        
-        # Buscar prontuário
-        record = await db.medical_records.find_one({"id": record_id}, {"_id": 0})
-        if not record:
-            raise HTTPException(status_code=404, detail="Prontuário não encontrado")
-        
-        # Buscar configurações da clínica
-        clinic_settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
-        clinic_config = clinic_settings.get("config", {}) if clinic_settings else {}
-        
-        # Buscar configurações do WhatsApp
-        whatsapp_settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
-        if not whatsapp_settings or not whatsapp_settings.get("whatsapp"):
-            raise HTTPException(status_code=400, detail="WhatsApp não configurado")
-        
-        whatsapp_config = whatsapp_settings["whatsapp"]
-        access_token = whatsapp_config.get("access_token")
-        phone_number_id = whatsapp_config.get("phone_number_id")
-        
-        if not access_token or not phone_number_id:
-            raise HTTPException(status_code=400, detail="Credenciais do WhatsApp incompletas")
-        
-        # Formatar telefone
-        clean_phone = ''.join(filter(str.isdigit, patient_phone))
-        if not clean_phone.startswith('55'):
-            clean_phone = '55' + clean_phone
-        
-        # Gerar PDF com layout melhorado
-        from reportlab.lib.colors import HexColor
-        from reportlab.platypus import Table, TableStyle
-        
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(
-            buffer, 
-            pagesize=A4, 
-            topMargin=1.5*cm, 
-            bottomMargin=3*cm,
-            leftMargin=2*cm,
-            rightMargin=2*cm
-        )
-        story = []
-        styles = getSampleStyleSheet()
-        
-        # Estilos customizados
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=18,
-            textColor=HexColor('#1e40af'),
-            spaceAfter=12,
-            spaceBefore=6,
-            alignment=TA_LEFT,
-            fontName='Helvetica-Bold'
-        )
-        
-        content_style = ParagraphStyle(
-            'CustomContent',
-            parent=styles['Normal'],
-            fontSize=11,
-            spaceAfter=6,
-            spaceBefore=0,
-            alignment=TA_LEFT,
-            leading=14
-        )
-        
-        label_style = ParagraphStyle(
-            'LabelStyle',
-            parent=styles['Normal'],
-            fontSize=11,
-            textColor=HexColor('#1e40af'),
-            fontName='Helvetica-Bold',
-            spaceAfter=4,
-            spaceBefore=8
-        )
-        
-        # Logo wide e alinhada à esquerda
-        if clinic_config.get("logo"):
-            try:
-                logo_data = clinic_config["logo"]
-                if logo_data.startswith('data:image'):
-                    logo_data = logo_data.split(',')[1]
-                logo_bytes = base64.b64decode(logo_data)
-                logo_buffer = BytesIO(logo_bytes)
-                logo = RLImage(logo_buffer, width=8*cm, height=2*cm)
-                logo.hAlign = 'LEFT'
-                story.append(logo)
-                story.append(Spacer(1, 0.3*cm))
-            except:
-                clinic_name_header = Paragraph(
-                    f"<b>{clinic_config.get('clinic_name', 'Clínica')}</b>",
-                    ParagraphStyle('ClinicName', fontSize=16, textColor=HexColor('#1e40af'), alignment=TA_LEFT)
-                )
-                story.append(clinic_name_header)
-                story.append(Spacer(1, 0.3*cm))
-        else:
-            clinic_name_header = Paragraph(
-                f"<b>{clinic_config.get('clinic_name', 'Clínica')}</b>",
-                ParagraphStyle('ClinicName', fontSize=16, textColor=HexColor('#1e40af'), alignment=TA_LEFT)
-            )
-            story.append(clinic_name_header)
-            story.append(Spacer(1, 0.3*cm))
-        
-        # Linha azul suave
-        line_table = Table([['']], colWidths=[16*cm])
-        line_table.setStyle(TableStyle([
-            ('LINEABOVE', (0, 0), (-1, 0), 1.5, HexColor('#93c5fd')),
-        ]))
-        story.append(line_table)
-        story.append(Spacer(1, 0.8*cm))
-        
-        # Tipo de documento
-        record_type_label = {
-            "prontuario": "PRONTUÁRIO MÉDICO",
-            "receita": "RECEITA MÉDICA", 
-            "atestado": "ATESTADO MÉDICO"
-        }.get(record.get("record_type", "prontuario"), "DOCUMENTO MÉDICO")
-        
-        story.append(Paragraph(record_type_label, title_style))
-        story.append(Spacer(1, 0.4*cm))
-        
-        # Informações do paciente
-        story.append(Paragraph("<b>Paciente:</b>", label_style))
-        story.append(Paragraph(patient_name, content_style))
-        
-        story.append(Paragraph("<b>Data:</b>", label_style))
-        story.append(Paragraph(datetime.now(timezone.utc).strftime('%d/%m/%Y'), content_style))
-        
-        # Diagnóstico
-        if record.get("diagnosis"):
-            story.append(Paragraph("<b>Diagnóstico:</b>", label_style))
-            story.append(Paragraph(record['diagnosis'], content_style))
-        
-        # Conteúdo/Observações
-        if record.get("observations"):
-            story.append(Paragraph("<b>Descrição:</b>", label_style))
-            for para in record["observations"].split('\n'):
-                if para.strip():
-                    story.append(Paragraph(para, content_style))
-        
-        # Dados do profissional
-        story.append(Spacer(1, 0.6*cm))
-        professional_registration = record.get("professional_registration") or record.get("crm")
-        council_type = record.get("professional_council_type", "CRM")
-        
-        if record.get("doctor_name") or professional_registration:
-            story.append(Paragraph("<b>Profissional Responsável:</b>", label_style))
-            if record.get("doctor_name"):
-                story.append(Paragraph(f"Dr(a). {record['doctor_name']}", content_style))
-            if professional_registration:
-                story.append(Paragraph(f"{council_type}: {professional_registration}", content_style))
-        
-        # Função para criar rodapé
-        def add_footer(canvas, doc):
-            canvas.saveState()
-            canvas.setStrokeColor(HexColor('#93c5fd'))
-            canvas.setLineWidth(1.5)
-            canvas.line(2*cm, 2.5*cm, A4[0] - 2*cm, 2.5*cm)
-            
-            canvas.setFont('Helvetica', 9)
-            canvas.setFillColor(HexColor('#4b5563'))
-            
-            footer_lines = []
-            if clinic_config.get("clinic_name"):
-                footer_lines.append(clinic_config["clinic_name"])
-            if clinic_config.get("address"):
-                footer_lines.append(clinic_config["address"])
-            
-            contact_parts = []
-            if clinic_config.get("phone"):
-                contact_parts.append(f"Tel: {clinic_config['phone']}")
-            if clinic_config.get("email"):
-                contact_parts.append(f"Email: {clinic_config['email']}")
-            if contact_parts:
-                footer_lines.append(" | ".join(contact_parts))
-            
-            y_position = 2*cm
-            for line in footer_lines:
-                text_width = canvas.stringWidth(line, 'Helvetica', 9)
-                x_position = (A4[0] - text_width) / 2
-                canvas.drawString(x_position, y_position, line)
-                y_position -= 0.4*cm
-            
-            canvas.restoreState()
-        
-        # Gerar PDF com rodapé
-        doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
-        pdf_bytes = buffer.getvalue()
-        buffer.close()
-        
-        # Upload do PDF para WhatsApp (via URL ou diretamente)
-        # Primeiro: fazer upload do media
-        media_url = f"https://graph.facebook.com/v21.0/{phone_number_id}/media"
-        
-        files = {
-            'file': ('prontuario.pdf', pdf_bytes, 'application/pdf'),
-            'messaging_product': (None, 'whatsapp')
-        }
-        headers_upload = {
-            "Authorization": f"Bearer {access_token}"
-        }
-        
-        upload_response = requests.post(media_url, headers=headers_upload, files=files)
-        
-        if upload_response.status_code != 200:
-            print(f"Erro ao fazer upload: {upload_response.text}")
-            raise HTTPException(status_code=400, detail=f"Erro ao fazer upload do PDF: {upload_response.text}")
-        
-        media_id = upload_response.json().get('id')
-        
-        # Enviar documento via WhatsApp
-        send_url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
-        headers_send = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": clean_phone,
-            "type": "document",
-            "document": {
-                "id": media_id,
-                "caption": f"📄 {record_type_label}\n\nOlá {patient_name}, segue seu documento médico.",
-                "filename": f"{record_type_label.lower().replace(' ', '_')}.pdf"
-            }
-        }
-        
-        send_response = requests.post(send_url, headers=headers_send, json=payload)
-        
-        if send_response.status_code == 200:
-            return {"success": True, "message": "PDF enviado via WhatsApp com sucesso!"}
-        else:
-            print(f"Erro ao enviar WhatsApp: {send_response.text}")
-            raise HTTPException(status_code=400, detail=f"Erro ao enviar: {send_response.text}")
-            
-    except Exception as e:
-        print(f"Erro ao enviar prontuário via WhatsApp: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.get("/medical-records", response_model=List[MedicalRecord])
-async def get_all_medical_records(current_user: dict = Depends(get_current_user)):
-    records = await db.medical_records.find({}, {"_id": 0}).to_list(1000)
-    for record in records:
-        if isinstance(record['created_at'], str):
-            record['created_at'] = datetime.fromisoformat(record['created_at'])
-    return records
-
-@api_router.put("/medical-records/{record_id}", response_model=MedicalRecord)
+@api_router.put("/medical-records/{record_id}")
 async def update_medical_record(record_id: str, data: MedicalRecordCreate, current_user: dict = Depends(get_current_user)):
-    result = await db.medical_records.update_one(
-        {"id": record_id},
-        {"$set": data.model_dump()}
-    )
+    update_data = data.model_dump(exclude_unset=True)
+    update_data["last_updated"] = datetime.now(timezone.utc)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    result = await db.medical_records.update_one({"id": record_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Medical record not found")
-    
-    updated = await db.medical_records.find_one({"id": record_id}, {"_id": 0})
-    if isinstance(updated['created_at'], str):
-        updated['created_at'] = datetime.fromisoformat(updated['created_at'])
-    return MedicalRecord(**updated)
-
-@api_router.delete("/medical-records/{record_id}")
-async def delete_medical_record(record_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.medical_records.delete_one({"id": record_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Medical record not found")
-    return {"message": "Medical record deleted successfully"}
+    return {"message": "Medical record updated successfully"}
 
 # Lead Routes
 @api_router.post("/leads", response_model=Lead)
 async def create_lead(data: LeadCreate, current_user: dict = Depends(get_current_user)):
-    # Verificar se já existe paciente com mesmo telefone ou email
-    or_conditions = [{"phone": data.phone}]
-    if data.email:
-        or_conditions.append({"email": data.email})
-    
-    existing_patient = await db.patients.find_one({
-        "$or": or_conditions
-    }, {"_id": 0})
-    
-    if existing_patient:
-        raise HTTPException(
-            status_code=400, 
-            detail="Este contato já é um paciente cadastrado. Não é possível criar um lead."
-        )
-    
     lead = Lead(**data.model_dump())
     doc = lead.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.leads.insert_one(doc)
     return lead
 
-@api_router.get("/leads", response_model=List[Lead])
-async def get_leads(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    query = {}
-    
-    # If not admin, only show assigned leads
-    if not current_user["role"]["is_admin"]:
-        query["assigned_to"] = current_user["id"]
-    
-    if status:
-        query["status"] = status
-    
-    leads = await db.leads.find(query, {"_id": 0}).to_list(1000)
-    for lead in leads:
-        if isinstance(lead['created_at'], str):
-            lead['created_at'] = datetime.fromisoformat(lead['created_at'])
+@api_router.get("/leads", response_model=List[dict])
+async def get_leads(current_user: dict = Depends(get_current_user)):
+    leads = await db.leads.find({}, {"_id": 0}).to_list(1000)
+    for l in leads:
+        if isinstance(l.get('created_at'), str):
+            l['created_at'] = datetime.fromisoformat(l['created_at'])
     return leads
 
-@api_router.put("/leads/{lead_id}", response_model=Lead)
+@api_router.put("/leads/{lead_id}")
 async def update_lead(lead_id: str, data: LeadCreate, current_user: dict = Depends(get_current_user)):
-    result = await db.leads.update_one(
-        {"id": lead_id},
-        {"$set": data.model_dump()}
-    )
+    update_data = data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    result = await db.leads.update_one({"id": lead_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Lead not found")
-    
-    updated = await db.leads.find_one({"id": lead_id}, {"_id": 0})
-    if isinstance(updated['created_at'], str):
-        updated['created_at'] = datetime.fromisoformat(updated['created_at'])
-    return Lead(**updated)
+    return {"message": "Lead updated successfully"}
 
-@api_router.delete("/leads/{lead_id}")
-async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.leads.delete_one({"id": lead_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    return {"message": "Lead deleted successfully"}
-
-@api_router.post("/leads/{lead_id}/convert-to-patient", response_model=Patient)
-async def convert_lead_to_patient(lead_id: str, birthdate: str, address: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    # Buscar lead
+# Conversation Routes
+@api_router.post("/conversations", response_model=Conversation)
+async def create_conversation(lead_id: str, current_user: dict = Depends(get_current_user)):
     lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     
-    # Verificar se já existe paciente com mesmo email ou telefone
-    or_conditions = [{"phone": lead["phone"]}]
-    if lead.get("email"):
-        or_conditions.append({"email": lead["email"]})
-    
-    existing_patient = await db.patients.find_one({
-        "$or": or_conditions
-    }, {"_id": 0})
-    
-    if existing_patient:
-        raise HTTPException(status_code=400, detail="Paciente com este email ou telefone já existe")
-    
-    # Criar paciente
-    patient = Patient(
-        name=lead["name"],
-        email=lead.get("email") or None,
-        phone=lead["phone"],
-        birthdate=birthdate,
-        address=address or None
+    conversation = Conversation(
+        lead_id=lead_id,
+        channel=lead.get("source", "whatsapp"),
+        assigned_to=current_user.get("id"),
+        assigned_to_name=current_user.get("name")
     )
-    
-    doc = patient.model_dump()
+    doc = conversation.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
-    await db.patients.insert_one(doc)
-    
-    # DELETAR o lead da lista (não apenas marcar como convertido)
-    await db.leads.delete_one({"id": lead_id})
-    
-    return patient
+    doc['last_message_at'] = doc['last_message_at'].isoformat()
+    await db.conversations.insert_one(doc)
+    return conversation
 
-@api_router.post("/leads/cleanup-duplicates")
-async def cleanup_duplicate_leads(current_user: dict = Depends(get_current_user)):
-    """Remove leads que já são pacientes (mesmo telefone ou email)"""
-    # Buscar todos os pacientes
-    patients = await db.patients.find({}, {"_id": 0, "email": 1, "phone": 1}).to_list(10000)
-    patient_emails = [p.get("email") for p in patients if p.get("email")]
-    patient_phones = [p.get("phone") for p in patients if p.get("phone")]
-    
-    # Buscar leads duplicados
-    duplicate_leads = await db.leads.find({
-        "$or": [
-            {"email": {"$in": patient_emails}},
-            {"phone": {"$in": patient_phones}}
-        ]
-    }, {"_id": 0, "id": 1}).to_list(10000)
-    
-    # Deletar leads duplicados
-    deleted_count = 0
-    for lead in duplicate_leads:
-        await db.leads.delete_one({"id": lead["id"]})
-        deleted_count += 1
-    
-    return {
-        "message": f"{deleted_count} leads duplicados foram removidos",
-        "deleted_count": deleted_count
-    }
-
-# Conversation Routes (Mocked)
-@api_router.get("/conversations")
+@api_router.get("/conversations", response_model=List[dict])
 async def get_conversations(current_user: dict = Depends(get_current_user)):
-    """Get all active conversations - consultores veem todas mas só podem responder as não atribuídas ou atribuídas a eles"""
-    query = {"status": "active"}
-    
-    # Consultores e Admins veem todas as conversas
-    # A restrição de interação é feita no frontend
-    
-    conversations = await db.conversations.find(query, {"_id": 0}).to_list(1000)
-    for conv in conversations:
-        if isinstance(conv['created_at'], str):
-            conv['created_at'] = datetime.fromisoformat(conv['created_at'])
-        if isinstance(conv.get('last_message_at'), str):
-            conv['last_message_at'] = datetime.fromisoformat(conv.get('last_message_at'))
+    conversations = await db.conversations.find({}, {"_id": 0}).to_list(1000)
+    for c in conversations:
+        if isinstance(c.get('created_at'), str):
+            c['created_at'] = datetime.fromisoformat(c['created_at'])
+        if isinstance(c.get('last_message_at'), str):
+            c['last_message_at'] = datetime.fromisoformat(c['last_message_at'])
     return conversations
 
-@api_router.get("/conversations/{conversation_id}/messages", response_model=List[Message])
-async def get_conversation_messages(conversation_id: str, current_user: dict = Depends(get_current_user)):
-    messages = await db.messages.find({"conversation_id": conversation_id}, {"_id": 0}).to_list(1000)
-    for msg in messages:
-        if isinstance(msg['created_at'], str):
-            msg['created_at'] = datetime.fromisoformat(msg['created_at'])
-    return messages
-
-@api_router.post("/conversations/{conversation_id}/messages", response_model=Message)
-async def send_message(conversation_id: str, data: MessageCreate, current_user: dict = Depends(get_current_user)):
-    # Buscar conversa e lead
-    conversation = await db.conversations.find_one({"id": conversation_id}, {"_id": 0})
+# Message Routes
+@api_router.post("/messages", response_model=Message)
+async def create_message(data: MessageCreate, current_user: dict = Depends(get_current_user)):
+    conversation = await db.conversations.find_one({"id": data.conversation_id}, {"_id": 0})
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
     
-    lead = await db.leads.find_one({"id": conversation["lead_id"]}, {"_id": 0})
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    
-    # Criar mensagem no banco
     message = Message(
-        conversation_id=conversation_id,
+        conversation_id=data.conversation_id,
         sender_type="consultant",
-        sender_id=current_user["id"],
-        sender_name=current_user["name"],
-        content=data.content,
-        read=False
+        sender_id=current_user.get("id"),
+        sender_name=current_user.get("name"),
+        content=data.content
     )
     doc = message.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.messages.insert_one(doc)
-    await emit_new_message(doc)
     
-    # Atualizar last_message_at da conversa
+    # Update conversation last message time
     await db.conversations.update_one(
-        {"id": conversation_id},
+        {"id": data.conversation_id},
         {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
     )
     
-    # Enviar mensagem via WhatsApp API se for canal whatsapp
-    if conversation.get("channel") == "whatsapp":
-        try:
-            # Buscar configurações do WhatsApp
-            settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
-            if settings and settings.get("config", {}).get("whatsapp", {}).get("enabled"):
-                whatsapp_config = settings["config"]["whatsapp"]
-                phone_number_id = whatsapp_config.get("phone_number_id")
-                access_token = whatsapp_config.get("access_token")
-                
-                if phone_number_id and access_token:
-                    # Enviar mensagem via WhatsApp Graph API
-                    whatsapp_url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
-                    headers = {
-                        "Authorization": f"Bearer {access_token}",
-                        "Content-Type": "application/json"
-                    }
-                    payload = {
-                        "messaging_product": "whatsapp",
-                        "to": lead["phone"],
-                        "type": "text",
-                        "text": {
-                            "body": data.content
-                        }
-                    }
-                    
-                    async with httpx.AsyncClient() as client:
-                        response = await client.post(whatsapp_url, json=payload, headers=headers, timeout=10)
-                        
-                        if response.status_code == 200:
-                            print(f"[WhatsApp] Message sent successfully to {lead['phone']}")
-                        else:
-                            print(f"[WhatsApp] Failed to send message: {response.status_code} - {response.text}")
-        except Exception as e:
-            print(f"[WhatsApp] Error sending message: {str(e)}")
-            # Não falhar a requisição se o envio do WhatsApp falhar
-    
     return message
 
-@api_router.put("/conversations/{conversation_id}/assign")
-async def assign_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
-    """Atribui a conversa ao consultor atual"""
-    result = await db.conversations.update_one(
-        {"id": conversation_id},
-        {"$set": {
-            "assigned_to": current_user["id"],
-            "assigned_to_name": current_user["name"]
-        }}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    return {"message": "Conversation assigned successfully"}
+@api_router.get("/messages", response_model=List[dict])
+async def get_messages(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    messages = await db.messages.find({"conversation_id": conversation_id}, {"_id": 0}).to_list(1000)
+    for m in messages:
+        if isinstance(m.get('created_at'), str):
+            m['created_at'] = datetime.fromisoformat(m['created_at'])
+    return messages
 
-@api_router.put("/conversations/{conversation_id}/close")
-async def close_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
-    """Fecha a conversa"""
-    result = await db.conversations.update_one(
-        {"id": conversation_id},
-        {"$set": {"status": "closed"}}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    return {"message": "Conversation closed successfully"}
-
-@api_router.put("/conversations/{conversation_id}/reopen")
-async def reopen_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
-    """Reabre a conversa"""
-    result = await db.conversations.update_one(
-        {"id": conversation_id},
-        {"$set": {"status": "active"}}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    return {"message": "Conversation reopened successfully"}
-
-# FollowUp Routes
-@api_router.post("/followups", response_model=FollowUp)
-async def create_followup(data: FollowUpCreate, current_user: dict = Depends(get_current_user)):
-    followup = FollowUp(**data.model_dump())
-    doc = followup.model_dump()
+# Follow-up Routes
+@api_router.post("/follow-ups", response_model=FollowUp)
+async def create_follow_up(data: FollowUpCreate, current_user: dict = Depends(get_current_user)):
+    follow_up = FollowUp(**data.model_dump())
+    doc = follow_up.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
-    await db.followups.insert_one(doc)
-    return followup
+    await db.follow_ups.insert_one(doc)
+    return follow_up
 
-@api_router.get("/followups", response_model=List[FollowUp])
-async def get_followups(current_user: dict = Depends(get_current_user)):
-    query = {}
-    
-    # If not admin, only show assigned followups
-    if not current_user["role"]["is_admin"]:
-        query["assigned_to"] = current_user["id"]
-    
-    followups = await db.followups.find(query, {"_id": 0}).to_list(1000)
-    for followup in followups:
-        if isinstance(followup['created_at'], str):
-            followup['created_at'] = datetime.fromisoformat(followup['created_at'])
-    return followups
+@api_router.get("/follow-ups", response_model=List[dict])
+async def get_follow_ups(current_user: dict = Depends(get_current_user)):
+    follow_ups = await db.follow_ups.find({}, {"_id": 0}).to_list(1000)
+    for f in follow_ups:
+        if isinstance(f.get('created_at'), str):
+            f['created_at'] = datetime.fromisoformat(f['created_at'])
+    return follow_ups
 
-@api_router.put("/followups/{followup_id}")
-async def update_followup(followup_id: str, data: dict, current_user: dict = Depends(get_current_user)):
-    result = await db.followups.update_one(
-        {"id": followup_id},
-        {"$set": data}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="FollowUp not found")
-    return {"message": "FollowUp updated successfully"}
-
-@api_router.delete("/followups/{followup_id}")
-async def delete_followup(followup_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.followups.delete_one({"id": followup_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="FollowUp not found")
-    return {"message": "FollowUp deleted successfully"}
-
-# FollowUp Rules Routes
-@api_router.post("/followup-rules", response_model=FollowUpRule)
-async def create_followup_rule(data: FollowUpRuleCreate, current_user: dict = Depends(get_current_user)):
-    # Only admins can create rules
-    if not current_user["role"]["is_admin"]:
+# Follow-up Rule Routes
+@api_router.post("/follow-up-rules", response_model=FollowUpRule)
+async def create_follow_up_rule(data: FollowUpRuleCreate, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     rule = FollowUpRule(**data.model_dump())
     doc = rule.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
-    await db.followup_rules.insert_one(doc)
+    await db.follow_up_rules.insert_one(doc)
     return rule
 
-@api_router.get("/followup-rules", response_model=List[FollowUpRule])
-async def get_followup_rules(current_user: dict = Depends(get_current_user)):
-    # Only admins can view rules
-    if not current_user["role"]["is_admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
-    rules = await db.followup_rules.find({}, {"_id": 0}).to_list(1000)
-    for rule in rules:
-        if isinstance(rule['created_at'], str):
-            rule['created_at'] = datetime.fromisoformat(rule['created_at'])
+@api_router.get("/follow-up-rules", response_model=List[dict])
+async def get_follow_up_rules(current_user: dict = Depends(get_current_user)):
+    rules = await db.follow_up_rules.find({}, {"_id": 0}).to_list(1000)
+    for r in rules:
+        if isinstance(r.get('created_at'), str):
+            r['created_at'] = datetime.fromisoformat(r['created_at'])
     return rules
 
-@api_router.put("/followup-rules/{rule_id}")
-async def update_followup_rule(rule_id: str, data: FollowUpRuleCreate, current_user: dict = Depends(get_current_user)):
-    # Only admins can update rules
-    if not current_user["role"]["is_admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
-    result = await db.followup_rules.update_one(
-        {"id": rule_id},
-        {"$set": data.model_dump()}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="FollowUp Rule not found")
-    return {"message": "FollowUp Rule updated successfully"}
-
-@api_router.delete("/followup-rules/{rule_id}")
-async def delete_followup_rule(rule_id: str, current_user: dict = Depends(get_current_user)):
-    # Only admins can delete rules
-    if not current_user["role"]["is_admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
-    result = await db.followup_rules.delete_one({"id": rule_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="FollowUp Rule not found")
-    return {"message": "FollowUp Rule deleted successfully"}
-
-@api_router.patch("/followup-rules/{rule_id}/toggle")
-async def toggle_followup_rule(rule_id: str, current_user: dict = Depends(get_current_user)):
-    # Only admins can toggle rules
-    if not current_user["role"]["is_admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
-    rule = await db.followup_rules.find_one({"id": rule_id}, {"_id": 0})
-    if not rule:
-        raise HTTPException(status_code=404, detail="FollowUp Rule not found")
-    
-    new_active_status = not rule.get("active", True)
-    await db.followup_rules.update_one(
-        {"id": rule_id},
-        {"$set": {"active": new_active_status}}
-    )
-    return {"message": "FollowUp Rule toggled successfully", "active": new_active_status}
-
-# Auto Messages with AI
-@api_router.post("/auto-messages/send")
-async def send_auto_message(data: AutoMessageRequest, current_user: dict = Depends(get_current_user)):
-    patient = await db.patients.find_one({"id": data.patient_id}, {"_id": 0})
-    if not patient:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    
-    api_key = os.environ.get('EMERGENT_LLM_KEY')
-    if data.message_type == "birthday":
-        if LlmChat and api_key:
-            chat = LlmChat(
-                api_key=api_key,
-                session_id=str(uuid.uuid4()),
-                system_message="You are a friendly clinic assistant. Generate warm, professional messages."
-            ).with_model("openai", "gpt-4o-mini")
-            message = UserMessage(text=f"Generate a warm birthday message for patient {patient['name']}")
-            response = await chat.send_message(message)
-        else:
-            response = f"Feliz aniversário, {patient['name']}! Desejamos muita saúde e felicidades."
-    elif data.message_type == "appointment_reminder":
-        appointment = await db.appointments.find_one({"id": data.appointment_id}, {"_id": 0})
-        if appointment:
-            if LlmChat and api_key:
-                chat = LlmChat(
-                    api_key=api_key,
-                    session_id=str(uuid.uuid4()),
-                    system_message="You are a friendly clinic assistant. Generate warm, professional messages."
-                ).with_model("openai", "gpt-4o-mini")
-                message = UserMessage(text=f"Generate an appointment reminder message for patient {patient['name']} on {appointment['appointment_date']} at {appointment['appointment_time']}")
-                response = await chat.send_message(message)
-            else:
-                response = f"Lembrete de consulta para {patient['name']} em {appointment.get('appointment_date')} às {appointment.get('appointment_time')}"
-        else:
-            raise HTTPException(status_code=404, detail="Appointment not found")
-    else:
-        raise HTTPException(status_code=400, detail="Invalid message type")
-    
-    return {
-        "message": response,
-        "patient": patient["name"],
-        "phone": patient["phone"],
-        "status": "sent (mocked)"
-    }
-
-# Dashboard Stats
-@api_router.get("/dashboard/revenue")
-async def get_revenue_stats(current_user: dict = Depends(get_current_user)):
-    if not current_user["role"]["is_admin"]:
-        raise HTTPException(status_code=403, detail="Access denied")
-    
-    # Calculate revenue from completed appointments
-    completed_appointments = await db.appointments.find({"status": "completed"}, {"_id": 0}).to_list(10000)
-    
-    total_revenue = 0
-    for apt in completed_appointments:
-        service = await db.services.find_one({"id": apt["service_id"]}, {"_id": 0})
-        if service:
-            total_revenue += service["price"]
-    
-    return {
-        "total_revenue": total_revenue,
-        "total_appointments": len(completed_appointments)
-    }
-
-@api_router.get("/dashboard/leads")
-async def get_leads_stats(current_user: dict = Depends(get_current_user)):
-    total_leads = await db.leads.count_documents({})
-    new_leads = await db.leads.count_documents({"status": "new"})
-    hot_leads = await db.leads.count_documents({"status": "hot"})
-    converted_leads = await db.leads.count_documents({"status": "converted"})
-    
-    return {
-        "total": total_leads,
-        "new": new_leads,
-        "hot": hot_leads,
-        "converted": converted_leads
-    }
-
-@api_router.get("/dashboard/appointments")
-async def get_appointments_stats(current_user: dict = Depends(get_current_user)):
-    today = datetime.now(timezone.utc).date().isoformat()
-    
-    total_today = await db.appointments.count_documents({"appointment_date": today})
-    scheduled = await db.appointments.count_documents({"status": "scheduled"})
-    completed = await db.appointments.count_documents({"status": "completed"})
-    
-    return {
-        "today": total_today,
-        "scheduled": scheduled,
-        "completed": completed
-    }
-
-# Settings Routes
-@api_router.get("/settings/omnichannel")
-async def get_omnichannel_settings(current_user: dict = Depends(get_current_user)):
-    """Retorna as configurações do omnichannel"""
-    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
-    if not settings:
-        return {"whatsapp": {}, "instagram": {}, "messenger": {}}
-    return settings.get("config", {"whatsapp": {}, "instagram": {}, "messenger": {}})
-
-@api_router.post("/settings/omnichannel/whatsapp")
-async def save_whatsapp_settings(config: dict, current_user: dict = Depends(get_current_user)):
-    """Salva configurações do WhatsApp"""
-    await db.settings.update_one(
-        {"type": "omnichannel"},
-        {"$set": {"config.whatsapp": config, "updated_at": datetime.now(timezone.utc).isoformat()}},
-        upsert=True
-    )
-    return {"message": "WhatsApp settings saved successfully"}
-
-@api_router.post("/settings/omnichannel/instagram")
-async def save_instagram_settings(config: dict, current_user: dict = Depends(get_current_user)):
-    """Salva configurações do Instagram"""
-    await db.settings.update_one(
-        {"type": "omnichannel"},
-        {"$set": {"config.instagram": config, "updated_at": datetime.now(timezone.utc).isoformat()}},
-        upsert=True
-    )
-    return {"message": "Instagram settings saved successfully"}
-
-@api_router.post("/settings/omnichannel/messenger")
-async def save_messenger_settings(config: dict, current_user: dict = Depends(get_current_user)):
-    """Salva configurações do Messenger"""
-    await db.settings.update_one(
-        {"type": "omnichannel"},
-        {"$set": {"config.messenger": config, "updated_at": datetime.now(timezone.utc).isoformat()}},
-        upsert=True
-    )
-    return {"message": "Messenger settings saved successfully"}
-
-@api_router.post("/settings/omnichannel/{channel}/test")
-async def test_connection(channel: str, current_user: dict = Depends(get_current_user)):
-    """Testa a conexão com o canal"""
-    # Aqui você implementaria a lógica real de teste com as APIs
-    # Por enquanto, retornamos sucesso simulado
-    return {"success": True, "message": f"Connection to {channel} tested successfully"}
-
-# Clinic Settings Routes
-@api_router.get("/settings/clinic")
-async def get_clinic_settings(current_user: dict = Depends(get_current_user)):
-    """Busca configurações da clínica"""
-    settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
-    if settings:
-        return settings.get("config", {})
-    return {}
-
-@api_router.post("/settings/clinic")
-async def save_clinic_settings(config: dict, current_user: dict = Depends(get_current_user)):
-    """Salva configurações da clínica"""
-    await db.settings.update_one(
-        {"type": "clinic"},
-        {"$set": {"config": config, "updated_at": datetime.now(timezone.utc).isoformat()}},
-        upsert=True
-    )
-    return {"message": "Clinic settings saved successfully"}
-
-# Webhook Routes (para Meta/Facebook)
-@api_router.get("/webhooks/whatsapp")
-async def verify_whatsapp_webhook(request: Request):
-    """Verificação do webhook do WhatsApp pelo Meta"""
-    from fastapi.responses import PlainTextResponse
-    
-    params = request.query_params
-    mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
-    challenge = params.get("hub.challenge")
-    
-    print(f"\n========== WhatsApp Webhook Verification ==========")
-    print(f"[RECEIVED] Mode: {mode}")
-    print(f"[RECEIVED] Verify Token: {token}")
-    print(f"[RECEIVED] Challenge: {challenge}")
-    print(f"[INFO] Request URL: {request.url}")
-    print(f"[INFO] Request Method: {request.method}")
-    
-    # Buscar o verify_token configurado
-    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
-    if not settings:
-        print("[ERROR] ❌ Settings not found in database")
-        print("===================================================\n")
-        raise HTTPException(status_code=403, detail="Settings not configured")
-    
-    stored_token = settings.get("config", {}).get("whatsapp", {}).get("verify_token")
-    print(f"[DATABASE] Stored Verify Token: {stored_token}")
-    
-    # Validação detalhada
-    if not mode:
-        print("[ERROR] ❌ Mode parameter is missing")
-        print("===================================================\n")
-        raise HTTPException(status_code=400, detail="Mode parameter is required")
-    
-    if not token:
-        print("[ERROR] ❌ Verify token parameter is missing")
-        print("===================================================\n")
-        raise HTTPException(status_code=400, detail="Verify token parameter is required")
-    
-    if not challenge:
-        print("[ERROR] ❌ Challenge parameter is missing")
-        print("===================================================\n")
-        raise HTTPException(status_code=400, detail="Challenge parameter is required")
-    
-    if mode != "subscribe":
-        print(f"[ERROR] ❌ Invalid mode: {mode} (expected 'subscribe')")
-        print("===================================================\n")
-        raise HTTPException(status_code=403, detail="Invalid mode")
-    
-    if token != stored_token:
-        print(f"[ERROR] ❌ Token mismatch!")
-        print(f"  Received: '{token}'")
-        print(f"  Expected: '{stored_token}'")
-        print("===================================================\n")
-        raise HTTPException(status_code=403, detail="Verification token mismatch")
-    
-    # Sucesso!
-    print(f"[SUCCESS] ✅ Verification successful!")
-    print(f"[RESPONSE] Returning challenge: {challenge}")
-    print("===================================================\n")
-    
-    # Retornar o challenge como texto simples (não JSON)
-    return PlainTextResponse(content=challenge, status_code=200)
-
-@api_router.post("/webhooks/whatsapp")
-async def whatsapp_webhook(request: Request):
-    """Recebe mensagens do WhatsApp"""
-    try:
-        body = await request.json()
-        
-        # LOG DETALHADO para debug
-        print("\n" + "="*80)
-        print("🔔 WEBHOOK WHATSAPP RECEBIDO")
-        print(f"📅 Timestamp: {datetime.now(timezone.utc).isoformat()}")
-        print(f"📦 Body completo: {json.dumps(body, indent=2)}")
-        print("="*80 + "\n")
-        
-        # Processar mensagens recebidas
-        if body.get("object") == "whatsapp_business_account":
-            for entry in body.get("entry", []):
-                for change in entry.get("changes", []):
-                    if change.get("field") == "messages":
-                        messages = change.get("value", {}).get("messages", [])
-                        
-                        for message in messages:
-                            # Extrair dados da mensagem
-                            from_number = message.get("from")
-                            message_id = message.get("id")
-                            message_text = message.get("text", {}).get("body", "")
-                            timestamp = message.get("timestamp")
-                            
-                            print(f"📱 Número: {from_number}")
-                            print(f"💬 Mensagem: {message_text}")
-                            
-                            # Extrair nome do perfil do WhatsApp (se disponível no payload)
-                            # O Meta envia o nome do perfil em change.value.contacts[].profile.name
-                            whatsapp_name = None
-                            contacts = change.get("value", {}).get("contacts", [])
-                            for contact in contacts:
-                                if contact.get("wa_id") == from_number:
-                                    whatsapp_name = contact.get("profile", {}).get("name")
-                                    break
-                            
-                            print(f"👤 Nome do WhatsApp: {whatsapp_name or 'Não fornecido'}")
-                            
-                            # Buscar ou criar lead
-                            lead = await db.leads.find_one({"phone": from_number}, {"_id": 0})
-                            if not lead:
-                                # Criar novo lead com nome do WhatsApp se disponível
-                                lead = {
-                                    "id": str(uuid.uuid4()),
-                                    "name": whatsapp_name or f"Lead WhatsApp {from_number[-4:]}",
-                                    "phone": from_number,
-                                    "email": None,
-                                    "status": "novo",
-                                    "source": "whatsapp",
-                                    "created_at": datetime.now(timezone.utc).isoformat()
-                                }
-                                await db.leads.insert_one(lead)
-                            else:
-                                # Atualizar nome do lead se veio do WhatsApp e está diferente
-                                if whatsapp_name and lead.get("name", "").startswith("Lead WhatsApp"):
-                                    await db.leads.update_one(
-                                        {"id": lead["id"]},
-                                        {"$set": {"name": whatsapp_name}}
-                                    )
-                                    lead["name"] = whatsapp_name
-                            
-                            # Buscar ou criar conversa
-                            conversation = await db.conversations.find_one(
-                                {"lead_id": lead["id"], "channel": "whatsapp", "status": "active"},
-                                {"_id": 0}
-                            )
-                            if not conversation:
-                                conversation = {
-                                    "id": str(uuid.uuid4()),
-                                    "lead_id": lead["id"],
-                                    "channel": "whatsapp",
-                                    "assigned_to": None,
-                                    "assigned_to_name": None,
-                                    "status": "active",
-                                    "last_message_at": datetime.now(timezone.utc).isoformat(),
-                                    "created_at": datetime.now(timezone.utc).isoformat()
-                                }
-                                await db.conversations.insert_one(conversation)
-                            
-                            # Criar mensagem
-                            msg = {
-                                "id": str(uuid.uuid4()),
-                                "conversation_id": conversation["id"],
-                                "sender_type": "lead",
-                                "sender_id": lead["id"],
-                                "sender_name": lead["name"],
-                                "content": message_text,
-                                "read": False,
-                                "created_at": datetime.now(timezone.utc).isoformat()
-                            }
-                            await db.messages.insert_one(msg)
-                            
-                            # Atualizar última mensagem da conversa
-                            await db.conversations.update_one(
-                                {"id": conversation["id"]},
-                                {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
-                            )
-        
-        return {"status": "ok"}
-    except Exception as e:
-        print(f"Erro no webhook WhatsApp: {e}")
-        return {"status": "ok"}  # Sempre retornar 200 para o Meta
-
-@api_router.get("/webhooks/instagram")
-async def verify_instagram_webhook(request: Request):
-    """Verificação do webhook do Instagram pelo Meta"""
-    params = request.query_params
-    mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
-    challenge = params.get("hub.challenge")
-    
-    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
-    if not settings:
-        raise HTTPException(status_code=403, detail="Settings not configured")
-    
-    stored_token = settings.get("config", {}).get("instagram", {}).get("verify_token")
-    
-    if mode == "subscribe" and token == stored_token:
-        return int(challenge)
-    else:
-        raise HTTPException(status_code=403, detail="Verification token mismatch")
-
-@api_router.post("/webhooks/instagram")
-async def instagram_webhook(request: Request):
-    """Recebe mensagens do Instagram"""
-    try:
-        body = await request.json()
-        
-        print("\n" + "="*80)
-        print("📸 WEBHOOK INSTAGRAM RECEBIDO")
-        print(f"📦 Body: {json.dumps(body, indent=2)}")
-        print("="*80 + "\n")
-        
-        if body.get("object") == "instagram":
-            for entry in body.get("entry", []):
-                for messaging in entry.get("messaging", []):
-                    sender_id = messaging.get("sender", {}).get("id")
-                    message = messaging.get("message", {})
-                    message_text = message.get("text", "")
-                    
-                    print(f"📱 Sender ID: {sender_id}")
-                    print(f"💬 Mensagem: {message_text}")
-                    
-                    if sender_id and message_text:
-                        # Buscar ou criar lead
-                        lead = await db.leads.find_one({"source_id": sender_id, "source": "instagram"}, {"_id": 0})
-                        if not lead:
-                            lead = {
-                                "id": str(uuid.uuid4()),
-                                "name": f"Lead Instagram {sender_id[-4:]}",
-                                "phone": "",
-                                "email": "",
-                                "status": "novo",
-                                "source": "instagram",
-                                "source_id": sender_id,
-                                "created_at": datetime.now(timezone.utc).isoformat()
-                            }
-                            await db.leads.insert_one(lead)
-                        
-                        # Buscar ou criar conversa
-                        conversation = await db.conversations.find_one(
-                            {"lead_id": lead["id"], "channel": "instagram", "status": "active"},
-                            {"_id": 0}
-                        )
-                        if not conversation:
-                            conversation = {
-                                "id": str(uuid.uuid4()),
-                                "lead_id": lead["id"],
-                                "channel": "instagram",
-                                "assigned_to": None,
-                                "assigned_to_name": None,
-                                "status": "active",
-                                "last_message_at": datetime.now(timezone.utc).isoformat(),
-                                "created_at": datetime.now(timezone.utc).isoformat()
-                            }
-                            await db.conversations.insert_one(conversation)
-                        
-                        # Criar mensagem
-                        msg = {
-                            "id": str(uuid.uuid4()),
-                            "conversation_id": conversation["id"],
-                            "sender_type": "lead",
-                            "sender_id": lead["id"],
-                            "sender_name": lead["name"],
-                            "content": message_text,
-                            "read": False,
-                            "created_at": datetime.now(timezone.utc).isoformat()
-                        }
-                        await db.messages.insert_one(msg)
-                        
-                        await db.conversations.update_one(
-                            {"id": conversation["id"]},
-                            {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
-                        )
-        
-        return {"status": "ok"}
-    except Exception as e:
-        print(f"Erro no webhook Instagram: {e}")
-        return {"status": "ok"}
-
-@api_router.get("/webhooks/messenger")
-async def verify_messenger_webhook(request: Request):
-    """Verificação do webhook do Messenger pelo Meta"""
-    params = request.query_params
-    mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
-    challenge = params.get("hub.challenge")
-    
-    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
-    if not settings:
-        raise HTTPException(status_code=403, detail="Settings not configured")
-    
-    stored_token = settings.get("config", {}).get("messenger", {}).get("verify_token")
-    
-    if mode == "subscribe" and token == stored_token:
-        return int(challenge)
-    else:
-        raise HTTPException(status_code=403, detail="Verification token mismatch")
-
-@api_router.post("/webhooks/messenger")
-async def messenger_webhook(request: Request):
-    """Recebe mensagens do Messenger"""
-    try:
-        body = await request.json()
-        
-        print("\n" + "="*80)
-        print("💬 WEBHOOK MESSENGER RECEBIDO")
-        print(f"📦 Body: {json.dumps(body, indent=2)}")
-        print("="*80 + "\n")
-        
-        if body.get("object") == "page":
-            for entry in body.get("entry", []):
-                for messaging in entry.get("messaging", []):
-                    sender_id = messaging.get("sender", {}).get("id")
-                    message = messaging.get("message", {})
-                    message_text = message.get("text", "")
-                    
-                    print(f"📱 Sender ID: {sender_id}")
-                    print(f"💬 Mensagem: {message_text}")
-                    
-                    if sender_id and message_text:
-                        lead = await db.leads.find_one({"source_id": sender_id, "source": "messenger"}, {"_id": 0})
-                        if not lead:
-                            lead = {
-                                "id": str(uuid.uuid4()),
-                                "name": f"Lead Messenger {sender_id[-4:]}",
-                                "phone": "",
-                                "email": "",
-                                "status": "novo",
-                                "source": "messenger",
-                                "source_id": sender_id,
-                                "created_at": datetime.now(timezone.utc).isoformat()
-                            }
-                            await db.leads.insert_one(lead)
-                        
-                        conversation = await db.conversations.find_one(
-                            {"lead_id": lead["id"], "channel": "messenger", "status": "active"},
-                            {"_id": 0}
-                        )
-                        if not conversation:
-                            conversation = {
-                                "id": str(uuid.uuid4()),
-                                "lead_id": lead["id"],
-                                "channel": "messenger",
-                                "assigned_to": None,
-                                "assigned_to_name": None,
-                                "status": "active",
-                                "last_message_at": datetime.now(timezone.utc).isoformat(),
-                                "created_at": datetime.now(timezone.utc).isoformat()
-                            }
-                            await db.conversations.insert_one(conversation)
-                        
-                        msg = {
-                            "id": str(uuid.uuid4()),
-                            "conversation_id": conversation["id"],
-                            "sender_type": "lead",
-                            "sender_id": lead["id"],
-                            "sender_name": lead["name"],
-                            "content": message_text,
-                            "read": False,
-                            "created_at": datetime.now(timezone.utc).isoformat()
-                        }
-                        await db.messages.insert_one(msg)
-                        
-                        await db.conversations.update_one(
-                            {"id": conversation["id"]},
-                            {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
-                        )
-        
-        return {"status": "ok"}
-    except Exception as e:
-        print(f"Erro no webhook Messenger: {e}")
-        return {"status": "ok"}
-
-@api_router.get("/health")
-async def health():
-    return {"status": "ok"}
-
-# Socket.IO events
-@sio.on("connect")
-async def connect(sid, environ):
-    logging.info(f"Socket.IO connected: {sid}")
-
-@sio.on("disconnect")
-async def disconnect(sid):
-    logging.info(f"Socket.IO disconnected: {sid}")
-
-async def emit_new_message(message: dict):
-    await sio.emit("new_message", message)
-
-app.include_router(api_router)
-
-# CORS configuration
-cors_origins_env = os.environ.get('CORS_ORIGINS', '*')
-origins = [o.strip() for o in cors_origins_env.split(',')] if cors_origins_env else ['*']
-allow_credentials_env = os.environ.get('CORS_ALLOW_CREDENTIALS', 'false').lower() == 'true'
-
-# If wildcard origins with credentials, disable credentials to comply with CORS spec
-if len(origins) == 1 and origins[0] == '*' and allow_credentials_env:
-    allow_credentials_env = False
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=allow_credentials_env,
-    allow_origins=origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
-def _is_birthday_with_offset(birthdate_str: str, offset_days: int) -> bool:
-    try:
-        bd = datetime.fromisoformat(birthdate_str)
-    except Exception:
-        return False
-    target = (datetime.now(timezone.utc) + timedelta(days=offset_days)).date()
-    return bd.month == target.month and bd.day == target.day
-
-@api_router.post("/followups/dispatch-birthday")
-async def dispatch_birthday_followups(current_user: dict = Depends(get_current_user)):
+@api_router.put("/follow-up-rules/{rule_id}")
+async def update_follow_up_rule(rule_id: str, data: FollowUpRuleCreate, current_user: dict = Depends(get_current_user)):
     if not current_user.get("role", {}).get("is_admin", False):
         raise HTTPException(status_code=403, detail="Not authorized")
-    rules = await db.followup_rules.find({"active": True, "trigger": "patient_birthday"}, {"_id": 0}).to_list(1000)
-    if not rules:
-        return {"created": 0, "sent": 0}
-    patients = await db.patients.find({}, {"_id": 0}).to_list(10000)
+    
+    update_data = data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    result = await db.follow_up_rules.update_one({"id": rule_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"message": "Rule updated successfully"}
+
+@api_router.delete("/follow-up-rules/{rule_id}")
+async def delete_follow_up_rule(rule_id: str, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    result = await db.follow_up_rules.delete_one({"id": rule_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"message": "Rule deleted successfully"}
+
+# Automation Helpers
+def _is_birthday_with_offset(birthdate_str, days_offset):
+    if not birthdate_str:
+        return False
+    try:
+        birth_date = datetime.fromisoformat(birthdate_str).date()
+        # The logic should be: today is birthday + offset. So, today - offset is birthday.
+        check_date = datetime.now(timezone.utc).date() - timedelta(days=days_offset)
+        return birth_date.month == check_date.month and birth_date.day == check_date.day
+    except (ValueError, TypeError):
+        return False
+
+# Automation Routes
+@api_router.post("/automations/birthday-followup")
+async def run_birthday_followup_automation(current_user: dict = Depends(get_current_user)):
     created = 0
     sent = 0
-    for rule in rules:
-        offset = int(rule.get("days_after", 0))
-        message_template = rule.get("message_template", "")
-        for p in patients:
-            if _is_birthday_with_offset(p.get("birthdate", ""), offset):
-                name = p.get("name", "")
-                msg = message_template.replace("{nome}", name)
-                followup = FollowUp(
-                    lead_id=None,
-                    patient_id=p.get("id"),
-                    assigned_to=None,
-                    scheduled_date=datetime.now(timezone.utc).date().isoformat(),
-                    notes=msg,
-                    status="pending",
-                    contact_type="whatsapp",
-                    contact_reason=rule.get("type")
-                )
-                await db.followups.insert_one({**followup.model_dump(), "created_at": followup.created_at.isoformat()})
-                created += 1
+    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+    whatsapp = settings.get("whatsapp") if settings else None
+    rule = await db.follow_up_rules.find_one({"trigger": "patient_birthday", "active": True}, {"_id": 0})
+    if not rule:
+        return {"created": 0, "sent": 0}
+    
+    days_offset = rule.get("days_after", 0)
+    msg = rule.get("message_template")
+    
+    patients = await db.patients.find({}, {"_id": 0}).to_list(10000)
+    for p in patients:
+        if _is_birthday_with_offset(p.get("birthdate"), days_offset):
+            name = p.get("name")
+            # Create Follow-up
+            follow_up = FollowUp(
+                patient_id=p.get("id"),
+                scheduled_date=datetime.now(timezone.utc).isoformat(),
+                notes=f"Aniversário de {name}",
+                status="completed",
+                contact_type="whatsapp",
+                contact_reason="informativo"
+            )
+            doc = follow_up.model_dump()
+            doc['created_at'] = doc['created_at'].isoformat()
+            await db.follow_ups.insert_one(doc)
+            created += 1
+            
+            # Send whatsapp
+            if whatsapp and whatsapp.get('phone_number_id') and whatsapp.get('access_token'):
                 try:
-                    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
-                    whatsapp = settings.get("whatsapp") if settings else None
-                    if whatsapp and whatsapp.get("access_token") and whatsapp.get("phone_number_id") and p.get("phone"):
-                        clean = "".join(filter(str.isdigit, p.get("phone")))
-                        if not clean.startswith("55"):
-                            clean = "55" + clean
-                        send_url = f"https://graph.facebook.com/v21.0/{whatsapp['phone_number_id']}/messages"
-                        headers = {"Authorization": f"Bearer {whatsapp['access_token']}", "Content-Type": "application/json"}
-                        payload = {"messaging_product": "whatsapp", "to": clean, "type": "text", "text": {"body": msg or f"Parabéns {name}!"}}
-                        async with httpx.AsyncClient() as client:
-                            r = await client.post(send_url, json=payload, headers=headers, timeout=10)
-                            if r.status_code == 200:
-                                sent += 1
+                    clean = "".join(filter(str.isdigit, p.get("phone")))
+                    if not clean.startswith("55"):
+                        clean = "55" + clean
+                    send_url = f"https://graph.facebook.com/v21.0/{whatsapp['phone_number_id']}/messages"
+                    headers = {"Authorization": f"Bearer {whatsapp['access_token']}", "Content-Type": "application/json"}
+                    payload = {"messaging_product": "whatsapp", "to": clean, "type": "text", "text": {"body": msg or f"Parabéns {name}!"}}
+                    async with httpx.AsyncClient() as client:
+                        r = await client.post(send_url, json=payload, headers=headers, timeout=10)
+                        if r.status_code == 200:
+                            sent += 1
                 except Exception:
                     pass
     return {"created": created, "sent": sent}
+
+@api_router.post("/automations/auto-message")
+async def send_auto_message(req: AutoMessageRequest, current_user: dict = Depends(get_current_user)):
+    patient = await db.patients.find_one({"id": req.patient_id}, {"_id": 0})
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+    whatsapp = settings.get("whatsapp") if settings else None
+    if not whatsapp or not whatsapp.get('phone_number_id') or not whatsapp.get('access_token'):
+        raise HTTPException(status_code=400, detail="WhatsApp not configured")
+
+    message_body = ""
+    if req.message_type == "birthday":
+        message_body = f"Olá {patient['name']}, feliz aniversário!"
+    elif req.message_type == "appointment_reminder":
+        if not req.appointment_id:
+            raise HTTPException(status_code=400, detail="Appointment ID is required for reminders")
+        appt = await db.appointments.find_one({"id": req.appointment_id}, {"_id": 0})
+        if not appt:
+            raise HTTPException(status_code=404, detail="Appointment not found")
+        message_body = f"Olá {patient['name']}, lembrete de consulta para {appt['appointment_date']} às {appt['appointment_time']}."
+    else:
+        raise HTTPException(status_code=400, detail="Invalid message type")
+
+    clean_phone = "".join(filter(str.isdigit, patient.get("phone")))
+    if not clean_phone.startswith("55"):
+        clean_phone = "55" + clean_phone
+
+    send_url = f"https://graph.facebook.com/v21.0/{whatsapp['phone_number_id']}/messages"
+    headers = {"Authorization": f"Bearer {whatsapp['access_token']}", "Content-Type": "application/json"}
+    payload = {"messaging_product": "whatsapp", "to": clean_phone, "type": "text", "text": {"body": message_body}}
+
+    async with httpx.AsyncClient() as client:
+        r = await client.post(send_url, json=payload, headers=headers, timeout=10)
+        if r.status_code != 200:
+            raise HTTPException(status_code=500, detail=f"Failed to send message: {r.text}")
+
+    return {"message": "Message sent successfully"}
+
+# Document Generation
+@api_router.post("/generate-document")
+async def generate_document(req: GenerateDocumentRequest, current_user: dict = Depends(get_current_user)):
+    if LlmChat is None:
+        raise HTTPException(status_code=501, detail="Document generation not implemented")
+
+    record = await db.medical_records.find_one({"id": req.record_id}, {"_id": 0})
+    if not record:
+        raise HTTPException(status_code=404, detail="Medical record not found")
+
+    prompt_text = f"Baseado no seguinte registro médico, gere um(a) {req.document_type}:\n\n"
+    prompt_text += f"Diagnóstico: {record.get('diagnosis', 'N/A')}\n"
+    prompt_text += f"Sintomas: {record.get('symptoms', 'N/A')}\n"
+    prompt_text += f"Tratamento: {record.get('treatment', 'N/A')}\n"
+    prompt_text += f"Medicamentos: {record.get('medications', 'N/A')}\n"
+    prompt_text += f"Observações: {record.get('observations', 'N/A')}\n"
+    prompt_text += f"Nome do Médico: {record.get('doctor_name', 'N/A')}\n"
+    prompt_text += f"CRM/CRO: {record.get('crm', 'N/A')}\n\n"
+    prompt_text += f"Por favor, gere o documento solicitado."
+
+    try:
+        chat = LlmChat()
+        response = await chat.ask_async(messages=[UserMessage(text=prompt_text)])
+        generated_text = response.text
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate document: {e}")
+
+    # Update the record with the generated document
+    update_field = "prescription" if req.document_type == "prescription" else "medical_certificate"
+    await db.medical_records.update_one(
+        {"id": req.record_id},
+        {"$set": {update_field: generated_text, "last_updated": datetime.now(timezone.utc)}}
+    )
+
+    return {f"generated_{req.document_type}": generated_text}
+
+# Settings Routes
+class WhatsAppSettings(BaseModel):
+    phone_number_id: str
+    access_token: str
+
+class OmnichannelSettings(BaseModel):
+    whatsapp: Optional[WhatsAppSettings] = None
+
+@api_router.get("/settings/omnichannel")
+async def get_omnichannel_settings(current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+    return settings or {}
+
+@api_router.post("/settings/omnichannel")
+async def save_omnichannel_settings(data: OmnichannelSettings, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    await db.settings.update_one(
+        {"type": "omnichannel"},
+        {"$set": {"whatsapp": data.whatsapp.model_dump() if data.whatsapp else {}}},
+        upsert=True
+    )
+    return {"message": "Settings saved"}
+
+# Socket.IO Events
+@sio.on('connect')
+async def connect(sid, environ):
+    print('connect ', sid)
+
+@sio.on('disconnect')
+async def disconnect(sid):
+    print('disconnect ', sid)
+
+# Include API router
+app.include_router(api_router)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)

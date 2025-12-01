@@ -237,22 +237,16 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       let recordId;
       
       if (editingRecord) {
-        // Editar prontuário existente
         const response = await api.put(`/medical-records/${editingRecord.id}`, medicalRecordForm);
         recordId = editingRecord.id;
         toast.success("Prontuário atualizado com sucesso!");
       } else {
-        // Criar novo prontuário
-        const payload = {
-          ...medicalRecordForm,
-          patient_id: patient.id
-        };
+        const payload = { ...medicalRecordForm, patient_id: patient.id };
         const response = await api.post("/medical-records", payload);
         recordId = response.data.id;
         toast.success("Prontuário criado com sucesso!");
       }
-      
-      // Se deve enviar via WhatsApp
+
       if (sendWhatsApp && patient.phone) {
         try {
           await api.post("/medical-records/send-whatsapp", {
@@ -262,10 +256,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
           });
           toast.success("Prontuário enviado via WhatsApp!");
         } catch (error) {
-          toast.error("Erro ao enviar via WhatsApp. Prontuário salvo.");
+          const errorMessage = error.response?.data?.detail || "Erro ao enviar via WhatsApp. O prontuário foi salvo, mas o envio falhou.";
+          toast.error(errorMessage);
         }
       }
-      
+
       setShowMedicalRecordDialog(false);
       setEditingRecord(null);
       setMedicalRecordForm({
@@ -281,9 +276,10 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         crm: "",
         template_used: ""
       });
-      loadPatientData(); // Reload to show new record
+      loadPatientData();
     } catch (error) {
-      toast.error(editingRecord ? "Erro ao atualizar prontuário" : "Erro ao criar prontuário");
+      const errorMessage = error.response?.data?.detail || (editingRecord ? "Erro ao atualizar prontuário" : "Erro ao criar prontuário");
+      toast.error(errorMessage);
     }
   };
   
