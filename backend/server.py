@@ -764,6 +764,27 @@ async def create_patient(data: PatientCreate, current_user: dict = Depends(get_c
     await db.patients.insert_one(doc)
     return patient
 
+@api_router.get("/patients/{patient_id}/attachments/{attachment_id}", response_model=Attachment)
+async def get_attachment(patient_id: str, attachment_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    patient = await db.patients.find_one(
+        {"id": patient_id, "attachments.id": attachment_id},
+        {"_id": 0, "attachments.$": 1}
+    )
+    
+    if not patient or not patient.get('attachments'):
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    
+    attachment = patient['attachments'][0]
+    
+    # Convertendo a data de string para datetime se necessário
+    if isinstance(attachment.get('upload_date'), str):
+        attachment['upload_date'] = datetime.fromisoformat(attachment['upload_date'])
+    
+    return attachment
+
 @api_router.get("/patients", response_model=List[dict])
 async def get_patients(current_user: dict = Depends(get_current_user)):
     patients = await db.patients.find({}, {"_id": 0}).to_list(10000)
