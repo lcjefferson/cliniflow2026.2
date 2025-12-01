@@ -1,16 +1,19 @@
 import requests
 import sys
 import json
+import uuid
 from datetime import datetime
 
 class CliniFlowAPITester:
-    def __init__(self, base_url="https://clinic-portal-9.preview.emergentagent.com/api"):
+    def __init__(self, base_url="http://127.0.0.1:8000/api"):
         self.base_url = base_url
         self.token = None
         self.tests_run = 0
         self.tests_passed = 0
         self.failed_tests = []
         self.user_id = None
+        # Use a unique email for each test run to avoid conflicts
+        self.test_email = f"admin_{uuid.uuid4().hex[:8]}@cliniflow.com"
 
     def run_test(self, name, method, endpoint, expected_status, data=None, headers=None):
         """Run a single API test"""
@@ -69,21 +72,20 @@ class CliniFlowAPITester:
             return False, {}
 
     def test_register_and_login(self):
-        """Test user registration and login"""
-        # First try to register a new admin user
+        """Test user registration and login using a unique user for each run."""
         register_data = {
             "name": "Admin Test",
-            "email": "admin@cliniflow.com",
+            "email": self.test_email,
             "password": "admin123",
             "is_admin": True
         }
         
-        # Try registration (might fail if user exists, that's ok)
+        # Always register a new user for each test suite run
         success, response = self.run_test(
             "Admin Registration",
             "POST",
             "auth/register",
-            [200, 400],  # 400 if user already exists
+            200,  # Expect 200, as it's a new user
             data=register_data
         )
         
@@ -93,19 +95,21 @@ class CliniFlowAPITester:
             print(f"   Token obtained from registration: {self.token[:20]}...")
             return True
         
-        # If registration failed (user exists), try login
+        # If registration fails for any reason, the tests can't proceed
+        print("   Registration failed. Trying to log in as a fallback...")
         success, response = self.run_test(
             "Admin Login",
             "POST",
             "auth/login",
             200,
-            data={"email": "admin@cliniflow.com", "password": "admin123"}
+            data={"email": self.test_email, "password": "admin123"}
         )
         if success and 'access_token' in response:
             self.token = response['access_token']
             self.user_id = response.get('user', {}).get('id')
             print(f"   Token obtained from login: {self.token[:20]}...")
             return True
+            
         return False
 
     def test_dashboard_stats(self):
@@ -254,12 +258,68 @@ class CliniFlowAPITester:
             if success and 'id' in created_followup:
                 followup_id = created_followup['id']
                 # Update followup status
-                self.run_test("Update FollowUp Status", "PUT", f"followups/{followup_id}?status=completed", 200)
+                self.run_test("Update FollowUp Status", "PUT", f"followups/{followup_id}", 200, data={"status": "completed"})
 
     def test_medical_records(self):
-        """Test medical records operations"""
-        # Get medical records for a patient (will be empty but should not error)
-        self.run_test("Get Patient Medical Records", "GET", "medical-records/patient/test-patient-id", 200)
+        """Test medical records CRUD operations"""
+        # First, create a patient to associate the record with
+        patient_data = {
+            "name": "Patient for Medical Record Test",
+            "email": f"patient.mr.{uuid.uuid4().hex[:8]}@test.com",
+            "phone": "(11) 11111-1111",
+            "birthdate": "1985-05-10",
+        }
+        success, created_patient = self.run_test("Create Patient for Record", "POST", "patients", 200, patient_data)
+        
+        if not success or 'id' not in created_patient:
+            print("❌ Failed to create a patient for medical record test.")
+            return
+
+        patient_id = created_patient['id']
+        
+        # 1. Create Medical Record
+        record_data = {
+            "patient_id": patient_id,
+            "professional_id": self.user_id, 
+            "observations": "Histórico inicial do paciente.",
+            "record_type": "Anamnese"
+        }
+        success, created_record = self.run_test("Create Medical Record", "POST", "medical-records", 200, record_data)
+
+        if not success or 'id' not in created_record:
+            print("❌ Failed to create medical record.")
+            return
+            
+        record_id = created_record['id']
+        print(f"   Medical Record created with ID: {record_id}")
+
+        # 2. Read Medical Record
+        self.run_test("Get Medical Record by ID", "GET", f"medical-records/{record_id}", 200)
+        
+        # 3. Read Medical Records by Patient
+        self.run_test("Get Medical Records by Patient", "GET", f"medical-records/patient/{patient_id}", 200)
+
+        # 4. Update Medical Record
+        update_data = {
+            "observations": "Paciente relata melhora no quadro geral.",
+            "record_type": "Evolução"
+        }
+        self.run_test("Update Medical Record", "PUT", f"medical-records/{record_id}", 200, update_data)
+
+        # 5. Verify Update
+        success, updated_record = self.run_test("Verify Updated Medical Record", "GET", f"medical-records/{record_id}", 200)
+        if success:
+            if updated_record.get('observations') == update_data['observations']:
+                print("   ✅ Observations updated successfully.")
+            else:
+                print("   ❌ Failed to verify updated observations.")
+                self.failed_tests.append({"test": "Verify Update", "error": "Observations mismatch"})
+
+        # 6. Delete Medical Record (Optional, depending on business logic)
+        # Some systems may not allow deletion of medical records. 
+        # If deletion is implemented, uncomment the following lines.
+        # self.run_test("Delete Medical Record", "DELETE", f"medical-records/{record_id}", 200)
+        # self.run_test("Verify Deletion", "GET", f"medical-records/{record_id}", 404)
 
     def test_conversations(self):
         """Test conversation endpoints (mocked)"""

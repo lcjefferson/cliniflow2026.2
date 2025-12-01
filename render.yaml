@@ -25,6 +25,6 @@ services:
         destination: /index.html
     envVars:
       - key: REACT_APP_BACKEND_URL
-        value: "https://clinicflow.onrender.com"
+        value: "https://clinicflow-lucj.onrender.com"
       - key: NODE_VERSION
         value: "22.16.0"

@@ -107,6 +107,15 @@ export default function PatientsPage() {
   const handleUpdatePatient = async () => {
     await loadPatients();
   };
+  const formatPhone = (value) => {
+    const digits = (value || "").replace(/\D/g, "").slice(0, 11);
+    const part1 = digits.slice(0, 2);
+    const part2 = digits.slice(2, 7);
+    const part3 = digits.slice(7, 11);
+    if (digits.length <= 2) return part1 ? `(${part1}` : "";
+    if (digits.length <= 7) return `(${part1}) ${part2}`;
+    return `(${part1}) ${part2}-${part3}`;
+  };
 
   return (
     <Layout>
@@ -223,7 +232,7 @@ export default function PatientsPage() {
               </div>
               <div>
                 <Label>Telefone *</Label>
-                <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
+                <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: formatPhone(e.target.value)})} required />
               </div>
               <div>
                 <Label>Data de Nascimento *</Label>
