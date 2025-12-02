@@ -22,32 +22,47 @@ export default function PatientsPage() {
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [patientDebts, setPatientDebts] = useState({});
 
+  const [error, setError] = useState(null);
+
   useEffect(() => {
     loadPatients();
   }, []);
 
   const loadPatients = async () => {
     setLoading(true);
+    setError(null);
+    console.log("Iniciando carregamento de pacientes...");
     try {
+      console.log("Realizando requisição para /patients");
       const response = await api.get("/patients");
+      console.log("Resposta da API /patients:", response);
       setPatients(response.data);
       
       // Load debts for each patient
+      console.log("Carregando débitos dos pacientes...");
       const debtsPromises = response.data.map(p => 
-        api.get(`/patients/${p.id}/debts`).catch(() => ({ data: { total_debt: 0 } }))
+        api.get(`/patients/${p.id}/debts`).catch((err) => {
+          console.error(`Erro ao carregar débitos para o paciente ${p.id}:`, err);
+          return { data: { total_debt: 0 } };
+        })
       );
       const debtsResults = await Promise.all(debtsPromises);
+      console.log("Resultados dos débitos:", debtsResults);
       
       const debtsMap = {};
       response.data.forEach((p, index) => {
         debtsMap[p.id] = debtsResults[index].data.total_debt;
       });
       setPatientDebts(debtsMap);
+      console.log("Mapa de débitos criado:", debtsMap);
     } catch (error) {
+      console.error("Erro detalhado ao carregar pacientes:", error.response || error.message);
+      setError(error);
       toast.error("Erro ao carregar pacientes");
     } finally {
       setTimeout(() => {
         setLoading(false);
+        console.log("Finalizado o carregamento de pacientes.");
       }, 500); // Adiciona um pequeno atraso para exibir o loading
     }
   };
@@ -158,11 +173,15 @@ export default function PatientsPage() {
           </div>
           {searchTerm && (
             <p className="mt-3 text-sm text-gray-600">
-              {patients.filter(p => 
-                p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                p.phone.includes(searchTerm) ||
-                p.email.toLowerCase().includes(searchTerm.toLowerCase())
-              ).length} resultado(s) encontrado(s)
+              {patients.filter(p => {
+                if (!searchTerm) return true;
+                const patientName = p.name || "";
+                const patientEmail = p.email || "";
+                const patientPhone = p.phone || "";
+                return patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                       patientPhone.includes(searchTerm) ||
+                       patientEmail.toLowerCase().includes(searchTerm.toLowerCase());
+              }).length} resultado(s) encontrado(s)
             </p>
           )}
         </div>
@@ -172,12 +191,25 @@ export default function PatientsPage() {
             <div className="flex justify-center items-center p-10">
               <p className="text-lg text-gray-600">Carregando pacientes...</p>
             </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center p-10 bg-red-50 border border-red-200 rounded-2xl">
+              <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
+              <p className="text-lg text-red-700 font-semibold mb-2">Erro ao Carregar Pacientes</p>
+              <p className="text-gray-600 text-center mb-6">Não foi possível buscar a lista de pacientes. Verifique sua conexão ou tente novamente.</p>
+              <Button onClick={() => loadPatients()} className="btn-primary">
+                <X className="w-4 h-4 mr-2" />
+                Tentar Novamente
+              </Button>
+            </div>
           ) : patients
             .filter(p => {
               if (!searchTerm) return true;
-              return p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                     p.phone.includes(searchTerm) ||
-                     p.email.toLowerCase().includes(searchTerm.toLowerCase());
+              const patientName = p.name || "";
+              const patientEmail = p.email || "";
+              const patientPhone = p.phone || "";
+              return patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                     patientPhone.includes(searchTerm) ||
+                     patientEmail.toLowerCase().includes(searchTerm.toLowerCase());
             })
             .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
             .map((patient) => (

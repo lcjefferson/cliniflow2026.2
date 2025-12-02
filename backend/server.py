@@ -768,6 +768,44 @@ async def create_patient(data: PatientCreate, current_user: dict = Depends(get_c
     await db.patients.insert_one(doc)
     return patient
 
+@api_router.post("/patients/{patient_id}/attachments", response_model=Attachment)
+async def add_patient_attachment(patient_id: str, attachment_data: Attachment, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    # Garante que a data de upload está no formato correto
+    attachment_data.upload_date = datetime.now(timezone.utc)
+    
+    attachment_doc = attachment_data.model_dump()
+    attachment_doc['upload_date'] = attachment_data.upload_date.isoformat()
+
+    result = await db.patients.update_one(
+        {"id": patient_id},
+        {"$push": {"attachments": attachment_doc}}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    return attachment_data
+
+@api_router.delete("/patients/{patient_id}/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_patient_attachment(patient_id: str, attachment_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    result = await db.patients.update_one(
+        {"id": patient_id},
+        {"$pull": {"attachments": {"id": attachment_id}}}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    if result.modified_count == 0:
+        # Opcional: se quiser ter certeza que o anexo existia
+        pass
+
 @api_router.get("/patients/{patient_id}/attachments/{attachment_id}", response_model=Attachment)
 async def get_attachment(patient_id: str, attachment_id: str, current_user: dict = Depends(get_current_user)):
     if db is None:
@@ -1311,6 +1349,18 @@ async def generate_pdf(request: GeneratePdfRequest):
     return StreamingResponse(buffer, media_type="application/pdf", headers={
         "Content-Disposition": f"attachment; filename=prontuario_{request.patient_name}.pdf"
     })
+
+@api_router.delete("/medical-records/{record_id}")
+async def delete_medical_record(record_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    delete_result = await db.medical_records.delete_one({"id": record_id})
+
+    if delete_result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Medical record not found")
+
+    return {"message": "Medical record deleted successfully"}
 
 # Socket.IO Events
 @sio.on('connect')

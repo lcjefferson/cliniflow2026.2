@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 
 export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate }) {
   const [activeTab, setActiveTab] = useState("info");
+  const [detailedPatient, setDetailedPatient] = useState(patient);
   const [medicalRecords, setMedicalRecords] = useState([]);
   const [professionals, setProfessionals] = useState([]);
   const [services, setServices] = useState([]);
@@ -71,25 +72,35 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
   useEffect(() => {
     if (isOpen && patient) {
-      loadPatientData();
+      setDetailedPatient(patient);
+      loadPatientData(patient.id);
     }
   }, [isOpen, patient]);
 
-  const loadPatientData = async () => {
+  const handleOpenChange = (isOpen) => {
+    if (!isOpen) {
+      setDetailedPatient(null);
+      setActiveTab('info');
+    }
+    onClose();
+  };
+
+  const loadPatientData = async (patientId) => {
+    if (!patientId) return;
     try {
       setLoading(true);
-      const [recordsRes, profsRes, servicesRes, debtsRes, appointmentsRes] = await Promise.all([
-        api.get(`/patients/${patient.id}/medical-records`),
+      const [patientRes, recordsRes, profsRes, servicesRes, debtsRes, appointmentsRes] = await Promise.all([
+        api.get(`/patients/${patientId}`),
+        api.get(`/patients/${patientId}/medical-records`),
         api.get(`/professionals`),
         api.get(`/services`),
-        api.get(`/patients/${patient.id}/debts`),
-        api.get(`/appointments?patient_id=${patient.id}`)
+        api.get(`/patients/${patientId}/debts`),
+        api.get(`/appointments?patient_id=${patientId}`)
       ]);
 
-      // Filter records for this patient
+      setDetailedPatient(patientRes.data);
       setMedicalRecords(recordsRes.data);
       
-      // Get professionals from appointments automatically
       const appointmentProfs = appointmentsRes.data || [];
       const uniqueProfIds = [...new Set(appointmentProfs.map(a => a.professional_id).filter(Boolean))];
       const profsFromAppointments = profsRes.data.filter(p => uniqueProfIds.includes(p.id));
@@ -98,9 +109,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       setServices(servicesRes.data);
       setDebts(debtsRes.data);
 
-      // Load anamnese if exists
-      if (patient.anamnese) {
-        setAnamnese(patient.anamnese);
+      if (patientRes.data.anamnese) {
+        setAnamnese(patientRes.data.anamnese);
       }
     } catch (error) {
       console.error("Error loading patient data:", error);
@@ -114,14 +124,14 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     const file = e.target.files[0];
     if (!file) return;
 
-    // Check file size (10MB max)
     if (file.size > 10 * 1024 * 1024) {
       toast.error("Arquivo muito grande! Tamanho máximo: 10MB");
       return;
     }
 
+    const originalToast = toast.loading("Enviando arquivo...");
+
     try {
-      // Convert to base64
       const reader = new FileReader();
       reader.onload = async (event) => {
         const base64 = event.target.result.split(',')[1];
@@ -134,13 +144,17 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         };
 
         await api.post(`/patients/${patient.id}/attachments`, attachment);
-        toast.success("Arquivo anexado com sucesso!");
-        loadPatientData(); // Reload patient data immediately
-        onUpdate(); // Refresh patient data in parent
+        toast.success("Arquivo anexado com sucesso!", { id: originalToast });
+        
+        // Reload data inside modal and refresh parent list
+        loadPatientData(patient.id);
+        onUpdate();
       };
       reader.readAsDataURL(file);
     } catch (error) {
-      toast.error("Erro ao anexar arquivo");
+      console.error("Erro ao anexar arquivo:", error);
+      const errorMessage = error.response?.data?.detail || "Falha no upload. Tente novamente.";
+      toast.error(errorMessage, { id: originalToast });
     }
   };
 
@@ -150,7 +164,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     try {
       await api.delete(`/patients/${patient.id}/attachments/${attachmentId}`);
       toast.success("Anexo removido!");
-      onUpdate();
+      loadPatientData(patient.id); // Recarrega os dados do paciente no modal
+      onUpdate(); // Atualiza a lista de pacientes no componente pai
     } catch (error) {
       toast.error("Erro ao remover anexo");
     }
@@ -249,18 +264,18 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         recordId = editingRecord.id;
         toast.success("Prontuário atualizado com sucesso!");
       } else {
-        const payload = { ...medicalRecordForm, patient_id: patient.id };
+        const payload = { ...medicalRecordForm, patient_id: detailedPatient.id };
         const response = await api.post("/medical-records", payload);
         recordId = response.data.id;
         toast.success("Prontuário criado com sucesso!");
       }
 
-      if (sendWhatsApp && patient.phone) {
+      if (sendWhatsApp && detailedPatient.phone) {
         try {
           await api.post("/medical-records/send-whatsapp", {
             record_id: recordId,
-            patient_phone: patient.phone,
-            patient_name: patient.name
+            patient_phone: detailedPatient.phone,
+            patient_name: detailedPatient.name
           });
           toast.success("Prontuário enviado via WhatsApp!");
         } catch (error) {
@@ -284,7 +299,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         crm: "",
         template_used: ""
       });
-      loadPatientData();
+      loadPatientData(detailedPatient.id);
+      onUpdate();
     } catch (error) {
       const errorMessage = error.response?.data?.detail || (editingRecord ? "Erro ao atualizar prontuário" : "Erro ao criar prontuário");
       toast.error(errorMessage);
@@ -313,7 +329,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     try {
       const response = await api.post("/medical-records/generate-pdf", {
         record_id: record.id,
-        patient_name: patient.name
+        patient_name: detailedPatient.name
       }, {
         responseType: 'blob'
       });
@@ -322,7 +338,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `prontuario_${patient.name}_${new Date().toISOString().split('T')[0]}.pdf`);
+      link.setAttribute('download', `prontuario_${detailedPatient.name}_${new Date().toISOString().split('T')[0]}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -346,7 +362,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       toast.success("Prontuário excluído com sucesso!");
       setShowDeleteRecordDialog(false);
       setRecordToDelete(null);
-      loadPatientData();
+      loadPatientData(detailedPatient.id);
+      onUpdate();
     } catch (error) {
       toast.error("Erro ao excluir prontuário");
     }
@@ -356,11 +373,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     let content = "";
     
     if (templateType === "receita") {
-      content = "RECEITA MÉDICA\n\nPaciente: " + patient.name + "\nData: " + new Date().toLocaleDateString('pt-BR') + "\n\nMedicamentos Prescritos:\n1. [Medicamento 1] - [Posologia]\n2. [Medicamento 2] - [Posologia]\n\nObservações:\n[Instruções de uso]\n\n___________________________\nDr(a). [Nome]\nCRM: [Número]";
+      content = "RECEITA MÉDICA\n\nPaciente: " + detailedPatient.name + "\nData: " + new Date().toLocaleDateString('pt-BR') + "\n\nMedicamentos Prescritos:\n1. [Medicamento 1] - [Posologia]\n2. [Medicamento 2] - [Posologia]\n\nObservações:\n[Instruções de uso]\n\n___________________________\nDr(a). [Nome]\nCRM: [Número]";
     } else if (templateType === "atestado") {
-      content = "ATESTADO MÉDICO\n\nAtesto para os devidos fins que o(a) paciente " + patient.name + " esteve sob meus cuidados médicos e necessita de afastamento de suas atividades por [X] dias, a partir de " + new Date().toLocaleDateString('pt-BR') + ".\n\nCID: [Código se aplicável]\n\nObservações:\n[Observações adicionais]\n\n___________________________\nDr(a). [Nome]\nCRM: [Número]\nData: " + new Date().toLocaleDateString('pt-BR');
+      content = "ATESTADO MÉDICO\n\nAtesto para os devidos fins que o(a) paciente " + detailedPatient.name + " esteve sob meus cuidados médicos e necessita de afastamento de suas atividades por [X] dias, a partir de " + new Date().toLocaleDateString('pt-BR') + ".\n\nCID: [Código se aplicável]\n\nObservações:\n[Observações adicionais]\n\n___________________________\nDr(a). [Nome]\nCRM: [Número]\nData: " + new Date().toLocaleDateString('pt-BR');
     } else {
-      content = "PRONTUÁRIO MÉDICO\n\nPaciente: " + patient.name + "\nData da Consulta: " + new Date().toLocaleDateString('pt-BR') + "\n\nQueixa Principal:\n[Descrever sintomas]\n\nHistória da Doença Atual:\n[Histórico]\n\nExame Físico:\n[Resultados do exame]\n\nDiagnóstico:\n[Diagnóstico]\n\nTratamento Proposto:\n[Tratamento]\n\nMedicações:\n[Lista de medicações]\n\nObservações:\n[Observações adicionais]";
+      content = "PRONTUÁRIO MÉDICO\n\nPaciente: " + detailedPatient.name + "\nData da Consulta: " + new Date().toLocaleDateString('pt-BR') + "\n\nQueixa Principal:\n[Descrever sintomas]\n\nHistória da Doença Atual:\n[Histórico]\n\nExame Físico:\n[Resultados do exame]\n\nDiagnóstico:\n[Diagnóstico]\n\nTratamento Proposto:\n[Tratamento]\n\nMedicações:\n[Lista de medicações]\n\nObservações:\n[Observações adicionais]";
     }
     
     setMedicalRecordForm({
@@ -372,7 +389,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     toast.success("Template aplicado!");
   };
 
-  if (!patient) return null;
+  if (!detailedPatient) return null;
 
   const tabs = [
     { id: "info", label: "Informações", icon: FileText },
@@ -385,13 +402,13 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
   return (
     <>
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-5xl max-h-[90vh] w-[95vw] md:w-auto flex flex-col p-0 overflow-hidden">
         <div className="flex-shrink-0 p-6 pb-0">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <div>
-                <span className="text-2xl">{patient.name}</span>
+                <span className="text-2xl">{detailedPatient.name}</span>
                 {debts.total_debt > 0 && (
                   <span className="ml-4 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">
                     Débito: R$ {debts.total_debt.toFixed(2)}
@@ -435,19 +452,19 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <Label className="text-sm font-semibold text-gray-700">Email</Label>
-                      <p className="text-gray-900">{patient.email}</p>
+                      <p className="text-gray-900">{detailedPatient.email}</p>
                     </div>
                     <div>
                       <Label className="text-sm font-semibold text-gray-700">Telefone</Label>
-                      <p className="text-gray-900">{patient.phone}</p>
+                      <p className="text-gray-900">{detailedPatient.phone}</p>
                     </div>
                     <div>
                       <Label className="text-sm font-semibold text-gray-700">Data de Nascimento</Label>
-                      <p className="text-gray-900">{patient.birthdate}</p>
+                      <p className="text-gray-900">{detailedPatient.birthdate}</p>
                     </div>
                     <div>
                       <Label className="text-sm font-semibold text-gray-700">Endereço</Label>
-                      <p className="text-gray-900">{patient.address || "Não informado"}</p>
+                      <p className="text-gray-900">{detailedPatient.address || "Não informado"}</p>
                     </div>
                   </div>
 
@@ -487,9 +504,9 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                     </label>
                   </div>
 
-                  {patient.attachments && patient.attachments.length > 0 ? (
+                  {detailedPatient.attachments && detailedPatient.attachments.length > 0 ? (
                     <div className="grid gap-3">
-                      {patient.attachments.map((att) => (
+                      {detailedPatient.attachments.map((att) => (
                         <div key={att.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
                           <div className="flex items-center gap-3">
                             <Paperclip className="w-5 h-5 text-gray-400" />
