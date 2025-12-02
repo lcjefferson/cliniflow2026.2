@@ -331,6 +331,15 @@ class TransactionCreate(BaseModel):
     transaction_date: Optional[str] = None
     status: str = "paid"
 
+class TransactionUpdate(BaseModel):
+    patient_id: Optional[str] = None
+    appointment_id: Optional[str] = None
+    amount: Optional[float] = None
+    payment_method: Optional[str] = None
+    description: Optional[str] = None
+    transaction_date: Optional[str] = None
+    status: Optional[str] = None
+
 class MedicalRecord(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -475,20 +484,6 @@ class GenerateDocumentRequest(BaseModel):
     record_id: str
     document_type: str  # prescription, certificate
 
-# Helper functions
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-
-def create_access_token(data: dict) -> str:
-    to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(minutes=JWT_EXPIRATION)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return encoded_jwt
-
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     try:
@@ -505,6 +500,96 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
     return user
+
+# Transaction Routes
+@api_router.get("/transactions", response_model=List[Transaction])
+async def get_transactions(current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    transactions = await db.transactions.find({}, {"_id": 0}).to_list(1000)
+    for trans in transactions:
+        if isinstance(trans.get('created_at'), datetime):
+            trans['created_at'] = trans['created_at'].isoformat()
+    return transactions
+
+@api_router.put("/transactions/{transaction_id}", response_model=Transaction)
+async def update_transaction(transaction_id: str, transaction: TransactionUpdate, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    update_data = transaction.model_dump(exclude_unset=True)
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    await db.transactions.update_one(
+        {"id": transaction_id},
+        {"$set": update_data}
+    )
+
+    updated_transaction = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
+
+    if updated_transaction is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    if isinstance(updated_transaction.get('created_at'), datetime):
+        updated_transaction['created_at'] = updated_transaction['created_at'].isoformat()
+
+    return updated_transaction
+@api_router.delete("/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_transaction(transaction_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    delete_result = await db.transactions.delete_one({"id": transaction_id})
+    
+    if delete_result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+@api_router.get("/revenue/total")
+async def get_total_revenue(current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    pipeline = [
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]
+    
+    result = await db.transactions.aggregate(pipeline).to_list(1)
+    
+    total_revenue = result[0]['total'] if result else 0
+    
+    return {"total_revenue": total_revenue}
+
+@api_router.get("/patients/{patient_id}/debts")
+async def get_patient_debts(patient_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    pipeline = [
+        {"$match": {"patient_id": patient_id, "paid": False}},
+        {"$group": {"_id": "$patient_id", "total_debt": {"$sum": "$amount"}}}
+    ]
+    
+    result = await db.appointments.aggregate(pipeline).to_list(1)
+    
+    total_debt = result[0]['total_debt'] if result else 0
+    
+    return {"total_debt": total_debt}
+
+# Helper functions
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+def create_access_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(minutes=JWT_EXPIRATION)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return encoded_jwt
 
 # Authentication Routes
 @api_router.post("/auth/register", response_model=TokenResponse)

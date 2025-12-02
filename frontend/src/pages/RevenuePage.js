@@ -54,9 +54,10 @@ export default function RevenuePage() {
 
       // Load debts for each patient
       const debtsPromises = pat.data.map(p => 
-        api.get(`/patients/${p.id}/debts`).catch(() => ({ data: { total_debt: 0 } }))
+        api.get(`/patients/${p.id}/debts`)
       );
-      const debtsResults = await Promise.all(debtsPromises);
+      
+      const debtsResults = await Promise.all(debtsPromises.map(p => p.catch(e => ({ data: { total_debt: 0 } }))));
       
       const debtsMap = {};
       pat.data.forEach((p, index) => {
