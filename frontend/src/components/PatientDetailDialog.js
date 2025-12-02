@@ -79,8 +79,29 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
   const handleOpenChange = (isOpen) => {
     if (!isOpen) {
+      // Reset all states when dialog is closed for data integrity
       setDetailedPatient(null);
       setActiveTab('info');
+      setMedicalRecords([]);
+      setProfessionals([]);
+      setDebts({ total_debt: 0, unpaid_appointments: [] });
+      setAnamnese({
+        chronic_diseases: "",
+        allergies_medical: "",
+        current_medications: "",
+        surgery_history: "",
+        mental_health: "",
+        previous_treatments: "",
+        prosthetics: "",
+        implants: "",
+        pain_history: "",
+        periodontal_issues: "",
+        facial_surgeries: "",
+        oral_hygiene_products: "",
+        medication_allergies: "",
+        material_allergies: "",
+        substance_allergies: ""
+      });
     }
     onClose();
   };
@@ -101,16 +122,46 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       setDetailedPatient(patientRes.data);
       setMedicalRecords(recordsRes.data);
       
-      const appointmentProfs = appointmentsRes.data || [];
-      const uniqueProfIds = [...new Set(appointmentProfs.map(a => a.professional_id).filter(Boolean))];
-      const profsFromAppointments = profsRes.data.filter(p => uniqueProfIds.includes(p.id));
-      setProfessionals(profsFromAppointments.length > 0 ? profsFromAppointments : profsRes.data);
+      // Corrigido: Filtra profissionais com base no histórico do paciente (agendamentos e tratamentos)
+      const appointments = appointmentsRes.data || [];
+      const treatments = patientRes.data.treatments || [];
+      const allClinicProfessionals = profsRes.data || [];
+
+      const profIdsFromHistory = [
+        ...appointments.map(a => a.professional_id),
+        ...treatments.map(t => t.professional_id)
+      ];
+      
+      const uniqueProfIds = [...new Set(profIdsFromHistory.filter(Boolean))];
+      
+      const associatedProfessionals = allClinicProfessionals.filter(p => uniqueProfIds.includes(p.id));
+      
+      setProfessionals(associatedProfessionals);
       
       setServices(servicesRes.data);
       setDebts(debtsRes.data);
 
       if (patientRes.data.anamnese) {
         setAnamnese(patientRes.data.anamnese);
+      } else {
+        // Limpa o estado da anamnese se o paciente não tiver uma
+        setAnamnese({
+          chronic_diseases: "",
+          allergies_medical: "",
+          current_medications: "",
+          surgery_history: "",
+          mental_health: "",
+          previous_treatments: "",
+          prosthetics: "",
+          implants: "",
+          pain_history: "",
+          periodontal_issues: "",
+          facial_surgeries: "",
+          oral_hygiene_products: "",
+          medication_allergies: "",
+          material_allergies: "",
+          substance_allergies: ""
+        });
       }
     } catch (error) {
       console.error("Error loading patient data:", error);
@@ -841,30 +892,24 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
               {/* Professionals Tab */}
               {activeTab === "professionals" && (
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold mb-4">Profissionais que Atenderam</h3>
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Profissionais Vinculados</h3>
                   {professionals.length > 0 ? (
-                    <div className="grid gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {professionals.map((prof) => (
-                        <div key={prof.id} className="border rounded-lg p-4 hover:bg-gray-50">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <h4 className="font-semibold text-gray-900">{prof.name}</h4>
-                              <p className="text-sm text-gray-600">{prof.specialty}</p>
-                              <p className="text-sm text-gray-500 mt-1">
-                                {prof.appointment_count} agendamento(s)
-                              </p>
-                            </div>
-                            <CheckCircle className="w-5 h-5 text-green-500" />
+                        <div key={prof.id} className="p-4 border rounded-lg flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 font-bold">
+                            {prof.name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-gray-900">{prof.name}</p>
+                            <p className="text-sm text-gray-600">{prof.specialty || "Especialidade não informada"}</p>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="text-center py-12 text-gray-500">
-                      <Users className="w-16 h-16 mx-auto mb-4 opacity-30" />
-                      <p>Nenhum profissional registrado ainda</p>
-                    </div>
+                    <p className="text-gray-500 text-center py-4">Nenhum profissional vinculado a este paciente.</p>
                   )}
                 </div>
               )}
