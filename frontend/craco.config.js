@@ -80,9 +80,11 @@ if (config.enableVisualEdits) {
   };
 }
 
-// Setup dev server with visual edits and/or health check
-if (config.enableVisualEdits || config.enableHealthCheck) {
-  webpackConfig.devServer = (devServerConfig) => {
+webpackConfig.devServer = (devServerConfig) => {
+  
+
+  // Setup dev server with visual edits and/or health check
+  if (config.enableVisualEdits || config.enableHealthCheck) {
     // Apply visual edits dev server setup if enabled
     if (config.enableVisualEdits && setupDevServer) {
       devServerConfig = setupDevServer(devServerConfig);
@@ -104,9 +106,9 @@ if (config.enableVisualEdits || config.enableHealthCheck) {
         return middlewares;
       };
     }
+  }
 
-    return devServerConfig;
-  };
-}
+  return devServerConfig;
+};
 
 module.exports = webpackConfig;

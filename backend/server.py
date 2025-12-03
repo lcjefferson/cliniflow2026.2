@@ -402,8 +402,8 @@ class Patient(BaseModel):
 class PatientCreate(BaseModel):
     name: str  # Obrigatório
     email: Optional[EmailStr] = None
-    phone: str  # Obrigatório
-    birthdate: str  # Obrigatório
+    phone: Optional[str] = None
+    birthdate: Optional[str] = None
     address: Optional[str] = None
     
     @field_validator('email', mode='before')

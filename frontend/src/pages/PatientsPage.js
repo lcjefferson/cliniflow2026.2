@@ -254,12 +254,12 @@ export default function PatientsPage() {
                 <Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
               </div>
               <div>
-                <Label>Telefone *</Label>
-                <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: formatPhone(e.target.value)})} required />
+                <Label>Telefone</Label>
+                <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: formatPhone(e.target.value)})} />
               </div>
               <div>
-                <Label>Data de Nascimento *</Label>
-                <Input type="date" value={formData.birthdate} onChange={(e) => setFormData({...formData, birthdate: e.target.value})} required />
+                <Label>Data de Nascimento</Label>
+                <Input type="date" value={formData.birthdate} onChange={(e) => setFormData({...formData, birthdate: e.target.value})} />
               </div>
               <div>
                 <Label>Endereço</Label>
