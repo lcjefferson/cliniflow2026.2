@@ -20,8 +20,6 @@ export default function PatientsPage() {
   const [formData, setFormData] = useState({ name: "", email: "", phone: "", birthdate: "", address: "" });
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
-  const [patientDebts, setPatientDebts] = useState({});
-
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -37,33 +35,13 @@ export default function PatientsPage() {
       const response = await api.get("/patients");
       console.log("Resposta da API /patients:", response);
       setPatients(response.data);
-      
-      // Load debts for each patient
-      console.log("Carregando débitos dos pacientes...");
-      const debtsPromises = response.data.map(p => 
-        api.get(`/patients/${p.id}/debts`).catch((err) => {
-          console.error(`Erro ao carregar débitos para o paciente ${p.id}:`, err);
-          return { data: { total_debt: 0 } };
-        })
-      );
-      const debtsResults = await Promise.all(debtsPromises);
-      console.log("Resultados dos débitos:", debtsResults);
-      
-      const debtsMap = {};
-      response.data.forEach((p, index) => {
-        debtsMap[p.id] = debtsResults[index].data.total_debt;
-      });
-      setPatientDebts(debtsMap);
-      console.log("Mapa de débitos criado:", debtsMap);
     } catch (error) {
       console.error("Erro detalhado ao carregar pacientes:", error.response || error.message);
       setError(error);
       toast.error("Erro ao carregar pacientes");
     } finally {
-      setTimeout(() => {
-        setLoading(false);
-        console.log("Finalizado o carregamento de pacientes.");
-      }, 500); // Adiciona um pequeno atraso para exibir o loading
+      setLoading(false);
+      console.log("Finalizado o carregamento de pacientes.");
     }
   };
 
@@ -125,8 +103,11 @@ export default function PatientsPage() {
     setSelectedPatient(null);
   };
 
-  const handleUpdatePatient = async () => {
-    await loadPatients();
+  const handleUpdatePatient = (updatedPatient) => {
+    setPatients(prevPatients => 
+      prevPatients.map(p => p.id === updatedPatient.id ? updatedPatient : p)
+    );
+    setSelectedPatient(updatedPatient);
   };
   const formatPhone = (value) => {
     const digits = (value || "").replace(/\D/g, "").slice(0, 11);
@@ -218,10 +199,10 @@ export default function PatientsPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h3 className="text-xl font-bold text-gray-900">{patient.name}</h3>
-                    {patientDebts[patient.id] > 0 && (
+                    {patient.total_debt > 0 && (
                       <span className="flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">
                         <AlertCircle className="w-4 h-4" />
-                        Débito: R$ {patientDebts[patient.id].toFixed(2)}
+                        Débito: R$ {patient.total_debt.toFixed(2)}
                       </span>
                     )}
                   </div>

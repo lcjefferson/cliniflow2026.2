@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import api from "../services/api";
 import { 
   FileText, Paperclip, Stethoscope, Activity, Users, 
@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { formatDate } from "../utils/dateUtils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +20,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   const [services, setServices] = useState([]);
   const [debts, setDebts] = useState({ total_debt: 0, unpaid_appointments: [] });
   const [loading, setLoading] = useState(false);
+  const scrollRef = useRef(null);
+  const [scrollPosition, setScrollPosition] = useState(0);
   
   // Anamnese state
   const [anamnese, setAnamnese] = useState({
@@ -42,13 +45,13 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   // Treatment form state
   const [showTreatmentDialog, setShowTreatmentDialog] = useState(false);
   const [treatmentForm, setTreatmentForm] = useState({
-    date: new Date().toISOString().split('T')[0],
-    service_id: "",
-    service_name: "",
+    name: "",
+    start_date: new Date().toISOString().split('T')[0],
     description: "",
-    professional_id: "",
-    professional_name: "",
-    status: "completed"
+    prescribed_medications: "",
+    frequency: "",
+    estimated_duration: "",
+    status: "ongoing"
   });
 
   // Medical Record form state
@@ -56,6 +59,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   const [showDeleteRecordDialog, setShowDeleteRecordDialog] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null);
+  const [editingTreatment, setEditingTreatment] = useState(null);
   const [medicalRecordForm, setMedicalRecordForm] = useState({
     record_type: "prontuario",
     diagnosis: "",
@@ -75,7 +79,13 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       setDetailedPatient(patient);
       loadPatientData(patient.id);
     }
-  }, [isOpen, patient]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollPosition;
+    }
+  }, [detailedPatient]);
 
   const handleOpenChange = (isOpen) => {
     if (!isOpen) {
@@ -106,17 +116,47 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     onClose();
   };
 
+  const handleTreatmentDialogOpenChange = (isOpen) => {
+    if (!isOpen) {
+      setEditingTreatment(null);
+      setTreatmentForm({
+        name: "",
+        start_date: new Date().toISOString().split('T')[0],
+        description: "",
+        prescribed_medications: "",
+        frequency: "",
+        estimated_duration: "",
+        status: "ongoing"
+      });
+    }
+    setShowTreatmentDialog(isOpen);
+  };
+
   const loadPatientData = async (patientId) => {
     if (!patientId) return;
+
+    if (scrollRef.current) {
+      setScrollPosition(scrollRef.current.scrollTop);
+    }
+
     try {
       setLoading(true);
+
+      const noCacheConfig = {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      };
+
       const [patientRes, recordsRes, profsRes, servicesRes, debtsRes, appointmentsRes] = await Promise.all([
-        api.get(`/patients/${patientId}`),
-        api.get(`/patients/${patientId}/medical-records`),
-        api.get(`/professionals`),
-        api.get(`/services`),
-        api.get(`/patients/${patientId}/debts`),
-        api.get(`/appointments?patient_id=${patientId}`)
+        api.get(`/patients/${patientId}`, noCacheConfig),
+        api.get(`/patients/${patientId}/medical-records`, noCacheConfig),
+        api.get(`/professionals`, noCacheConfig),
+        api.get(`/services`, noCacheConfig),
+        api.get(`/patients/${patientId}/debts`, noCacheConfig),
+        api.get(`/appointments?patient_id=${patientId}`, noCacheConfig)
       ]);
 
       setDetailedPatient(patientRes.data);
@@ -163,12 +203,27 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
           substance_allergies: ""
         });
       }
+      return patientRes.data; // Retorna os dados do paciente atualizado
     } catch (error) {
       console.error("Error loading patient data:", error);
       toast.error("Erro ao carregar dados do paciente");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEditTreatment = (treatment) => {
+    setEditingTreatment(treatment);
+    setTreatmentForm({
+      name: treatment.name || "",
+      start_date: treatment.start_date || new Date().toISOString().split('T')[0],
+      description: treatment.description || "",
+      prescribed_medications: treatment.prescribed_medications || "",
+      frequency: treatment.frequency || "",
+      estimated_duration: treatment.estimated_duration || "",
+      status: treatment.status || "ongoing"
+    });
+    setShowTreatmentDialog(true);
   };
 
   const handleFileUpload = async (e) => {
@@ -247,9 +302,19 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }
   };
 
+  const handleDateChange = (e) => {
+    const { value } = e.target;
+    setTreatmentForm({ ...treatmentForm, start_date: value });
+
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(value)) {
+      toast.error("Formato de data inválido. Use AAAA-MM-DD.");
+    }
+  };
+
   const handleAddTreatment = async () => {
-    if (!treatmentForm.service_id) {
-      toast.error("Selecione um serviço");
+    if (!treatmentForm.name || !treatmentForm.start_date || !treatmentForm.description) {
+      toast.error("Preencha todos os campos obrigatórios: Nome, Data de Início e Descrição.");
       return;
     }
 
@@ -258,17 +323,37 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       toast.success("Tratamento adicionado!");
       setShowTreatmentDialog(false);
       setTreatmentForm({
-        date: new Date().toISOString().split('T')[0],
-        service_id: "",
-        service_name: "",
+        name: "",
+        start_date: new Date().toISOString().split('T')[0],
         description: "",
-        professional_id: "",
-        professional_name: "",
-        status: "completed"
+        prescribed_medications: "",
+        frequency: "",
+        estimated_duration: "",
+        status: "ongoing"
       });
-      onUpdate();
+      const updatedPatient = await loadPatientData(patient.id);
+      onUpdate(updatedPatient);
     } catch (error) {
+      console.error("Erro ao adicionar tratamento:", error);
       toast.error("Erro ao adicionar tratamento");
+    }
+  };
+
+  const handleUpdateTreatment = async () => {
+    if (!treatmentForm.name || !treatmentForm.start_date || !treatmentForm.description) {
+      toast.error("Preencha todos os campos obrigatórios: Nome, Data de Início e Descrição.");
+      return;
+    }
+
+    try {
+      await api.put(`/patients/${patient.id}/treatments/${editingTreatment.id}`, treatmentForm);
+      toast.success("Tratamento atualizado com sucesso!");
+      setShowTreatmentDialog(false);
+      setEditingTreatment(null);
+      const updatedPatient = await loadPatientData(patient.id);
+      onUpdate(updatedPatient);
+    } catch (error) {
+      toast.error("Erro ao atualizar tratamento");
     }
   };
 
@@ -278,33 +363,14 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     try {
       await api.delete(`/patients/${patient.id}/treatments/${treatmentId}`);
       toast.success("Tratamento removido!");
-      onUpdate();
+      const updatedPatient = await loadPatientData(patient.id);
+      onUpdate(updatedPatient);
     } catch (error) {
       toast.error("Erro ao remover tratamento");
     }
   };
 
-  const handleServiceChange = (serviceId) => {
-    const service = services.find(s => s.id === serviceId);
-    if (service) {
-      setTreatmentForm({
-        ...treatmentForm,
-        service_id: serviceId,
-        service_name: service.name
-      });
-    }
-  };
 
-  const handleProfessionalChange = (professionalId) => {
-    const prof = professionals.find(p => p.id === professionalId);
-    if (prof) {
-      setTreatmentForm({
-        ...treatmentForm,
-        professional_id: professionalId,
-        professional_name: prof.name
-      });
-    }
-  };
 
   const handleAddMedicalRecord = async (sendWhatsApp = false) => {
     try {
@@ -313,12 +379,12 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       if (editingRecord) {
         const response = await api.put(`/medical-records/${editingRecord.id}`, medicalRecordForm);
         recordId = editingRecord.id;
-        toast.success("Prontuário atualizado com sucesso!");
+        toast.success("Documento atualizado com sucesso!");
       } else {
         const payload = { ...medicalRecordForm, patient_id: detailedPatient.id };
         const response = await api.post("/medical-records", payload);
         recordId = response.data.id;
-        toast.success("Prontuário criado com sucesso!");
+        toast.success("Documento criado com sucesso!");
       }
 
       if (sendWhatsApp && detailedPatient.phone) {
@@ -328,9 +394,9 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
             patient_phone: detailedPatient.phone,
             patient_name: detailedPatient.name
           });
-          toast.success("Prontuário enviado via WhatsApp!");
+          toast.success("Documento enviado via WhatsApp!");
         } catch (error) {
-          const errorMessage = error.response?.data?.detail || "Erro ao enviar via WhatsApp. O prontuário foi salvo, mas o envio falhou.";
+          const errorMessage = error.response?.data?.detail || "Erro ao enviar via WhatsApp. O documento foi salvo, mas o envio falhou.";
           toast.error(errorMessage);
         }
       }
@@ -353,7 +419,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       loadPatientData(detailedPatient.id);
       onUpdate();
     } catch (error) {
-      const errorMessage = error.response?.data?.detail || (editingRecord ? "Erro ao atualizar prontuário" : "Erro ao criar prontuário");
+      const errorMessage = error.response?.data?.detail || (editingRecord ? "Erro ao atualizar documento" : "Erro ao criar documento");
       toast.error(errorMessage);
     }
   };
@@ -389,7 +455,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `prontuario_${detailedPatient.name}_${new Date().toISOString().split('T')[0]}.pdf`);
+      link.setAttribute('download', `documento_${detailedPatient.name}_${new Date().toISOString().split('T')[0]}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -410,13 +476,13 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     
     try {
       await api.delete(`/medical-records/${recordToDelete.id}`);
-      toast.success("Prontuário excluído com sucesso!");
+      toast.success("Documento excluído com sucesso!");
       setShowDeleteRecordDialog(false);
       setRecordToDelete(null);
       loadPatientData(detailedPatient.id);
       onUpdate();
     } catch (error) {
-      toast.error("Erro ao excluir prontuário");
+      toast.error("Erro ao excluir documento");
     }
   };
 
@@ -428,14 +494,14 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     } else if (templateType === "atestado") {
       content = "ATESTADO MÉDICO\n\nAtesto para os devidos fins que o(a) paciente " + detailedPatient.name + " esteve sob meus cuidados médicos e necessita de afastamento de suas atividades por [X] dias, a partir de " + new Date().toLocaleDateString('pt-BR') + ".\n\nCID: [Código se aplicável]\n\nObservações:\n[Observações adicionais]\n\n___________________________\nDr(a). [Nome]\nCRM: [Número]\nData: " + new Date().toLocaleDateString('pt-BR');
     } else {
-      content = "PRONTUÁRIO MÉDICO\n\nPaciente: " + detailedPatient.name + "\nData da Consulta: " + new Date().toLocaleDateString('pt-BR') + "\n\nQueixa Principal:\n[Descrever sintomas]\n\nHistória da Doença Atual:\n[Histórico]\n\nExame Físico:\n[Resultados do exame]\n\nDiagnóstico:\n[Diagnóstico]\n\nTratamento Proposto:\n[Tratamento]\n\nMedicações:\n[Lista de medicações]\n\nObservações:\n[Observações adicionais]";
+      content = "DOCUMENTO MÉDICO\n\nPaciente: " + detailedPatient.name + "\nData da Consulta: " + new Date().toLocaleDateString('pt-BR') + "\n\nQueixa Principal:\n[Descrever sintomas]\n\nHistória da Doença Atual:\n[Histórico]\n\nExame Físico:\n[Resultados do exame]\n\nDiagnóstico:\n[Diagnóstico]\n\nTratamento Proposto:\n[Tratamento]\n\nMedicações:\n[Lista de medicações]\n\nObservações:\n[Observações adicionais]";
     }
     
     setMedicalRecordForm({
       ...medicalRecordForm,
       record_type: templateType,
       observations: content,
-      template_used: templateType === "receita" ? "Receita Médica" : templateType === "atestado" ? "Atestado Médico" : "Prontuário Completo"
+      template_used: templateType === "receita" ? "Receita Médica" : templateType === "atestado" ? "Atestado Médico" : "Documento Completo"
     });
     toast.success("Template aplicado!");
   };
@@ -445,7 +511,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   const tabs = [
     { id: "info", label: "Informações", icon: FileText },
     { id: "attachments", label: "Anexos", icon: Paperclip },
-    { id: "records", label: "Prontuários", icon: Stethoscope },
+    { id: "records", label: "Documentos", icon: Stethoscope },
     { id: "treatments", label: "Tratamentos", icon: Activity },
     { id: "anamnese", label: "Anamnese", icon: FileText },
     { id: "professionals", label: "Profissionais", icon: Users }
@@ -492,8 +558,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6 pt-4" style={{minHeight: 0}}>
-          {loading ? (
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-6 pt-4" style={{minHeight: 0}}>          {loading ? (
             <div className="text-center py-8 text-gray-500">Carregando...</div>
           ) : (
             <>
@@ -598,11 +663,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
               {activeTab === "records" && (
                 <div className="space-y-4">
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold">Prontuários do Paciente</h3>
+                    <h3 className="text-lg font-semibold">Documentos do Paciente</h3>
                     <Button onClick={() => setShowMedicalRecordDialog(true)} className="btn-primary">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Adicionar Prontuário
-                    </Button>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Adicionar Documento
+                      </Button>
                   </div>
                   {medicalRecords.length > 0 ? (
                     <div className="space-y-4">
@@ -646,12 +711,19 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                               Editar
                             </button>
                             <button
-                              onClick={() => handleDeleteRecord(record)}
-                              className="flex items-center gap-1 px-2 py-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition ml-auto"
-                              title="Excluir prontuário"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                                  onClick={() => handleEditTreatment(treatment)}
+                                  className="flex items-center gap-1 px-2 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+                                  title="Editar tratamento"
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteTreatment(treatment.id)}
+                                  className="flex items-center gap-1 px-2 py-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition"
+                                  title="Excluir tratamento"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
                           </div>
                         </div>
                       ))}
@@ -659,7 +731,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                   ) : (
                     <div className="text-center py-12 text-gray-500">
                       <Stethoscope className="w-16 h-16 mx-auto mb-4 opacity-30" />
-                      <p>Nenhum prontuário cadastrado</p>
+                      <p>Nenhum documento cadastrado</p>
                     </div>
                   )}
                 </div>
@@ -670,9 +742,16 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                 <div className="space-y-4">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-semibold">Tratamentos Realizados</h3>
-                    <p className="text-sm text-gray-500">
-                      Baseado nos agendamentos do paciente
-                    </p>
+                    <Button 
+                      onClick={() => {
+                        setEditingTreatment(null); // Garante que está em modo de adição
+                        setShowTreatmentDialog(true);
+                      }}
+                      className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition-all duration-300 shadow-md hover:shadow-lg"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Adicionar Tratamento
+                    </Button>
                   </div>
 
                   {patient.treatments && patient.treatments.length > 0 ? (
@@ -692,7 +771,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                                 </span>
                               </div>
                               <p className="text-sm text-gray-600">
-                                Data: {new Date(treatment.date).toLocaleDateString('pt-BR')}
+                                Data: {formatDate(treatment.start_date)}
                               </p>
                               {treatment.professional_name && (
                                 <p className="text-sm text-gray-600">
@@ -703,12 +782,22 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                                 <p className="text-sm text-gray-600 mt-2">{treatment.description}</p>
                               )}
                             </div>
-                            <button
-                              onClick={() => handleDeleteTreatment(treatment.id)}
-                              className="text-red-500 hover:text-red-700"
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
+                            <div className="flex gap-2 mt-4 pt-3 border-t">
+                              <button
+                                onClick={() => handleEditTreatment(treatment)}
+                                className="flex items-center gap-1 px-2 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+                                title="Editar tratamento"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTreatment(treatment.id)}
+                                className="flex items-center gap-1 px-2 py-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition"
+                                title="Excluir tratamento"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -921,69 +1010,85 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
 
     {/* Treatment Dialog - Moved outside main dialog */}
-    <Dialog open={showTreatmentDialog} onOpenChange={setShowTreatmentDialog}>
+    <Dialog open={showTreatmentDialog} onOpenChange={handleTreatmentDialogOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Adicionar Tratamento</DialogTitle>
+          <DialogTitle>{editingTreatment ? "Editar Tratamento" : "Adicionar Tratamento"}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <Label>Data do Tratamento *</Label>
-            <Input
-              type="date"
-              value={treatmentForm.date}
-              onChange={(e) => setTreatmentForm({...treatmentForm, date: e.target.value})}
-            />
+        <div className="p-6 space-y-4">
+          {/* Campos Obrigatórios */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="treatment-name">Nome do Tratamento <span className="text-red-500">*</span></Label>
+              <Input
+                id="treatment-name"
+                value={treatmentForm.name}
+                onChange={(e) => setTreatmentForm({ ...treatmentForm, name: e.target.value })}
+                placeholder="Ex: Clareamento Dental"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="start-date">Data de Início <span className="text-red-500">*</span></Label>
+              <Input
+                id="start-date"
+                type="date"
+                value={treatmentForm.start_date}
+                onChange={handleDateChange}
+              />
+            </div>
           </div>
-          <div>
-            <Label>Serviço Realizado *</Label>
-            <select
-              className="input-field"
-              value={treatmentForm.service_id}
-              onChange={(e) => handleServiceChange(e.target.value)}
-            >
-              <option value="">Selecione um serviço</option>
-              {services.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <Label>Profissional (opcional)</Label>
-            <select
-              className="input-field"
-              value={treatmentForm.professional_id}
-              onChange={(e) => handleProfessionalChange(e.target.value)}
-            >
-              <option value="">Nenhum</option>
-              {professionals.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <Label>Status</Label>
-            <select
-              className="input-field"
-              value={treatmentForm.status}
-              onChange={(e) => setTreatmentForm({...treatmentForm, status: e.target.value})}
-            >
-              <option value="completed">Concluído</option>
-              <option value="in_progress">Em andamento</option>
-            </select>
-          </div>
-          <div>
-            <Label>Descrição (opcional)</Label>
+          <div className="space-y-2">
+            <Label htmlFor="description">Descrição <span className="text-red-500">*</span></Label>
             <textarea
-              className="input-field"
+              id="description"
+              rows="4"
+              className="w-full p-2 border rounded"
               value={treatmentForm.description}
-              onChange={(e) => setTreatmentForm({...treatmentForm, description: e.target.value})}
-              placeholder="Observações sobre o tratamento"
-              rows={3}
-            />
+              onChange={(e) => setTreatmentForm({ ...treatmentForm, description: e.target.value })}
+              placeholder="Descreva o tratamento em detalhes"
+            ></textarea>
           </div>
-          <Button onClick={handleAddTreatment} className="w-full btn-primary">
-            Adicionar Tratamento
+
+          {/* Campos Opcionais */}
+          <div className="space-y-4 pt-4 border-t">
+            <h4 className="font-semibold text-md">Informações Adicionais (Opcional)</h4>
+            <div className="space-y-2">
+              <Label htmlFor="prescribed-medications">Medicamentos Prescritos</Label>
+              <Input
+                id="prescribed-medications"
+                value={treatmentForm.prescribed_medications}
+                onChange={(e) => setTreatmentForm({ ...treatmentForm, prescribed_medications: e.target.value })}
+                placeholder="Ex: Amoxicilina 500mg"
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="frequency">Frequência</Label>
+                <Input
+                  id="frequency"
+                  value={treatmentForm.frequency}
+                  onChange={(e) => setTreatmentForm({ ...treatmentForm, frequency: e.target.value })}
+                  placeholder="Ex: 1 vez por semana"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="estimated-duration">Duração Estimada</Label>
+                <Input
+                  id="estimated-duration"
+                  value={treatmentForm.estimated_duration}
+                  onChange={(e) => setTreatmentForm({ ...treatmentForm, estimated_duration: e.target.value })}
+                  placeholder="Ex: 3 meses"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end p-6 bg-gray-50">
+          <Button variant="outline" onClick={() => setShowTreatmentDialog(false)} className="mr-2">
+            Cancelar
+          </Button>
+          <Button onClick={editingTreatment ? handleUpdateTreatment : handleAddTreatment}>
+            {editingTreatment ? "Salvar Alterações" : "Adicionar Tratamento"}
           </Button>
         </div>
       </DialogContent>
@@ -996,7 +1101,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }}>
       <DialogContent className="max-w-3xl max-h-[90vh] w-[95vw] md:w-auto overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editingRecord ? "Editar Prontuário" : "Novo Prontuário"} - {patient?.name}</DialogTitle>
+          <DialogTitle>{editingRecord ? "Editar Documento" : "Novo Documento"} - {patient?.name}</DialogTitle>
         </DialogHeader>
         
         {/* Templates Rápidos */}
@@ -1035,7 +1140,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
               value={medicalRecordForm.record_type}
               onChange={(e) => setMedicalRecordForm({...medicalRecordForm, record_type: e.target.value})}
             >
-              <option value="prontuario">Prontuário Completo</option>
+              <option value="prontuario">Documento Completo</option>
               <option value="receita">Receita Médica</option>
               <option value="atestado">Atestado Médico</option>
             </select>
@@ -1061,7 +1166,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
           </div>
 
           <div>
-            <Label>Conteúdo Completo do Prontuário</Label>
+            <Label>Conteúdo Completo do Documento</Label>
             <textarea
               className="input-field min-h-[300px] font-mono text-sm"
               value={medicalRecordForm.observations}
@@ -1154,7 +1259,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-gray-700">
-            Tem certeza que deseja excluir este prontuário?
+            Tem certeza que deseja excluir este documento?
           </p>
           <p className="text-sm text-red-600">
             <strong>Atenção:</strong> Esta ação não pode ser desfeita.

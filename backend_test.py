@@ -335,6 +335,71 @@ class CliniFlowAPITester:
         # This might return 404 but we test the endpoint structure
         self.run_test("Generate Auto Message", "POST", "auto-messages/send", [200, 404], auto_msg_data)
 
+    def test_treatments_date_validation(self):
+        """Test date validation for treatments"""
+        # First, create a patient to associate treatments with
+        patient_data = {
+            "name": "Patient for Treatment Test",
+            "email": f"patient.treatment.{uuid.uuid4().hex[:8]}@test.com",
+            "phone": "(11) 55555-5555",
+            "birthdate": "1990-01-01",
+        }
+        success, created_patient = self.run_test("Create Patient for Treatment", "POST", "patients", 200, patient_data)
+        
+        if not success or 'id' not in created_patient:
+            print("❌ Failed to create a patient for treatment date validation test.")
+            return
+
+        patient_id = created_patient['id']
+
+        # 1. Test creating a treatment with a VALID date
+        treatment_valid = {
+            "name": "Valid Treatment Name",
+            "description": "Valid Date Test",
+            "start_date": "2024-12-20",
+        }
+        success, created_treatment = self.run_test(
+            "Create Treatment with Valid Date", "POST", f"patients/{patient_id}/treatments", 200, treatment_valid
+        )
+
+        if not success or 'id' not in created_treatment:
+            print("❌ Failed to create treatment with a valid date.")
+            return
+        
+        treatment_id = created_treatment['id']
+
+        # 2. Test creating a treatment with an INVALID date format (DD-MM-YYYY)
+        treatment_invalid_format = {
+            "name": "Invalid Treatment Name",
+            "description": "Invalid Date Format Test",
+            "start_date": "20-12-2024",
+        }
+        self.run_test(
+            "Create Treatment with Invalid Date Format", "POST", f"patients/{patient_id}/treatments", 400, treatment_invalid_format
+        )
+
+        # 3. Test creating a treatment with invalid date text
+        treatment_invalid_text = {
+            "name": "Invalid Treatment Name",
+            "description": "Invalid Date Text Test",
+            "start_date": "not-a-date",
+        }
+        self.run_test(
+            "Create Treatment with Invalid Date Text", "POST", f"patients/{patient_id}/treatments", 400, treatment_invalid_text
+        )
+
+        # 4. Test updating a treatment with a VALID date
+        update_valid_date = {"start_date": "2025-01-15"}
+        self.run_test(
+            "Update Treatment with Valid Date", "PUT", f"patients/{patient_id}/treatments/{treatment_id}", 200, update_valid_date
+        )
+
+        # 5. Test updating a treatment with an INVALID date
+        update_invalid_date = {"start_date": "15/01/2025"}
+        self.run_test(
+            "Update Treatment with Invalid Date", "PUT", f"patients/{patient_id}/treatments/{treatment_id}", 400, update_invalid_date
+        )
+
 def main():
     print("🏥 CliniFlow API Testing Suite")
     print("=" * 50)
@@ -381,6 +446,9 @@ def main():
     
     print("\n🤖 Testing Auto Messages...")
     tester.test_auto_messages()
+
+    print("\n🧪 Testing Treatments Date Validation...")
+    tester.test_treatments_date_validation()
     
     # Print final results
     print("\n" + "=" * 50)

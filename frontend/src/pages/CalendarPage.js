@@ -79,9 +79,7 @@ export default function CalendarPage() {
 
   const loadMonthAppointments = async () => {
     try {
-      const year = currentDate.getFullYear();
-      const month = currentDate.getMonth() + 1;
-      const response = await api.get(`/appointments`);
+      const response = await api.get(`/appointments?sort_by=appointment_date&order=asc`);
       setAppointments(response.data);
     } catch (error) {
       toast.error("Erro ao carregar agendamentos");
@@ -315,7 +313,8 @@ export default function CalendarPage() {
       filtered = filtered.filter(apt => apt.service_id === filterService);
     }
     
-    return filtered;
+    // Ordenar por hora
+    return filtered.sort((a, b) => a.appointment_time.localeCompare(b.appointment_time));
   };
 
   const previousMonth = () => {

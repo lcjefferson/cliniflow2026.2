@@ -59,6 +59,25 @@ JWT_EXPIRATION = int(os.environ.get('JWT_EXPIRATION_MINUTES', '10080'))
 
 security = HTTPBearer()
 
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if user is None:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+
+
 scheduler = AsyncScheduler()
 
 # Automation: Follow-up rules and birthday greetings
@@ -125,6 +144,15 @@ async def lifespan(app: FastAPI):
     await scheduler.__aexit__(None, None, None)
 
 app = FastAPI(lifespan=lifespan)
+
+@app.middleware("http")
+async def add_no_cache_header(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
 sio = SocketManager(app=app)
 api_router = APIRouter(prefix="/api")
 
@@ -223,13 +251,22 @@ class Attachment(BaseModel):
 
 class Treatment(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    date: str
-    service_id: str
-    service_name: str
+    name: str
+    start_date: str
     description: Optional[str] = None
-    professional_id: Optional[str] = None
-    professional_name: Optional[str] = None
-    status: str = "completed"  # completed, in_progress
+    prescribed_medications: Optional[str] = None
+    frequency: Optional[str] = None
+    estimated_duration: Optional[str] = None
+    status: str = "ongoing"  # ongoing, completed
+
+class TreatmentUpdate(BaseModel):
+    name: Optional[str] = None
+    start_date: Optional[str] = None
+    description: Optional[str] = None
+    prescribed_medications: Optional[str] = None
+    frequency: Optional[str] = None
+    estimated_duration: Optional[str] = None
+    status: Optional[str] = None
 
 class Anamnese(BaseModel):
     # Histórico Médico
@@ -254,6 +291,100 @@ class Anamnese(BaseModel):
     substance_allergies: Optional[str] = None
     
     last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+def validate_date(date_string: str):
+    try:
+        datetime.strptime(date_string, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de data inválido. Por favor, use AAAA-MM-DD.")
+
+@api_router.post("/patients/{patient_id}/treatments", response_model=Treatment)
+async def add_treatment(patient_id: str, treatment_data: Treatment, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    validate_date(treatment_data.start_date)
+
+    new_treatment = treatment_data.model_dump()
+    
+    result = await db.patients.update_one(
+        {"id": patient_id},
+        {"$push": {"treatments": new_treatment}}
+    )
+
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    return new_treatment
+
+@api_router.delete("/patients/{patient_id}/treatments/{treatment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_treatment(patient_id: str, treatment_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    result = await db.patients.update_one(
+        {"id": patient_id},
+        {"$pull": {"treatments": {"id": treatment_id}}}
+    )
+
+    if result.modified_count == 0:
+        # This can happen if the patient or the treatment does not exist.
+        # We check if the patient exists to give a more specific error.
+        patient = await db.patients.find_one({"id": patient_id})
+        if not patient:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        # If patient exists, then the treatment was not found.
+        # In a DELETE operation, this is often considered a success (idempotency),
+        # so we might not need to raise an error here.
+        # However, if feedback is desired, a 404 is appropriate.
+        raise HTTPException(status_code=404, detail="Treatment not found")
+
+    return
+
+@api_router.put("/patients/{patient_id}/treatments/{treatment_id}", response_model=Treatment)
+async def update_treatment(patient_id: str, treatment_id: str, treatment_update: TreatmentUpdate, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    # Validate date if it's being updated
+    if treatment_update.start_date:
+        validate_date(treatment_update.start_date)
+
+    update_data = treatment_update.model_dump(exclude_unset=True)
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No update data provided")
+
+    # Build the update query
+    update_fields = {f"treatments.$.{key}": value for key, value in update_data.items()}
+
+    result = await db.patients.update_one(
+        {"id": patient_id, "treatments.id": treatment_id},
+        {"$set": update_fields}
+    )
+
+    if result.modified_count == 0:
+        # Check if the patient exists to give a more specific error
+        patient = await db.patients.find_one({"id": patient_id})
+        if not patient:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        
+        # Check if the treatment exists
+        treatment_exists = any(t['id'] == treatment_id for t in patient.get('treatments', []))
+        if not treatment_exists:
+            raise HTTPException(status_code=404, detail="Treatment not found")
+        
+        # If both exist but nothing was modified, it might be that the data is the same
+        # or another issue. For simplicity, we'll return the current data.
+
+    # Retrieve the updated treatment to return it
+    updated_patient = await db.patients.find_one({"id": patient_id})
+    if updated_patient:
+        for treatment in updated_patient.get("treatments", []):
+            if treatment["id"] == treatment_id:
+                return treatment
+
+    raise HTTPException(status_code=404, detail="Could not retrieve updated treatment")
 
 class Patient(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -484,22 +615,7 @@ class GenerateDocumentRequest(BaseModel):
     record_id: str
     document_type: str  # prescription, certificate
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    token = credentials.credentials
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    
-    user = await db.users.find_one({"id": user_id}, {"_id": 0})
-    if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
+
 
 # Transaction Routes
 @api_router.get("/transactions", response_model=List[Transaction])
@@ -508,8 +624,12 @@ async def get_transactions(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=503, detail="Database unavailable")
     transactions = await db.transactions.find({}, {"_id": 0}).to_list(1000)
     for trans in transactions:
-        if isinstance(trans.get('created_at'), datetime):
-            trans['created_at'] = trans['created_at'].isoformat()
+        try:
+            if isinstance(trans.get('created_at'), datetime):
+                trans['created_at'] = trans['created_at'].isoformat()
+        except Exception as e:
+            logging.error(f"Error converting created_at for transaction {trans.get('id')}: {e}")
+            trans['created_at'] = None
     return transactions
 
 @api_router.put("/transactions/{transaction_id}", response_model=Transaction)
@@ -914,10 +1034,43 @@ async def get_attachment(patient_id: str, attachment_id: str, current_user: dict
 
 @api_router.get("/patients", response_model=List[dict])
 async def get_patients(current_user: dict = Depends(get_current_user)):
-    patients = await db.patients.find({}, {"_id": 0}).to_list(10000)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    pipeline = [
+        {
+            "$lookup": {
+                "from": "transactions",
+                "localField": "id",
+                "foreignField": "patient_id",
+                "as": "debts"
+            }
+        },
+        {
+            "$addFields": {
+                "total_debt": {
+                    "$sum": "$debts.amount"
+                }
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "debts": 0
+            }
+        }
+    ]
+
+    patients = await db.patients.aggregate(pipeline).to_list(10000)
+
     for p in patients:
-        if isinstance(p.get('created_at'), str):
-            p['created_at'] = datetime.fromisoformat(p['created_at'])
+        try:
+            if isinstance(p.get('created_at'), datetime):
+                p['created_at'] = p['created_at'].isoformat()
+        except Exception as e:
+            logging.error(f"Error converting created_at for patient {p.get('id')}: {e}")
+            p['created_at'] = None
+
     return patients
 
 @api_router.get("/patients/{patient_id}/medical-records", response_model=List[dict])
@@ -995,11 +1148,25 @@ async def create_appointment(data: AppointmentCreate, current_user: dict = Depen
     return appointment
 
 @api_router.get("/appointments", response_model=List[dict])
-async def get_appointments(current_user: dict = Depends(get_current_user)):
-    appointments = await db.appointments.find({}, {"_id": 0}).to_list(1000)
+async def get_appointments(
+    sort_by: Optional[str] = None,
+    order: Optional[str] = "asc",
+    current_user: dict = Depends(get_current_user)
+):
+    query = {}
+    sort_order = 1 if order == "asc" else -1
+
+    cursor = db.appointments.find(query, {"_id": 0})
+
+    if sort_by:
+        cursor = cursor.sort(sort_by, sort_order)
+
+    appointments = await cursor.to_list(1000)
+    
     for a in appointments:
         if isinstance(a.get('created_at'), str):
             a['created_at'] = datetime.fromisoformat(a['created_at'])
+            
     return appointments
 
 @api_router.put("/appointments/{appointment_id}")
@@ -1093,6 +1260,18 @@ async def update_lead(lead_id: str, data: LeadCreate, current_user: dict = Depen
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Lead not found")
     return {"message": "Lead updated successfully"}
+
+@api_router.delete("/leads/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    result = await db.leads.delete_one({"id": lead_id})
+
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    return
 
 # Conversation Routes
 @api_router.post("/conversations", response_model=Conversation)
