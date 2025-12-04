@@ -52,6 +52,7 @@ if mongo_url:
         db = client.get_database(db_name)
         # Force connection test
         client.admin.command('ping') 
+        print("MongoDB connection successful")
     except Exception as e:
         print(f"Error connecting to MongoDB: {e}")
         client = None
