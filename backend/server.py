@@ -42,7 +42,7 @@ load_dotenv(ROOT_DIR / '.env')
 # MongoDB connection
 mongo_url = os.environ.get('MONGO_URL', '').strip()
 db_name = os.environ.get('DB_NAME', 'clinicflow').strip()
-allowed_origins_env = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000')
+allowed_origins_env = os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000')
 ALLOWED_ORIGINS = [o.strip() for o in allowed_origins_env.split(',') if o.strip()]
 client: Optional[AsyncIOMotorClient] = None
 db = None
@@ -245,6 +245,23 @@ async def lifespan(app: FastAPI):
             pass
     if db is not None:
         try:
+            # Create admin user if it doesn't exist
+            admin_email = os.environ.get("ADMIN_EMAIL")
+            admin_password = os.environ.get("ADMIN_PASSWORD")
+            if admin_email and admin_password:
+                user = await db.users.find_one({"email": admin_email})
+                if not user:
+                    await db.users.insert_one({
+                        "id": str(uuid.uuid4()),
+                        "name": "Admin",
+                        "email": admin_email,
+                        "password_hash": hash_password(admin_password),
+                        "role": {"is_admin": True, "is_attendant": False},
+                        "user_type": "admin",
+                        "created_at": datetime.now(timezone.utc)
+                    })
+                    print(f"Admin user {admin_email} created.")
+
             await db.patients.create_index("id")
             await db.patients.create_index("phone")
             await db.patients.create_index("email")
@@ -261,8 +278,8 @@ async def lifespan(app: FastAPI):
             await db.leads.create_index("phone")
             await db.leads.create_index("email")
             await db.leads.create_index([("created_at", -1)])
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error during startup: {e}")
     yield
     if scheduler:
         try:
@@ -271,6 +288,14 @@ async def lifespan(app: FastAPI):
             pass
 
 app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.middleware("http")
 async def add_no_cache_header(request: Request, call_next):
