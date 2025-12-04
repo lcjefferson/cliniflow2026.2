@@ -8,11 +8,9 @@ services:
     autoDeploy: true
     healthCheckPath: /api/health
     envVars:
-      - key: MONGO_URL
-        fromSecret: MONGO_URL_SECRET
       - key: DB_NAME
         value: "clinicflow"
-      - key: ALLOWED_ORIGINS
+      - key: CORS_ORIGINS
         value: "https://cliniflow-frontend.onrender.com,http://localhost:3000"
 
   - type: web
