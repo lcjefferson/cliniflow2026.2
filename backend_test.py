@@ -292,6 +292,7 @@ class CliniFlowAPITester:
             
         record_id = created_record['id']
         print(f"   Medical Record created with ID: {record_id}")
+        print(f"   teste")
 
         # 2. Read Medical Record
         self.run_test("Get Medical Record by ID", "GET", f"medical-records/{record_id}", 200)
