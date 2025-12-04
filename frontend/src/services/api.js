@@ -1,9 +1,8 @@
 import axios from 'axios';
 
-// Use relative path if REACT_APP_BACKEND_URL is not set (works in any environment)
-const API_URL = process.env.REACT_APP_BACKEND_URL 
-  ? process.env.REACT_APP_BACKEND_URL + '/api'
-  : '/api';
+// Prefer explicit backend URL in development to avoid dev-server relative path issues
+const API_BASE = process.env.REACT_APP_BACKEND_URL || (process.env.NODE_ENV === 'development' ? 'http://127.0.0.1:8000' : '');
+const API_URL = `${API_BASE}/api`;
 
 const api = axios.create({
   baseURL: API_URL,

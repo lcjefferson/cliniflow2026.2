@@ -58,7 +58,7 @@ export default function FollowUpPage() {
 
   const loadFollowUps = async () => {
     try {
-      const response = await api.get("/followups");
+      const response = await api.get("/follow-ups");
       setFollowUps(response.data);
     } catch (error) {
       toast.error("Erro ao carregar follow-ups");
@@ -85,7 +85,7 @@ export default function FollowUpPage() {
 
   const loadRules = async () => {
     try {
-      const response = await api.get("/followup-rules");
+      const response = await api.get("/follow-up-rules");
       setRules(response.data);
     } catch (error) {
       console.error("Erro ao carregar regras:", error);
@@ -97,10 +97,10 @@ export default function FollowUpPage() {
     e.preventDefault();
     try {
       if (editingId) {
-        await api.put(`/followups/${editingId}`, formData);
+        await api.put(`/follow-ups/${editingId}`, formData);
         toast.success("Follow-up atualizado!");
       } else {
-        await api.post("/followups", formData);
+        await api.post("/follow-ups", formData);
         toast.success("Follow-up criado!");
       }
       setShowDialog(false);
@@ -143,7 +143,7 @@ export default function FollowUpPage() {
     if (!followUpToDelete) return;
     
     try {
-      await api.delete(`/followups/${followUpToDelete.id}`);
+      await api.delete(`/follow-ups/${followUpToDelete.id}`);
       toast.success("Follow-up deletado!");
       setDeleteDialog(false);
       setFollowUpToDelete(null);
@@ -155,7 +155,7 @@ export default function FollowUpPage() {
 
   const handleComplete = async (id) => {
     try {
-      await api.put(`/followups/${id}`, { status: "completed" });
+      await api.put(`/follow-ups/${id}`, { status: "completed" });
       toast.success("Follow-up marcado como concluído!");
       loadFollowUps();
     } catch (error) {
@@ -167,10 +167,10 @@ export default function FollowUpPage() {
     e.preventDefault();
     try {
       if (editingRuleId) {
-        await api.put(`/followup-rules/${editingRuleId}`, ruleFormData);
+        await api.put(`/follow-up-rules/${editingRuleId}`, ruleFormData);
         toast.success("Regra atualizada!");
       } else {
-        await api.post("/followup-rules", ruleFormData);
+        await api.post("/follow-up-rules", ruleFormData);
         toast.success("Regra criada!");
       }
       setShowRuleDialog(false);
@@ -204,7 +204,7 @@ export default function FollowUpPage() {
     if (!ruleToDelete) return;
     
     try {
-      await api.delete(`/followup-rules/${ruleToDelete.id}`);
+      await api.delete(`/follow-up-rules/${ruleToDelete.id}`);
       toast.success("Regra deletada!");
       setDeleteRuleDialog(false);
       setRuleToDelete(null);
@@ -216,7 +216,9 @@ export default function FollowUpPage() {
 
   const toggleRuleActive = async (id) => {
     try {
-      await api.patch(`/followup-rules/${id}/toggle`);
+      const rule = rules.find(r => r.id === id);
+      if (!rule) return;
+      await api.put(`/follow-up-rules/${id}`, { ...rule, active: !rule.active });
       toast.success("Status da regra atualizado!");
       loadRules();
     } catch (error) {

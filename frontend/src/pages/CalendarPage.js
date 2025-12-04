@@ -268,6 +268,31 @@ export default function CalendarPage() {
     return service ? service.name : "Serviço";
   };
 
+  const getRoomName = (roomId) => {
+    const room = rooms.find(r => r.id === roomId);
+    return room ? room.name : "Sala";
+  };
+
+  const getAppointmentColor = (apt) => {
+    if (apt.status === 'in_progress') return 'bg-orange-500';
+    if (apt.status === 'completed') return 'bg-green-600';
+    if (apt.status === 'cancelled') return 'bg-red-600';
+    return getProfessionalColor(apt.professional_id);
+  };
+
+  const updateAppointmentStatus = async (id, status) => {
+    try {
+      await api.put(`/appointments/${id}`, { status });
+      await loadMonthAppointments();
+      toast.success('Status atualizado');
+      if (selectedAppointment && selectedAppointment.id === id) {
+        setSelectedAppointment({ ...selectedAppointment, status });
+      }
+    } catch (error) {
+      toast.error('Erro ao atualizar status');
+    }
+  };
+
   // Gerar dias do mês
   const generateCalendarDays = () => {
     const year = currentDate.getFullYear();
@@ -535,8 +560,8 @@ export default function CalendarPage() {
                             <button
                               key={aptIndex}
                               onClick={() => openAppointmentDetails(apt)}
-                              className={`w-full text-left text-xs px-2 py-1 rounded text-white hover:opacity-80 transition-opacity truncate ${
-                                getProfessionalColor(apt.professional_id)
+                          className={`w-full text-left text-xs px-2 py-1 rounded text-white hover:opacity-80 transition-opacity truncate ${
+                                getAppointmentColor(apt)
                               }`}
                             >
                               {apt.appointment_time} - {getProfessionalName(apt.professional_id)}
@@ -574,7 +599,7 @@ export default function CalendarPage() {
                           key={aptIndex}
                           onClick={() => openAppointmentDetails(apt)}
                           className={`w-full text-left text-xs px-2 py-2 rounded text-white hover:opacity-80 transition-opacity ${
-                            getProfessionalColor(apt.professional_id)
+                            getAppointmentColor(apt)
                           }`}
                         >
                           <div className="font-semibold">{apt.appointment_time}</div>
@@ -600,7 +625,7 @@ export default function CalendarPage() {
                       key={index}
                       onClick={() => openAppointmentDetails(apt)}
                       className={`w-full text-left p-4 rounded-lg text-white hover:opacity-90 transition-opacity ${
-                        getProfessionalColor(apt.professional_id)
+                        getAppointmentColor(apt)
                       }`}
                     >
                       <div>
@@ -655,6 +680,10 @@ export default function CalendarPage() {
                   <Label className="text-gray-600">Serviço</Label>
                   <p className="font-semibold">{getServiceName(selectedAppointment.service_id)}</p>
                 </div>
+                <div>
+                  <Label className="text-gray-600">Sala</Label>
+                  <p className="font-semibold">{getRoomName(selectedAppointment.room_id)}</p>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label className="text-gray-600">Data</Label>
@@ -675,7 +704,22 @@ export default function CalendarPage() {
                 )}
                 <div>
                   <Label className="text-gray-600">Status</Label>
-                  <p className="font-semibold capitalize">{selectedAppointment.status || "Agendado"}</p>
+                  <div className="mt-1">
+                    <Select
+                      value={selectedAppointment.status || 'scheduled'}
+                      onValueChange={(value) => updateAppointmentStatus(selectedAppointment.id, value)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Selecione o status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="scheduled">Agendado</SelectItem>
+                        <SelectItem value="in_progress">Em andamento</SelectItem>
+                        <SelectItem value="completed">Concluído</SelectItem>
+                        <SelectItem value="cancelled">Cancelado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 
                 {/* Botões de Ação */}
@@ -869,30 +913,27 @@ export default function CalendarPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Email *</Label>
+                  <Label>Email</Label>
                   <Input
                     type="email"
                     value={newPatientData.email}
                     onChange={(e) => setNewPatientData({...newPatientData, email: e.target.value})}
-                    required
                   />
                 </div>
                 <div>
-                  <Label>Telefone *</Label>
+                  <Label>Telefone</Label>
                   <Input
                     value={newPatientData.phone}
                     onChange={(e) => setNewPatientData({...newPatientData, phone: e.target.value})}
-                    required
                   />
                 </div>
               </div>
               <div>
-                <Label>Data de Nascimento *</Label>
+                <Label>Data de Nascimento</Label>
                 <Input
                   type="date"
                   value={newPatientData.birthdate}
                   onChange={(e) => setNewPatientData({...newPatientData, birthdate: e.target.value})}
-                  required
                 />
               </div>
               <div>

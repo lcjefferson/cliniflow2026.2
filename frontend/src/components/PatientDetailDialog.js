@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import api from "../services/api";
 import { 
-  FileText, Paperclip, Stethoscope, Activity, Users, 
+  FileText, Paperclip, Stethoscope, Activity, 
   X, Upload, Trash2, Plus, Edit, Save, AlertCircle,
-  Download, CheckCircle, Clock, MessageSquare
+  Download, CheckCircle, Clock, MessageSquare, DollarSign
 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -17,8 +17,21 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   const [detailedPatient, setDetailedPatient] = useState(patient);
   const [medicalRecords, setMedicalRecords] = useState([]);
   const [professionals, setProfessionals] = useState([]);
+  const [allProfessionals, setAllProfessionals] = useState([]);
   const [services, setServices] = useState([]);
   const [debts, setDebts] = useState({ total_debt: 0, unpaid_appointments: [] });
+  const [appointmentsList, setAppointmentsList] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [showTransactionDialog, setShowTransactionDialog] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState(null);
+  const [transactionForm, setTransactionForm] = useState({
+    amount: "",
+    payment_method: "cash",
+    description: "",
+    transaction_date: new Date().toISOString().split('T')[0],
+    status: "paid",
+    appointment_id: ""
+  });
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef(null);
   const [scrollPosition, setScrollPosition] = useState(0);
@@ -51,8 +64,13 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     prescribed_medications: "",
     frequency: "",
     estimated_duration: "",
+    professional_id: "",
     status: "ongoing"
   });
+  const [showDeleteTreatmentDialog, setShowDeleteTreatmentDialog] = useState(false);
+  const [treatmentToDelete, setTreatmentToDelete] = useState(null);
+  const [showDeleteAttachmentDialog, setShowDeleteAttachmentDialog] = useState(false);
+  const [attachmentToDelete, setAttachmentToDelete] = useState(null);
 
   // Medical Record form state
   const [showMedicalRecordDialog, setShowMedicalRecordDialog] = useState(false);
@@ -126,6 +144,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         prescribed_medications: "",
         frequency: "",
         estimated_duration: "",
+        professional_id: "",
         status: "ongoing"
       });
     }
@@ -150,13 +169,14 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         },
       };
 
-      const [patientRes, recordsRes, profsRes, servicesRes, debtsRes, appointmentsRes] = await Promise.all([
+      const [patientRes, recordsRes, profsRes, servicesRes, debtsRes, appointmentsRes, transactionsRes] = await Promise.all([
         api.get(`/patients/${patientId}`, noCacheConfig),
         api.get(`/patients/${patientId}/medical-records`, noCacheConfig),
         api.get(`/professionals`, noCacheConfig),
         api.get(`/services`, noCacheConfig),
         api.get(`/patients/${patientId}/debts`, noCacheConfig),
-        api.get(`/appointments?patient_id=${patientId}`, noCacheConfig)
+        api.get(`/appointments?patient_id=${patientId}`, noCacheConfig),
+        api.get(`/transactions`, noCacheConfig)
       ]);
 
       setDetailedPatient(patientRes.data);
@@ -175,11 +195,17 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       const uniqueProfIds = [...new Set(profIdsFromHistory.filter(Boolean))];
       
       const associatedProfessionals = allClinicProfessionals.filter(p => uniqueProfIds.includes(p.id));
-      
-      setProfessionals(associatedProfessionals);
+      const manualProfIds = (patientRes.data.professionals || []);
+      const mergedIds = [...new Set([...uniqueProfIds, ...manualProfIds])];
+      const mergedProfessionals = allClinicProfessionals.filter(p => mergedIds.includes(p.id));
+      setProfessionals(mergedProfessionals);
+      setAllProfessionals(allClinicProfessionals);
+      setAppointmentsList(appointments.filter(a => a.patient_id === patientId));
       
       setServices(servicesRes.data);
       setDebts(debtsRes.data);
+      const allTransactions = transactionsRes.data || [];
+      setTransactions(allTransactions.filter(t => t.patient_id === patientId));
 
       if (patientRes.data.anamnese) {
         setAnamnese(patientRes.data.anamnese);
@@ -221,6 +247,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       prescribed_medications: treatment.prescribed_medications || "",
       frequency: treatment.frequency || "",
       estimated_duration: treatment.estimated_duration || "",
+      professional_id: treatment.professional_id || "",
       status: treatment.status || "ongoing"
     });
     setShowTreatmentDialog(true);
@@ -249,12 +276,12 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
           size_bytes: file.size
         };
 
-        await api.post(`/patients/${patient.id}/attachments`, attachment);
+        await api.post(`/patients/${detailedPatient.id}/attachments`, attachment);
         toast.success("Arquivo anexado com sucesso!", { id: originalToast });
         
         // Reload data inside modal and refresh parent list
-        loadPatientData(patient.id);
-        onUpdate();
+        const updatedPatient = await loadPatientData(patient.id);
+        onUpdate(updatedPatient);
       };
       reader.readAsDataURL(file);
     } catch (error) {
@@ -265,13 +292,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   };
 
   const handleDeleteAttachment = async (attachmentId) => {
-    if (!window.confirm("Tem certeza que deseja deletar este anexo?")) return;
-    
     try {
-      await api.delete(`/patients/${patient.id}/attachments/${attachmentId}`);
+      await api.delete(`/patients/${detailedPatient.id}/attachments/${attachmentId}`);
       toast.success("Anexo removido!");
-      loadPatientData(patient.id); // Recarrega os dados do paciente no modal
-      onUpdate(); // Atualiza a lista de pacientes no componente pai
+      const updatedPatient = await loadPatientData(patient.id);
+      onUpdate(updatedPatient);
     } catch (error) {
       toast.error("Erro ao remover anexo");
     }
@@ -279,7 +304,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
   const handleDownloadAttachment = async (attachment) => {
         try {
-            const response = await api.get(`/patients/${patient.id}/attachments/${attachment.id}`);
+            const response = await api.get(`/patients/${detailedPatient.id}/attachments/${attachment.id}`);
             const fullAttachment = response.data;
 
             const link = document.createElement('a');
@@ -296,7 +321,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     try {
       await api.put(`/patients/${patient.id}/anamnese`, anamnese);
       toast.success("Anamnese salva com sucesso!");
-      onUpdate();
+      const updatedPatient = await loadPatientData(patient.id);
+      onUpdate(updatedPatient);
     } catch (error) {
       toast.error("Erro ao salvar anamnese");
     }
@@ -319,7 +345,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }
 
     try {
-      await api.post(`/patients/${patient.id}/treatments`, treatmentForm);
+      const payload = {
+        ...treatmentForm,
+        professional_id: (treatmentForm.professional_id || "").trim() || undefined,
+      };
+      await api.post(`/patients/${detailedPatient.id}/treatments`, payload);
       toast.success("Tratamento adicionado!");
       setShowTreatmentDialog(false);
       setTreatmentForm({
@@ -329,9 +359,10 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         prescribed_medications: "",
         frequency: "",
         estimated_duration: "",
+        professional_id: "",
         status: "ongoing"
       });
-      const updatedPatient = await loadPatientData(patient.id);
+      const updatedPatient = await loadPatientData(detailedPatient.id);
       onUpdate(updatedPatient);
     } catch (error) {
       console.error("Erro ao adicionar tratamento:", error);
@@ -346,23 +377,33 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }
 
     try {
-      await api.put(`/patients/${patient.id}/treatments/${editingTreatment.id}`, treatmentForm);
+      const payload = {
+        ...treatmentForm,
+        professional_id: (treatmentForm.professional_id || "").trim() || undefined,
+      };
+      await api.put(`/patients/${detailedPatient.id}/treatments/${editingTreatment.id}`, payload);
       toast.success("Tratamento atualizado com sucesso!");
       setShowTreatmentDialog(false);
       setEditingTreatment(null);
-      const updatedPatient = await loadPatientData(patient.id);
+      const updatedPatient = await loadPatientData(detailedPatient.id);
       onUpdate(updatedPatient);
     } catch (error) {
       toast.error("Erro ao atualizar tratamento");
     }
   };
 
-  const handleDeleteTreatment = async (treatmentId) => {
-    if (!window.confirm("Tem certeza que deseja deletar este tratamento?")) return;
-    
+  const handleDeleteTreatment = (treatmentId) => {
+    setTreatmentToDelete(treatmentId);
+    setShowDeleteTreatmentDialog(true);
+  };
+
+  const confirmDeleteTreatment = async () => {
+    if (!treatmentToDelete) return;
     try {
-      await api.delete(`/patients/${patient.id}/treatments/${treatmentId}`);
+      await api.delete(`/patients/${detailedPatient.id}/treatments/${treatmentToDelete}`);
       toast.success("Tratamento removido!");
+      setShowDeleteTreatmentDialog(false);
+      setTreatmentToDelete(null);
       const updatedPatient = await loadPatientData(patient.id);
       onUpdate(updatedPatient);
     } catch (error) {
@@ -416,8 +457,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         crm: "",
         template_used: ""
       });
-      loadPatientData(detailedPatient.id);
-      onUpdate();
+      const updated = await loadPatientData(detailedPatient.id);
+      onUpdate(updated);
     } catch (error) {
       const errorMessage = error.response?.data?.detail || (editingRecord ? "Erro ao atualizar documento" : "Erro ao criar documento");
       toast.error(errorMessage);
@@ -479,8 +520,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       toast.success("Documento excluído com sucesso!");
       setShowDeleteRecordDialog(false);
       setRecordToDelete(null);
-      loadPatientData(detailedPatient.id);
-      onUpdate();
+      const updated = await loadPatientData(detailedPatient.id);
+      onUpdate(updated);
     } catch (error) {
       toast.error("Erro ao excluir documento");
     }
@@ -514,7 +555,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     { id: "records", label: "Documentos", icon: Stethoscope },
     { id: "treatments", label: "Tratamentos", icon: Activity },
     { id: "anamnese", label: "Anamnese", icon: FileText },
-    { id: "professionals", label: "Profissionais", icon: Users }
+    { id: "revenue", label: "Faturamento", icon: DollarSign }
   ];
 
   return (
@@ -572,7 +613,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                     </div>
                     <div>
                       <Label className="text-sm font-semibold text-gray-700">Telefone</Label>
-                      <p className="text-gray-900">{detailedPatient.phone}</p>
+                      <p className="text-gray-900">{detailedPatient?.phone || "Não informado"}</p>
                     </div>
                     <div>
                       <Label className="text-sm font-semibold text-gray-700">Data de Nascimento</Label>
@@ -603,6 +644,82 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                           </div>
                         </div>
                       </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Revenue Tab */}
+              {activeTab === "revenue" && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold">Faturamento do Paciente</h3>
+                    <Button onClick={() => { setEditingTransaction(null); setShowTransactionDialog(true); }} className="btn-primary">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Adicionar Faturamento
+                    </Button>
+                  </div>
+
+                  {transactions.length > 0 ? (
+                    <div className="space-y-3">
+                      {transactions.map((t) => (
+                        <div key={t.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <span className="text-xl font-bold text-gray-900">R$ {Number(t.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${t.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                  {t.status === 'paid' ? 'Pago' : 'Pendente'}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-700">{t.description}</p>
+                              <p className="text-xs text-gray-500 mt-1">{new Date(t.transaction_date || t.created_at).toLocaleDateString('pt-BR')}</p>
+                              {t.appointment_id && (
+                                <p className="text-xs text-gray-500">Vinculado ao agendamento: {t.appointment_id}</p>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  setEditingTransaction(t);
+                                  setTransactionForm({
+                                    amount: t.amount,
+                                    payment_method: t.payment_method || 'cash',
+                                    description: t.description || '',
+                                    transaction_date: (t.transaction_date || new Date().toISOString().split('T')[0]).split('T')[0],
+                                    status: t.status || 'paid',
+                                    appointment_id: t.appointment_id || ''
+                                  });
+                                  setShowTransactionDialog(true);
+                                }}
+                                className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await api.delete(`/transactions/${t.id}`);
+                                    toast.success("Faturamento excluído!");
+                                    const updated = await loadPatientData(detailedPatient.id);
+                                    onUpdate(updated);
+                                  } catch (error) {
+                                    toast.error("Erro ao excluir faturamento");
+                                  }
+                                }}
+                                className="px-3 py-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-gray-500">
+                      <DollarSign className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                      <p>Nenhum faturamento registrado</p>
                     </div>
                   )}
                 </div>
@@ -641,7 +758,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                               <Download className="w-5 h-5" />
                             </button>
                             <button
-                              onClick={() => handleDeleteAttachment(att.id)}
+                              onClick={() => { setAttachmentToDelete(att.id); setShowDeleteAttachmentDialog(true); }}
                               className="text-red-500 hover:text-red-700"
                             >
                               <Trash2 className="w-5 h-5" />
@@ -711,19 +828,12 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                               Editar
                             </button>
                             <button
-                                  onClick={() => handleEditTreatment(treatment)}
-                                  className="flex items-center gap-1 px-2 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
-                                  title="Editar tratamento"
-                                >
-                                  <Edit className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteTreatment(treatment.id)}
-                                  className="flex items-center gap-1 px-2 py-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition"
-                                  title="Excluir tratamento"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                              onClick={() => handleDeleteRecord(record)}
+                              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Excluir
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -738,8 +848,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
               )}
 
               {/* Treatments Tab */}
-              {activeTab === "treatments" && (
-                <div className="space-y-4">
+            {activeTab === "treatments" && (
+              <div className="space-y-4">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-semibold">Tratamentos Realizados</h3>
                     <Button 
@@ -754,14 +864,14 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                     </Button>
                   </div>
 
-                  {patient.treatments && patient.treatments.length > 0 ? (
+                  {detailedPatient?.treatments && detailedPatient.treatments.length > 0 ? (
                     <div className="space-y-3">
-                      {patient.treatments.map((treatment) => (
+                      {detailedPatient.treatments.map((treatment) => (
                         <div key={treatment.id} className="border rounded-lg p-4 hover:bg-gray-50">
                           <div className="flex justify-between items-start">
                             <div className="flex-1">
                               <div className="flex items-center gap-3 mb-2">
-                                <h4 className="font-semibold text-gray-900">{treatment.service_name}</h4>
+                                <h4 className="font-semibold text-gray-900">{treatment.name}</h4>
                                 <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                                   treatment.status === 'completed' 
                                     ? 'bg-green-100 text-green-700' 
@@ -773,31 +883,33 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                               <p className="text-sm text-gray-600">
                                 Data: {formatDate(treatment.start_date)}
                               </p>
-                              {treatment.professional_name && (
-                                <p className="text-sm text-gray-600">
-                                  Profissional: {treatment.professional_name}
-                                </p>
-                              )}
+                              <p className="text-sm text-gray-600">
+                                Profissional: {(() => {
+                                  const pid = (treatment.professional_id || '').trim();
+                                  const p = allProfessionals.find(x => x.id === pid) || professionals.find(x => x.id === pid);
+                                  return p ? p.name : 'Não informado';
+                                })()}
+                              </p>
                               {treatment.description && (
                                 <p className="text-sm text-gray-600 mt-2">{treatment.description}</p>
                               )}
                             </div>
-                            <div className="flex gap-2 mt-4 pt-3 border-t">
-                              <button
-                                onClick={() => handleEditTreatment(treatment)}
-                                className="flex items-center gap-1 px-2 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
-                                title="Editar tratamento"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteTreatment(treatment.id)}
-                                className="flex items-center gap-1 px-2 py-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition"
-                                title="Excluir tratamento"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
+                          <div className="flex gap-2 mt-4 pt-3 border-t">
+                            <button
+                              onClick={() => handleEditTreatment(treatment)}
+                              className="flex items-center gap-1 px-2 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+                              title="Editar tratamento"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTreatment(treatment.id)}
+                              className="flex items-center gap-1 px-2 py-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition"
+                              title="Excluir tratamento"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                           </div>
                         </div>
                       ))}
@@ -979,35 +1091,133 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                 </div>
               )}
 
-              {/* Professionals Tab */}
-              {activeTab === "professionals" && (
-                <div>
-                  <h3 className="text-lg font-semibold mb-4">Profissionais Vinculados</h3>
-                  {professionals.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {professionals.map((prof) => (
-                        <div key={prof.id} className="p-4 border rounded-lg flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 font-bold">
-                            {prof.name.charAt(0)}
-                          </div>
-                          <div>
-                            <p className="font-semibold text-gray-900">{prof.name}</p>
-                            <p className="text-sm text-gray-600">{prof.specialty || "Especialidade não informada"}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-gray-500 text-center py-4">Nenhum profissional vinculado a este paciente.</p>
-                  )}
-                </div>
-              )}
+              
             </>
           )}
         </div>
       </DialogContent>
     </Dialog>
 
+    {/* Transaction Dialog */}
+    <Dialog open={showTransactionDialog} onOpenChange={(open) => {
+      setShowTransactionDialog(open);
+      if (!open) {
+        setEditingTransaction(null);
+        setTransactionForm({
+          amount: "",
+          payment_method: "cash",
+          description: "",
+          transaction_date: new Date().toISOString().split('T')[0],
+          status: "paid",
+          appointment_id: ""
+        });
+      }
+    }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{editingTransaction ? "Editar Faturamento" : "Adicionar Faturamento"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label>Valor *</Label>
+            <Input
+              type="number"
+              step="0.01"
+              value={transactionForm.amount}
+              onChange={(e) => setTransactionForm({ ...transactionForm, amount: e.target.value })}
+              required
+            />
+          </div>
+          <div>
+            <Label>Método de Pagamento</Label>
+            <select
+              className="input-field"
+              value={transactionForm.payment_method}
+              onChange={(e) => setTransactionForm({ ...transactionForm, payment_method: e.target.value })}
+            >
+              <option value="cash">Dinheiro</option>
+              <option value="card">Cartão</option>
+              <option value="pix">Pix</option>
+            </select>
+          </div>
+          <div>
+            <Label>Descrição *</Label>
+            <Input
+              value={transactionForm.description}
+              onChange={(e) => setTransactionForm({ ...transactionForm, description: e.target.value })}
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Data *</Label>
+              <Input
+                type="date"
+                value={transactionForm.transaction_date}
+                onChange={(e) => setTransactionForm({ ...transactionForm, transaction_date: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <select
+                className="input-field"
+                value={transactionForm.status}
+                onChange={(e) => setTransactionForm({ ...transactionForm, status: e.target.value })}
+              >
+                <option value="paid">Pago</option>
+                <option value="pending">Pendente</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <Label>Vincular a um Agendamento (opcional)</Label>
+            <select
+              className="input-field"
+              value={transactionForm.appointment_id}
+              onChange={(e) => setTransactionForm({ ...transactionForm, appointment_id: e.target.value })}
+            >
+              <option value="">Nenhum</option>
+              {appointmentsList.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {new Date(a.appointment_date + 'T00:00:00').toLocaleDateString('pt-BR')} {a.appointment_time} — {a.notes || 'Agendamento'}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setShowTransactionDialog(false)}>Cancelar</Button>
+          <Button onClick={async () => {
+            try {
+              const payload = {
+                patient_id: detailedPatient.id,
+                appointment_id: transactionForm.appointment_id || undefined,
+                amount: Number(transactionForm.amount),
+                payment_method: transactionForm.payment_method,
+                description: transactionForm.description,
+                transaction_date: transactionForm.transaction_date,
+                status: transactionForm.status
+              };
+              if (editingTransaction) {
+                await api.put(`/transactions/${editingTransaction.id}`, payload);
+                toast.success("Faturamento atualizado!");
+              } else {
+                await api.post(`/transactions`, payload);
+                toast.success("Faturamento adicionado!");
+              }
+              setShowTransactionDialog(false);
+              const updated = await loadPatientData(detailedPatient.id);
+              onUpdate(updated);
+            } catch (error) {
+              toast.error(editingTransaction ? "Erro ao atualizar faturamento" : "Erro ao adicionar faturamento");
+            }
+          }} className="btn-primary">
+            {editingTransaction ? "Salvar Alterações" : "Salvar"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
 
     {/* Treatment Dialog - Moved outside main dialog */}
     <Dialog open={showTreatmentDialog} onOpenChange={handleTreatmentDialogOpenChange}>
@@ -1036,6 +1246,20 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                 onChange={handleDateChange}
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="professional-select">Profissional Responsável</Label>
+            <select
+              id="professional-select"
+              className="input-field"
+              value={treatmentForm.professional_id}
+              onChange={(e) => setTreatmentForm({ ...treatmentForm, professional_id: e.target.value.trim() })}
+            >
+              <option value="">Selecionar profissional</option>
+              {allProfessionals.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="description">Descrição <span className="text-red-500">*</span></Label>
@@ -1236,13 +1460,13 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
             <Button 
               onClick={() => handleAddMedicalRecord(true)} 
               className="btn-primary"
-              disabled={!patient.phone}
+              disabled={!detailedPatient?.phone}
             >
               <MessageSquare className="w-5 h-5 mr-2" />
               Salvar e Enviar WhatsApp
             </Button>
           </div>
-          {!patient.phone && (
+          {!detailedPatient?.phone && (
             <p className="text-xs text-amber-600 text-center mt-2">
               ⚠️ Paciente não tem telefone cadastrado
             </p>
@@ -1279,6 +1503,83 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
               type="button"
               className="bg-red-500 hover:bg-red-600 text-white"
               onClick={confirmDeleteRecord}
+            >
+              Confirmar Exclusão
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    {/* Dialog de Confirmação de Exclusão de Tratamento */}
+    <Dialog open={showDeleteTreatmentDialog} onOpenChange={setShowDeleteTreatmentDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Confirmar Exclusão</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            Tem certeza que deseja excluir este tratamento?
+          </p>
+          <p className="text-sm text-red-600">
+            <strong>Atenção:</strong> Esta ação não pode ser desfeita.
+          </p>
+          <div className="flex gap-3 justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowDeleteTreatmentDialog(false);
+                setTreatmentToDelete(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="bg-red-500 hover:bg-red-600 text-white"
+              onClick={confirmDeleteTreatment}
+            >
+              Confirmar Exclusão
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    {/* Dialog de Confirmação de Exclusão de Anexo */}
+    <Dialog open={showDeleteAttachmentDialog} onOpenChange={setShowDeleteAttachmentDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Confirmar Exclusão</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            Tem certeza que deseja excluir este anexo?
+          </p>
+          <p className="text-sm text-red-600">
+            <strong>Atenção:</strong> Esta ação não pode ser desfeita.
+          </p>
+          <div className="flex gap-3 justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowDeleteAttachmentDialog(false);
+                setAttachmentToDelete(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="bg-red-500 hover:bg-red-600 text-white"
+              onClick={async () => {
+                if (!attachmentToDelete) return;
+                await handleDeleteAttachment(attachmentToDelete);
+                setShowDeleteAttachmentDialog(false);
+                setAttachmentToDelete(null);
+              }}
             >
               Confirmar Exclusão
             </Button>

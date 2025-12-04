@@ -21,10 +21,13 @@ export default function PatientsPage() {
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [error, setError] = useState(null);
+  const [sortBy, setSortBy] = useState("created_at");
+  const [order, setOrder] = useState("desc");
+  const [filterDebt, setFilterDebt] = useState(false);
 
   useEffect(() => {
     loadPatients();
-  }, []);
+  }, [sortBy, order, filterDebt]);
 
   const loadPatients = async () => {
     setLoading(true);
@@ -32,7 +35,7 @@ export default function PatientsPage() {
     console.log("Iniciando carregamento de pacientes...");
     try {
       console.log("Realizando requisição para /patients");
-      const response = await api.get("/patients");
+      const response = await api.get("/patients", { params: { sort_by: sortBy, order, has_debt: filterDebt } });
       console.log("Resposta da API /patients:", response);
       setPatients(response.data);
     } catch (error) {
@@ -130,9 +133,9 @@ export default function PatientsPage() {
           </Button>
         </div>
 
-        {/* Barra de Pesquisa */}
+        {/* Barra de Pesquisa e Filtros */}
         <div className="bg-white rounded-2xl p-6 shadow-lg mb-6">
-          <div className="flex items-end gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="flex-1">
               <Label className="text-sm font-semibold mb-2 block">Pesquisar Paciente</Label>
               <Input
@@ -140,6 +143,33 @@ export default function PatientsPage() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
+            </div>
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Ordenação</Label>
+              <select
+                className="input-field w-full"
+                value={`${sortBy}:${order}`}
+                onChange={(e) => {
+                  const [sb, ord] = e.target.value.split(":");
+                  setSortBy(sb);
+                  setOrder(ord);
+                  setCurrentPage(1);
+                }}
+              >
+                <option value="created_at:desc">Mais recentes</option>
+                <option value="created_at:asc">Mais antigos</option>
+                <option value="name:asc">Nome (A-Z)</option>
+                <option value="name:desc">Nome (Z-A)</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="filterDebt"
+                type="checkbox"
+                checked={filterDebt}
+                onChange={(e) => { setFilterDebt(e.target.checked); setCurrentPage(1); }}
+              />
+              <Label htmlFor="filterDebt" className="text-sm font-semibold">Apenas com débito</Label>
             </div>
             {searchTerm && (
               <Button

@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 import io
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
+from reportlab.lib.utils import ImageReader
 from fastapi_socketio import SocketManager
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
@@ -17,8 +18,12 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 import jwt
-from apscheduler import AsyncScheduler
-from apscheduler.triggers.cron import CronTrigger
+try:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler as AsyncScheduler
+    from apscheduler.triggers.cron import CronTrigger
+except Exception:
+    AsyncScheduler = None
+    CronTrigger = None
 from contextlib import asynccontextmanager
 try:
     from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -29,6 +34,7 @@ except Exception:
             self.text = text
 import httpx
 import json
+import base64
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -36,6 +42,8 @@ load_dotenv(ROOT_DIR / '.env')
 # MongoDB connection
 mongo_url = os.environ.get('MONGO_URL', '').strip()
 db_name = os.environ.get('DB_NAME', 'clinicflow').strip()
+allowed_origins_env = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000')
+ALLOWED_ORIGINS = [o.strip() for o in allowed_origins_env.split(',') if o.strip()]
 client: Optional[AsyncIOMotorClient] = None
 db = None
 if mongo_url:
@@ -49,8 +57,100 @@ if mongo_url:
         client = None
         db = None
 
+DEMO_MODE = db is None
+mem = {
+    "users": [],
+    "professionals": [],
+    "services": [],
+    "rooms": [],
+    "patients": [],
+    "appointments": [],
+    "transactions": [],
+    "medical_records": [],
+    "leads": [],
+    "follow_ups": [],
+    "settings": {}
+}
+
+def _match(doc, flt):
+    for k, v in (flt or {}).items():
+        parts = k.split('.')
+        cur = doc
+        for p in parts:
+            if isinstance(cur, list):
+                if not any(isinstance(it, dict) and it.get(p) == v for it in cur):
+                    return False
+                cur = v
+                break
+            cur = cur.get(p) if isinstance(cur, dict) else None
+        if isinstance(cur, dict):
+            if cur != v:
+                return False
+        else:
+            if cur != v:
+                return False
+    return True
+
+def _find(coll, flt=None):
+    return [d.copy() for d in mem[coll] if _match(d, flt or {})]
+
+def _find_one(coll, flt=None):
+    for d in mem[coll]:
+        if _match(d, flt or {}):
+            return d.copy()
+    return None
+
+def _insert_one(coll, doc):
+    mem[coll].append(doc.copy())
+    return {"inserted_id": doc.get("id")}
+
+def _update_one(coll, flt, update):
+    for i, d in enumerate(mem[coll]):
+        if _match(d, flt or {}):
+            if "$set" in update:
+                for k, v in update["$set"].items():
+                    parts = k.split('.')
+                    cur = d
+                    for p in parts[:-1]:
+                        if p not in cur or not isinstance(cur[p], dict):
+                            cur[p] = {}
+                        cur = cur[p]
+                    cur[parts[-1]] = v
+            if "$push" in update:
+                for k, v in update["$push"].items():
+                    d.setdefault(k, []).append(v)
+            if "$pull" in update:
+                for k, v in update["$pull"].items():
+                    if isinstance(v, dict) and 'id' in v:
+                        d[k] = [it for it in d.get(k, []) if it.get('id') != v['id']]
+            if "$addToSet" in update:
+                for k, v in update["$addToSet"].items():
+                    arr = d.setdefault(k, [])
+                    if v not in arr:
+                        arr.append(v)
+            mem[coll][i] = d
+            return {"matched_count": 1, "modified_count": 1}
+    return {"matched_count": 0, "modified_count": 0}
+
+def _delete_one(coll, flt):
+    for i, d in enumerate(mem[coll]):
+        if _match(d, flt or {}):
+            mem[coll].pop(i)
+            return {"deleted_count": 1}
+    return {"deleted_count": 0}
+
+def _sum(coll, key):
+    s = 0
+    for d in mem[coll]:
+        s += float(d.get(key) or 0)
+    return s
+
 # Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+PWD_SCHEME = os.environ.get('PASSWORD_SCHEME', 'bcrypt')
+if PWD_SCHEME == 'sha256_crypt':
+    pwd_context = CryptContext(schemes=['sha256_crypt', 'bcrypt'], deprecated="auto")
+else:
+    pwd_context = CryptContext(schemes=['bcrypt', 'sha256_crypt'], deprecated="auto")
 
 # JWT configuration
 JWT_SECRET = os.environ.get('JWT_SECRET_KEY', 'your-secret-key')
@@ -78,7 +178,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 
 
-scheduler = AsyncScheduler()
+scheduler = AsyncScheduler() if AsyncScheduler else None
 
 # Automation: Follow-up rules and birthday greetings
 def _is_birthday_with_offset(birthdate_str, days_offset):
@@ -136,12 +236,38 @@ async def check_and_send_birthday_greetings():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    await scheduler.__aenter__()
-    await scheduler.add_schedule(check_and_send_birthday_greetings, CronTrigger(hour=9, minute=0), id="birthday_check")
+    if scheduler and CronTrigger:
+        try:
+            scheduler.start()
+            scheduler.add_job(check_and_send_birthday_greetings, CronTrigger(hour=9, minute=0), id="birthday_check")
+        except Exception:
+            pass
+    if db is not None:
+        try:
+            await db.patients.create_index("id")
+            await db.patients.create_index("phone")
+            await db.patients.create_index("email")
+            await db.patients.create_index([("created_at", -1)])
+            await db.transactions.create_index("patient_id")
+            await db.transactions.create_index([("patient_id", 1), ("status", 1)])
+            await db.transactions.create_index([("created_at", -1)])
+            await db.appointments.create_index([("patient_id", 1), ("paid", 1)])
+            await db.appointments.create_index("appointment_date")
+            await db.professionals.create_index("id")
+            await db.professionals.create_index("name")
+            await db.professionals.create_index([("created_at", -1)])
+            await db.leads.create_index("status")
+            await db.leads.create_index("phone")
+            await db.leads.create_index("email")
+            await db.leads.create_index([("created_at", -1)])
+        except Exception:
+            pass
     yield
-    # Shutdown
-    await scheduler.__aexit__(None, None, None)
+    if scheduler:
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception:
+            pass
 
 app = FastAPI(lifespan=lifespan)
 
@@ -257,6 +383,7 @@ class Treatment(BaseModel):
     prescribed_medications: Optional[str] = None
     frequency: Optional[str] = None
     estimated_duration: Optional[str] = None
+    professional_id: Optional[str] = None
     status: str = "ongoing"  # ongoing, completed
 
 class TreatmentUpdate(BaseModel):
@@ -266,6 +393,7 @@ class TreatmentUpdate(BaseModel):
     prescribed_medications: Optional[str] = None
     frequency: Optional[str] = None
     estimated_duration: Optional[str] = None
+    professional_id: Optional[str] = None
     status: Optional[str] = None
 
 class Anamnese(BaseModel):
@@ -391,11 +519,12 @@ class Patient(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     email: Optional[EmailStr] = None
-    phone: str
-    birthdate: str
+    phone: Optional[str] = None
+    birthdate: Optional[str] = None
     address: Optional[str] = None
     attachments: List[Attachment] = []
     treatments: List[Treatment] = []
+    professionals: List[str] = []
     anamnese: Optional[Anamnese] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -437,8 +566,22 @@ class AppointmentCreate(BaseModel):
     appointment_date: Optional[str] = None
     appointment_time: Optional[str] = None  # Hora de início
     appointment_time_end: Optional[str] = None  # Hora de fim
+    status: Optional[str] = None
     amount: Optional[float] = None
     paid: bool = False
+    notes: Optional[str] = None
+
+class AppointmentUpdate(BaseModel):
+    patient_id: Optional[str] = None
+    professional_id: Optional[str] = None
+    service_id: Optional[str] = None
+    room_id: Optional[str] = None
+    appointment_date: Optional[str] = None
+    appointment_time: Optional[str] = None
+    appointment_time_end: Optional[str] = None
+    status: Optional[str] = None
+    amount: Optional[float] = None
+    paid: Optional[bool] = None
     notes: Optional[str] = None
 
 class Transaction(BaseModel):
@@ -587,6 +730,16 @@ class FollowUpCreate(BaseModel):
     contact_type: Optional[str] = None
     contact_reason: Optional[str] = None
 
+class FollowUpUpdate(BaseModel):
+    lead_id: Optional[str] = None
+    patient_id: Optional[str] = None
+    assigned_to: Optional[str] = None
+    scheduled_date: Optional[str] = None
+    notes: Optional[str] = None
+    contact_type: Optional[str] = None
+    contact_reason: Optional[str] = None
+    status: Optional[str] = None
+
 class FollowUpRule(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -655,6 +808,13 @@ async def update_transaction(transaction_id: str, transaction: TransactionUpdate
     if isinstance(updated_transaction.get('created_at'), datetime):
         updated_transaction['created_at'] = updated_transaction['created_at'].isoformat()
 
+    # If linked to an appointment and status is paid, mark appointment as paid
+    try:
+        if updated_transaction.get('appointment_id') and updated_transaction.get('status') == 'paid':
+            await db.appointments.update_one({"id": updated_transaction['appointment_id']}, {"$set": {"paid": True}})
+    except Exception:
+        pass
+
     return updated_transaction
 @api_router.delete("/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_transaction(transaction_id: str, current_user: dict = Depends(get_current_user)):
@@ -685,24 +845,35 @@ async def get_total_revenue(current_user: dict = Depends(get_current_user)):
 async def get_patient_debts(patient_id: str, current_user: dict = Depends(get_current_user)):
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-    
-    pipeline = [
-        {"$match": {"patient_id": patient_id, "paid": False}},
-        {"$group": {"_id": "$patient_id", "total_debt": {"$sum": "$amount"}}}
-    ]
-    
-    result = await db.appointments.aggregate(pipeline).to_list(1)
-    
-    total_debt = result[0]['total_debt'] if result else 0
-    
-    return {"total_debt": total_debt}
+
+    # Unpaid appointments
+    cursor = db.appointments.find({"patient_id": patient_id, "paid": False}, {"_id": 0, "id": 1, "appointment_date": 1, "appointment_time": 1, "amount": 1})
+    unpaid = await cursor.to_list(1000)
+    unpaid_total = sum([(a.get('amount') or 0) for a in unpaid])
+
+    # Pending transactions (if you register debts via transactions)
+    trans_cursor = db.transactions.find({"patient_id": patient_id, "status": "pending"}, {"_id": 0, "id": 1, "amount": 1, "description": 1, "transaction_date": 1})
+    pending_trans = await trans_cursor.to_list(1000)
+    pending_total = sum([(t.get('amount') or 0) for t in pending_trans])
+
+    return {
+        "total_debt": (unpaid_total + pending_total),
+        "debt_count": len(unpaid),
+        "unpaid_appointments": unpaid,
+        "pending_transactions": pending_trans
+    }
 
 # Helper functions
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        if not hashed_password:
+            return False
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception:
+        return False
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
@@ -714,6 +885,33 @@ def create_access_token(data: dict) -> str:
 # Authentication Routes
 @api_router.post("/auth/register", response_model=TokenResponse)
 async def register(user_data: UserRegister):
+    if DEMO_MODE:
+        existing_user = next((u for u in mem["users"] if u["email"] == user_data.email), None)
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        user = User(
+            name=user_data.name,
+            email=user_data.email,
+            password_hash=hash_password(user_data.password),
+            role=UserRole(is_admin=user_data.is_admin, is_attendant=not user_data.is_admin),
+            user_type=user_data.user_type,
+            professional_id=user_data.professional_id
+        )
+        doc = user.model_dump()
+        doc['created_at'] = doc['created_at'].isoformat()
+        _insert_one("users", doc)
+        access_token = create_access_token({"sub": user.id, "email": user.email})
+        return TokenResponse(
+            access_token=access_token,
+            user={
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "role": user.role.model_dump(),
+                "user_type": user.user_type,
+                "professional_id": user.professional_id
+            }
+        )
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
     # Check if user exists
@@ -752,6 +950,22 @@ async def register(user_data: UserRegister):
 
 @api_router.post("/auth/login", response_model=TokenResponse)
 async def login(credentials: UserLogin):
+    if DEMO_MODE:
+        user = next((u for u in mem["users"] if u["email"] == credentials.email), None)
+        if not user or not verify_password(credentials.password, user["password_hash"]):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        access_token = create_access_token({"sub": user["id"], "email": user["email"]})
+        return TokenResponse(
+            access_token=access_token,
+            user={
+                "id": user["id"],
+                "name": user["name"],
+                "email": user["email"],
+                "role": user["role"],
+                "user_type": user.get("user_type", "consultor"),
+                "professional_id": user.get("professional_id")
+            }
+        )
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
     user = await db.users.find_one({"email": credentials.email}, {"_id": 0})
@@ -838,11 +1052,20 @@ async def create_professional(data: ProfessionalCreate, current_user: dict = Dep
     professional = Professional(**data.model_dump())
     doc = professional.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
+    if DEMO_MODE:
+        _insert_one("professionals", doc)
+        return professional
     await db.professionals.insert_one(doc)
     return professional
 
 @api_router.get("/professionals", response_model=List[dict])
 async def get_professionals(current_user: dict = Depends(get_current_user)):
+    if DEMO_MODE:
+        professionals = _find("professionals", {})
+        for p in professionals:
+            if isinstance(p.get('created_at'), str):
+                p['created_at'] = datetime.fromisoformat(p['created_at'])
+        return professionals
     professionals = await db.professionals.find({}, {"_id": 0}).to_list(1000)
     for p in professionals:
         if isinstance(p.get('created_at'), str):
@@ -851,7 +1074,10 @@ async def get_professionals(current_user: dict = Depends(get_current_user)):
 
 @api_router.get("/professionals/{professional_id}", response_model=dict)
 async def get_professional(professional_id: str, current_user: dict = Depends(get_current_user)):
-    professional = await db.professionals.find_one({"id": professional_id}, {"_id": 0})
+    if DEMO_MODE:
+        professional = _find_one("professionals", {"id": professional_id})
+    else:
+        professional = await db.professionals.find_one({"id": professional_id}, {"_id": 0})
     if not professional:
         raise HTTPException(status_code=404, detail="Professional not found")
     if isinstance(professional.get('created_at'), str):
@@ -862,11 +1088,14 @@ async def get_professional(professional_id: str, current_user: dict = Depends(ge
 async def update_professional(professional_id: str, data: ProfessionalCreate, current_user: dict = Depends(get_current_user)):
     if not current_user.get("role", {}).get("is_admin", False):
         raise HTTPException(status_code=403, detail="Not authorized")
-    
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
-
+    if DEMO_MODE:
+        result = _update_one("professionals", {"id": professional_id}, {"$set": update_data})
+        if result["matched_count"] == 0:
+            raise HTTPException(status_code=404, detail="Professional not found")
+        return {"message": "Professional updated successfully"}
     result = await db.professionals.update_one({"id": professional_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Professional not found")
@@ -876,7 +1105,11 @@ async def update_professional(professional_id: str, data: ProfessionalCreate, cu
 async def delete_professional(professional_id: str, current_user: dict = Depends(get_current_user)):
     if not current_user.get("role", {}).get("is_admin", False):
         raise HTTPException(status_code=403, detail="Not authorized")
-    
+    if DEMO_MODE:
+        result = _delete_one("professionals", {"id": professional_id})
+        if result["deleted_count"] == 0:
+            raise HTTPException(status_code=404, detail="Professional not found")
+        return {"message": "Professional deleted successfully"}
     result = await db.professionals.delete_one({"id": professional_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Professional not found")
@@ -888,11 +1121,20 @@ async def create_service(data: ServiceCreate, current_user: dict = Depends(get_c
     service = Service(**data.model_dump())
     doc = service.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
+    if DEMO_MODE:
+        _insert_one("services", doc)
+        return service
     await db.services.insert_one(doc)
     return service
 
 @api_router.get("/services", response_model=List[dict])
 async def get_services(current_user: dict = Depends(get_current_user)):
+    if DEMO_MODE:
+        services = _find("services", {})
+        for s in services:
+            if isinstance(s.get('created_at'), str):
+                s['created_at'] = datetime.fromisoformat(s['created_at'])
+        return services
     services = await db.services.find({}, {"_id": 0}).to_list(1000)
     for s in services:
         if isinstance(s.get('created_at'), str):
@@ -1033,35 +1275,78 @@ async def get_attachment(patient_id: str, attachment_id: str, current_user: dict
     return attachment
 
 @api_router.get("/patients", response_model=List[dict])
-async def get_patients(current_user: dict = Depends(get_current_user)):
+async def get_patients(
+    page: int = 1,
+    page_size: int = 10000,
+    sort_by: Optional[str] = None,
+    order: Optional[str] = "desc",
+    has_debt: Optional[bool] = None,
+    current_user: dict = Depends(get_current_user)
+):
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
 
     pipeline = [
         {
             "$lookup": {
+                "from": "appointments",
+                "let": {"pid": "$id"},
+                "pipeline": [
+                    {"$match": {"$expr": {"$and": [
+                        {"$eq": ["$patient_id", "$$pid"]},
+                        {"$eq": ["$paid", False]}
+                    ]}}},
+                    {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}}
+                ],
+                "as": "unpaid_appts"
+            }
+        },
+        {
+            "$lookup": {
                 "from": "transactions",
-                "localField": "id",
-                "foreignField": "patient_id",
-                "as": "debts"
+                "let": {"pid": "$id"},
+                "pipeline": [
+                    {"$match": {"$expr": {"$eq": ["$patient_id", "$$pid"]}, "status": "pending"}},
+                    {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}}
+                ],
+                "as": "pending_trans"
             }
         },
         {
             "$addFields": {
-                "total_debt": {
-                    "$sum": "$debts.amount"
-                }
+                "total_debt": {"$add": [{"$sum": "$unpaid_appts.total"}, {"$sum": "$pending_trans.total"}]}
             }
         },
+    ]
+
+    if has_debt is True:
+        pipeline += [{"$match": {"total_debt": {"$gt": 0}}}]
+
+    pipeline += [
         {
             "$project": {
                 "_id": 0,
-                "debts": 0
+                "id": 1,
+                "name": 1,
+                "email": 1,
+                "phone": 1,
+                "birthdate": 1,
+                "address": 1,
+                "created_at": 1,
+                "total_debt": 1
             }
         }
     ]
 
-    patients = await db.patients.aggregate(pipeline).to_list(10000)
+    skip = max(0, (page - 1) * page_size)
+    sort_field = sort_by if sort_by in {"name", "created_at"} else "created_at"
+    sort_order = 1 if order == "asc" else -1
+    pipeline += [
+        {"$sort": {sort_field: sort_order}},
+        {"$skip": skip},
+        {"$limit": page_size}
+    ]
+    patients = await db.patients.aggregate(pipeline).to_list(page_size)
 
     for p in patients:
         try:
@@ -1086,16 +1371,7 @@ async def get_patient_medical_records(patient_id: str, current_user: dict = Depe
             r['last_updated'] = datetime.fromisoformat(r['last_updated'])
     return records
 
-@api_router.get("/patients/{patient_id}/debts", response_model=List[dict])
-async def get_patient_debts(patient_id: str, current_user: dict = Depends(get_current_user)):
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database unavailable")
-    
-    transactions = await db.transactions.find({"patient_id": patient_id}, {"_id": 0}).to_list(1000)
-    for t in transactions:
-        if isinstance(t.get('created_at'), str):
-            t['created_at'] = datetime.fromisoformat(t['created_at'])
-    return transactions
+ 
 
 @api_router.get("/patients/{patient_id}", response_model=dict)
 async def get_patient(patient_id: str, current_user: dict = Depends(get_current_user)):
@@ -1105,6 +1381,34 @@ async def get_patient(patient_id: str, current_user: dict = Depends(get_current_
     if isinstance(patient.get('created_at'), str):
         patient['created_at'] = datetime.fromisoformat(patient['created_at'])
     return patient
+
+@api_router.post("/patients/{patient_id}/professionals")
+async def add_patient_professional(patient_id: str, payload: dict, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    professional_id = payload.get("professional_id")
+    if not professional_id:
+        raise HTTPException(status_code=400, detail="professional_id is required")
+    professional = await db.professionals.find_one({"id": professional_id}, {"_id": 0})
+    if not professional:
+        raise HTTPException(status_code=404, detail="Professional not found")
+    result = await db.patients.update_one(
+        {"id": patient_id},
+        {"$addToSet": {"professionals": professional_id}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return {"message": "Professional linked"}
+
+@api_router.get("/patients/{patient_id}/professionals", response_model=List[str])
+async def get_patient_professionals(patient_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0, "professionals": 1})
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return patient.get("professionals", [])
+
 
 @api_router.put("/patients/{patient_id}")
 async def update_patient(patient_id: str, data: PatientCreate, current_user: dict = Depends(get_current_user)):
@@ -1141,7 +1445,10 @@ async def update_anamnese(patient_id: str, anamnese_data: Anamnese, current_user
 # Appointment Routes
 @api_router.post("/appointments", response_model=Appointment)
 async def create_appointment(data: AppointmentCreate, current_user: dict = Depends(get_current_user)):
-    appointment = Appointment(**data.model_dump())
+    payload = data.model_dump(exclude_none=True)
+    if "status" not in payload:
+        payload["status"] = "scheduled"
+    appointment = Appointment(**payload)
     doc = appointment.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.appointments.insert_one(doc)
@@ -1170,7 +1477,7 @@ async def get_appointments(
     return appointments
 
 @api_router.put("/appointments/{appointment_id}")
-async def update_appointment(appointment_id: str, data: AppointmentCreate, current_user: dict = Depends(get_current_user)):
+async def update_appointment(appointment_id: str, data: AppointmentUpdate, current_user: dict = Depends(get_current_user)):
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -1194,6 +1501,14 @@ async def create_transaction(data: TransactionCreate, current_user: dict = Depen
     doc = transaction.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.transactions.insert_one(doc)
+    # If linked to an appointment and status is paid, mark appointment as paid
+    try:
+        if transaction.appointment_id and transaction.status == "paid":
+            await db.appointments.update_one({"id": transaction.appointment_id}, {"$set": {"paid": True}})
+        
+        # If appointment exists and amount was previously unpaid, ensure consistency
+    except Exception:
+        pass
     return transaction
 
 @api_router.get("/transactions", response_model=List[dict])
@@ -1243,8 +1558,13 @@ async def create_lead(data: LeadCreate, current_user: dict = Depends(get_current
     return lead
 
 @api_router.get("/leads", response_model=List[dict])
-async def get_leads(current_user: dict = Depends(get_current_user)):
-    leads = await db.leads.find({}, {"_id": 0}).to_list(1000)
+async def get_leads(status: Optional[str] = None, page: int = 1, page_size: int = 1000, current_user: dict = Depends(get_current_user)):
+    query = {}
+    if status:
+        query["status"] = status
+    skip = max(0, (page - 1) * page_size)
+    cursor = db.leads.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(page_size)
+    leads = await cursor.to_list(length=page_size)
     for l in leads:
         if isinstance(l.get('created_at'), str):
             l['created_at'] = datetime.fromisoformat(l['created_at'])
@@ -1272,6 +1592,46 @@ async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_use
         raise HTTPException(status_code=404, detail="Lead not found")
 
     return
+
+@api_router.post("/leads/{lead_id}/convert-to-patient")
+async def convert_lead_to_patient(lead_id: str, birthdate: str, address: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    existing_patient = None
+    if lead.get("phone"):
+        existing_patient = await db.patients.find_one({"phone": lead["phone"]}, {"_id": 0})
+    if not existing_patient and lead.get("email"):
+        existing_patient = await db.patients.find_one({"email": lead["email"]}, {"_id": 0})
+
+    if existing_patient:
+        update_fields = {}
+        if birthdate:
+            update_fields["birthdate"] = birthdate
+        if address:
+            update_fields["address"] = address
+        if update_fields:
+            await db.patients.update_one({"id": existing_patient["id"]}, {"$set": update_fields})
+        patient_doc = await db.patients.find_one({"id": existing_patient["id"]}, {"_id": 0})
+    else:
+        new_patient = Patient(
+            name=lead.get("name"),
+            email=lead.get("email"),
+            phone=lead.get("phone"),
+            birthdate=birthdate,
+            address=address or None
+        )
+        patient_doc = new_patient.model_dump()
+        patient_doc["created_at"] = patient_doc["created_at"].isoformat()
+        await db.patients.insert_one(patient_doc)
+
+    await db.leads.update_one({"id": lead_id}, {"$set": {"status": "converted"}})
+
+    return {"message": "Lead convertido", "patient": patient_doc}
 
 # Conversation Routes
 @api_router.post("/conversations", response_model=Conversation)
@@ -1352,6 +1712,23 @@ async def get_follow_ups(current_user: dict = Depends(get_current_user)):
         if isinstance(f.get('created_at'), str):
             f['created_at'] = datetime.fromisoformat(f['created_at'])
     return follow_ups
+
+@api_router.put("/follow-ups/{follow_up_id}")
+async def update_follow_up(follow_up_id: str, data: FollowUpUpdate, current_user: dict = Depends(get_current_user)):
+    update_data = data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    result = await db.follow_ups.update_one({"id": follow_up_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+    return {"message": "Follow-up updated successfully"}
+
+@api_router.delete("/follow-ups/{follow_up_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_follow_up(follow_up_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.follow_ups.delete_one({"id": follow_up_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+    return
 
 # Follow-up Rule Routes
 @api_router.post("/follow-up-rules", response_model=FollowUpRule)
@@ -1541,6 +1918,14 @@ class WhatsAppSettings(BaseModel):
 class OmnichannelSettings(BaseModel):
     whatsapp: Optional[WhatsAppSettings] = None
 
+class ClinicSettings(BaseModel):
+    clinic_name: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    website: Optional[str] = None
+    logo: Optional[str] = None
+
 @api_router.get("/settings/omnichannel")
 async def get_omnichannel_settings(current_user: dict = Depends(get_current_user)):
     if not current_user.get("role", {}).get("is_admin", False):
@@ -1555,6 +1940,24 @@ async def save_omnichannel_settings(data: OmnichannelSettings, current_user: dic
     await db.settings.update_one(
         {"type": "omnichannel"},
         {"$set": {"whatsapp": data.whatsapp.model_dump() if data.whatsapp else {}}},
+        upsert=True
+    )
+    return {"message": "Settings saved"}
+
+@api_router.get("/settings/clinic")
+async def get_clinic_settings(current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
+    return settings or {}
+
+@api_router.post("/settings/clinic")
+async def save_clinic_settings(data: ClinicSettings, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    await db.settings.update_one(
+        {"type": "clinic"},
+        {"$set": data.model_dump()},
         upsert=True
     )
     return {"message": "Settings saved"}
@@ -1576,15 +1979,32 @@ async def generate_pdf(request: GeneratePdfRequest):
     buffer = io.BytesIO()
     p = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
-
-    # Title
-    p.setFont("Helvetica-Bold", 16)
-    p.drawString(100, height - 100, f"Prontuário de {request.patient_name}")
-
-    # Content
+    left_margin = 72
+    right_margin = width - 72
+    top_margin = 72
+    bottom_margin = 72
+    settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
+    logo_data = settings.get("logo") if settings else None
+    if logo_data and isinstance(logo_data, str):
+        try:
+            b64 = logo_data.split(",", 1)[1] if "," in logo_data else logo_data
+            img_bytes = base64.b64decode(b64)
+            img = ImageReader(io.BytesIO(img_bytes))
+            iw, ih = img.getSize()
+            target_w = 140
+            ratio = target_w / float(iw)
+            target_h = ih * ratio
+            x = (width - target_w) / 2
+            y_logo = height - top_margin - target_h
+            p.drawImage(img, x, y_logo, width=target_w, height=target_h, preserveAspectRatio=True, mask='auto')
+        except Exception:
+            pass
+    p.setFont("Helvetica-Bold", 18)
+    title = f"Prontuário de {request.patient_name}"
+    title_w = p.stringWidth(title, "Helvetica-Bold", 18)
+    p.drawString((width - title_w) / 2, height - top_margin - 60, title)
     p.setFont("Helvetica", 12)
-    y = height - 150
-    
+    y = height - top_margin - 100
     fields = [
         ("Data de Criação", record.get("created_at", "N/A")),
         ("Tipo de Registro", record.get("record_type", "N/A")),
@@ -1597,19 +2017,113 @@ async def generate_pdf(request: GeneratePdfRequest):
         ("Observações", record.get("observations", "N/A")),
         ("Template Utilizado", record.get("template_used", "N/A")),
     ]
-
+    def wrap_text(text: str, max_width: float):
+        if text is None:
+            s = ""
+        elif isinstance(text, (list, tuple)):
+            s = ", ".join(map(str, text))
+        else:
+            s = str(text)
+        s = s.replace("\r\n", "\n").replace("\r", "\n")
+        lines = []
+        for para in s.split("\n"):
+            if para.strip() == "":
+                lines.append("")
+                continue
+            words = para.split()
+            cur = ""
+            for w in words:
+                test = w if cur == "" else cur + " " + w
+                if p.stringWidth(test, "Helvetica", 12) <= max_width:
+                    cur = test
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = w
+            if cur:
+                lines.append(cur)
+        return lines
+    max_text_width = right_margin - left_margin
     for label, value in fields:
-        if y < 100:  # New page if content is too long
-            p.showPage()
+        value_lines = wrap_text(value, max_text_width)
+        needed = 18 + 16 * max(1, len(value_lines))
+        if y - needed < bottom_margin + 40:
+            p.setStrokeColorRGB(0.2, 0.5, 0.9)
+            p.setLineWidth(0.8)
+            p.line(left_margin, bottom_margin + 15, right_margin, bottom_margin + 15)
+            footer_parts = []
+            if settings and settings.get("clinic_name"):
+                footer_parts.append(settings.get("clinic_name"))
+            if settings and settings.get("address"):
+                footer_parts.append(settings.get("address"))
+            if settings and settings.get("phone"):
+                footer_parts.append(settings.get("phone"))
+            if settings and settings.get("email"):
+                footer_parts.append(settings.get("email"))
+            if settings and settings.get("website"):
+                footer_parts.append(settings.get("website"))
+            footer_text = " • ".join(footer_parts) if footer_parts else ""
+            p.setFont("Helvetica-Oblique", 9)
+            sig_text = "Documento assinado digitalmente"
+            sig_w = p.stringWidth(sig_text, "Helvetica-Oblique", 9)
+            p.drawString((width - sig_w) / 2, bottom_margin - 20, sig_text)
+            if footer_text:
+                p.setFont("Helvetica", 9)
+                fw = p.stringWidth(footer_text, "Helvetica", 9)
+                p.drawString((width - fw) / 2, bottom_margin - 5, footer_text)
             p.setFont("Helvetica", 12)
-            y = height - 100
-            
-        p.drawString(100, y, f"{label}: {value}")
-        y -= 20
-
+            p.showPage()
+            if logo_data and isinstance(logo_data, str):
+                try:
+                    b64 = logo_data.split(",", 1)[1] if "," in logo_data else logo_data
+                    img_bytes = base64.b64decode(b64)
+                    img = ImageReader(io.BytesIO(img_bytes))
+                    iw, ih = img.getSize()
+                    target_w = 140
+                    ratio = target_w / float(iw)
+                    target_h = ih * ratio
+                    x = (width - target_w) / 2
+                    y_logo = height - top_margin - target_h
+                    p.drawImage(img, x, y_logo, width=target_w, height=target_h, preserveAspectRatio=True, mask='auto')
+                except Exception:
+                    pass
+            p.setFont("Helvetica-Bold", 18)
+            title_w = p.stringWidth(title, "Helvetica-Bold", 18)
+            p.drawString((width - title_w) / 2, height - top_margin - 60, title)
+            p.setFont("Helvetica", 12)
+            y = height - top_margin - 100
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(left_margin, y, f"{label}:")
+        y -= 18
+        p.setFont("Helvetica", 12)
+        for line in value_lines if value_lines else [""]:
+            p.drawString(left_margin, y, line)
+            y -= 16
+    p.setStrokeColorRGB(0.2, 0.5, 0.9)
+    p.setLineWidth(0.8)
+    p.line(left_margin, bottom_margin + 15, right_margin, bottom_margin + 15)
+    footer_parts = []
+    if settings and settings.get("clinic_name"):
+        footer_parts.append(settings.get("clinic_name"))
+    if settings and settings.get("address"):
+        footer_parts.append(settings.get("address"))
+    if settings and settings.get("phone"):
+        footer_parts.append(settings.get("phone"))
+    if settings and settings.get("email"):
+        footer_parts.append(settings.get("email"))
+    if settings and settings.get("website"):
+        footer_parts.append(settings.get("website"))
+    footer_text = " • ".join(footer_parts) if footer_parts else ""
+    p.setFont("Helvetica-Oblique", 9)
+    sig_text = "Documento assinado digitalmente"
+    sig_w = p.stringWidth(sig_text, "Helvetica-Oblique", 9)
+    p.drawString((width - sig_w) / 2, bottom_margin - 20, sig_text)
+    if footer_text:
+        p.setFont("Helvetica", 9)
+        fw = p.stringWidth(footer_text, "Helvetica", 9)
+        p.drawString((width - fw) / 2, bottom_margin - 5, footer_text)
     p.save()
     buffer.seek(0)
-
     return StreamingResponse(buffer, media_type="application/pdf", headers={
         "Content-Disposition": f"attachment; filename=prontuario_{request.patient_name}.pdf"
     })
@@ -1641,7 +2155,7 @@ app.include_router(api_router)
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
