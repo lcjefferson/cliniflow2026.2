@@ -9,13 +9,18 @@ annotated-doc==0.0.4
 annotated-types==0.7.0
     # via pydantic
 anyio==4.12.0
-    # via starlette
+    # via
+    #   httpx
+    #   starlette
 apscheduler==3.11.1
     # via -r requirements.in
 bidict==0.23.1
     # via python-socketio
 certifi==2025.11.12
-    # via requests
+    # via
+    #   httpcore
+    #   httpx
+    #   requests
 cffi==2.0.0
     # via cryptography
 charset-normalizer==3.4.4
@@ -44,12 +49,18 @@ fastapi-socketio==0.0.10
     # via -r requirements.in
 h11==0.16.0
     # via
+    #   httpcore
     #   uvicorn
     #   wsproto
+httpcore==1.0.9
+    # via httpx
+httpx==0.28.1
+    # via -r requirements.in
 idna==3.11
     # via
     #   anyio
     #   email-validator
+    #   httpx
     #   requests
 motor==3.7.1
     # via -r requirements.in

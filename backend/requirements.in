@@ -1,5 +1,6 @@
 fastapi
 fastapi-socketio
+httpx
 uvicorn
 motor
 pydantic
