@@ -20,7 +20,12 @@ except Exception:
     pass
 load_dotenv()
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Respect PASSWORD_SCHEME to match backend behavior
+PWD_SCHEME = os.environ.get('PASSWORD_SCHEME', 'bcrypt')
+if PWD_SCHEME == 'sha256_crypt':
+    pwd_context = CryptContext(schemes=["sha256_crypt", "bcrypt"], deprecated="auto")
+else:
+    pwd_context = CryptContext(schemes=["bcrypt", "sha256_crypt"], deprecated="auto")
 
 async def create_admin(email: str, password: str, name: str):
     mongo_url = os.environ.get('MONGO_URL')

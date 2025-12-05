@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import PatientCombobox from "../components/PatientCombobox";
+import PatientDetailDialog from "../components/PatientDetailDialog";
 
 export default function CalendarPage() {
   const [appointments, setAppointments] = useState([]);
@@ -48,6 +49,8 @@ export default function CalendarPage() {
   const [checkingConflicts, setCheckingConflicts] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [appointmentToDelete, setAppointmentToDelete] = useState(null);
+  const [showPatientDialog, setShowPatientDialog] = useState(false);
+  const [selectedPatientForDialog, setSelectedPatientForDialog] = useState(null);
 
   // Cores para cada profissional
   const professionalColors = [
@@ -203,6 +206,19 @@ export default function CalendarPage() {
     }
   };
 
+  const openPatientDialog = (patientId) => {
+    const p = patients.find((x) => x.id === patientId);
+    if (!p) return;
+    setSelectedPatientForDialog(p);
+    setShowPatientDialog(true);
+  };
+
+  const handlePatientUpdate = (updated) => {
+    if (!updated || !updated.id) return;
+    setPatients((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    setSelectedPatientForDialog(updated);
+  };
+
   const handleCloseDialog = () => {
     setShowDialog(false);
     setEditingAppointment(null);
@@ -249,6 +265,8 @@ export default function CalendarPage() {
   };
 
   const getProfessionalColor = (professionalId) => {
+    const prof = professionals.find(p => p.id === professionalId);
+    if (prof && prof.color) return prof.color;
     const index = professionals.findIndex(p => p.id === professionalId);
     return professionalColors[index % professionalColors.length];
   };
@@ -370,6 +388,13 @@ export default function CalendarPage() {
     }
   };
 
+  const toYMD = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   const getWeekDays = () => {
     const startOfWeek = new Date(currentDate);
     const day = startOfWeek.getDay();
@@ -382,7 +407,7 @@ export default function CalendarPage() {
       date.setDate(startOfWeek.getDate() + i);
       days.push({
         day: date.getDate(),
-        date: date.toISOString().split('T')[0],
+        date: toYMD(date),
         dayName: weekDays[i],
         isToday: date.toDateString() === new Date().toDateString()
       });
@@ -604,7 +629,12 @@ export default function CalendarPage() {
                         >
                           <div className="font-semibold">{apt.appointment_time}</div>
                           <div className="truncate">{getProfessionalName(apt.professional_id)}</div>
-                          <div className="truncate text-[10px] opacity-80">{getPatientName(apt.patient_id)}</div>
+                          <span
+                            onClick={(e) => { e.stopPropagation(); openPatientDialog(apt.patient_id); }}
+                            className="truncate text-[10px] opacity-80 cursor-pointer"
+                          >
+                            {getPatientName(apt.patient_id)}
+                          </span>
                         </button>
                       ))}
                     </div>
@@ -630,7 +660,12 @@ export default function CalendarPage() {
                     >
                       <div>
                         <div className="text-2xl font-bold mb-2">{apt.appointment_time}</div>
-                        <div className="text-lg font-semibold">{getPatientName(apt.patient_id)}</div>
+                        <span
+                          onClick={(e) => { e.stopPropagation(); openPatientDialog(apt.patient_id); }}
+                          className="text-lg font-semibold text-left cursor-pointer"
+                        >
+                          {getPatientName(apt.patient_id)}
+                        </span>
                         <div className="text-sm opacity-90">{getProfessionalName(apt.professional_id)}</div>
                         <div className="text-sm opacity-80">{getServiceName(apt.service_id)}</div>
                       </div>
@@ -653,7 +688,7 @@ export default function CalendarPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {professionals.map((prof, index) => (
               <div key={prof.id} className="flex items-center gap-2">
-                <div className={`w-4 h-4 rounded ${professionalColors[index % professionalColors.length]}`}></div>
+                <div className={`w-4 h-4 rounded ${prof.color || professionalColors[index % professionalColors.length]}`}></div>
                 <span className="text-sm text-gray-700">{prof.name}</span>
               </div>
             ))}
@@ -669,8 +704,14 @@ export default function CalendarPage() {
             {selectedAppointment && (
               <div className="space-y-4">
                 <div>
-                  <Label className="text-gray-600">Paciente</Label>
-                  <p className="font-semibold">{getPatientName(selectedAppointment.patient_id)}</p>
+                  <Label className="text-gray-600 block mb-1">Paciente</Label>
+                  <button
+                    type="button"
+                    onClick={() => openPatientDialog(selectedAppointment.patient_id)}
+                    className="font-semibold text-left"
+                  >
+                    {getPatientName(selectedAppointment.patient_id)}
+                  </button>
                 </div>
                 <div>
                   <Label className="text-gray-600">Profissional</Label>
@@ -988,6 +1029,13 @@ export default function CalendarPage() {
             </div>
           </DialogContent>
         </Dialog>
+
+        <PatientDetailDialog
+          patient={selectedPatientForDialog}
+          isOpen={showPatientDialog}
+          onClose={() => setShowPatientDialog(false)}
+          onUpdate={handlePatientUpdate}
+        />
       </div>
     </Layout>
   );

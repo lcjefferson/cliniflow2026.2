@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef } from "react";
 import api from "../services/api";
 import { 
   FileText, Paperclip, Stethoscope, Activity, 
-  X, Upload, Trash2, Plus, Edit, Save, AlertCircle,
-  Download, CheckCircle, Clock, MessageSquare, DollarSign
+  X, Upload, Trash2, Plus, Minus, Edit, Save, AlertCircle,
+  Download, CheckCircle, Clock, MessageSquare, DollarSign,
+  Folder, FolderOpen
 } from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { formatDate } from "../utils/dateUtils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,6 +72,21 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   const [treatmentToDelete, setTreatmentToDelete] = useState(null);
   const [showDeleteAttachmentDialog, setShowDeleteAttachmentDialog] = useState(false);
   const [attachmentToDelete, setAttachmentToDelete] = useState(null);
+  const [attachmentPreviews, setAttachmentPreviews] = useState({});
+  const [attachmentFullPreviews, setAttachmentFullPreviews] = useState({});
+  const itemRefs = useRef(new Map());
+  const ioRef = useRef(null);
+  const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
+  const [imagePreviewTitle, setImagePreviewTitle] = useState("");
+  const [imagePreviewTemp, setImagePreviewTemp] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageScale, setImageScale] = useState(1);
+  const [imagePos, setImagePos] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const [attachmentFolders, setAttachmentFolders] = useState([]);
+  const [selectedFolderId, setSelectedFolderId] = useState('ALL');
 
   // Medical Record form state
   const [showMedicalRecordDialog, setShowMedicalRecordDialog] = useState(false);
@@ -104,6 +120,33 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       scrollRef.current.scrollTop = scrollPosition;
     }
   }, [detailedPatient]);
+
+  useEffect(() => {
+    const fetchTabData = async () => {
+      if (!isOpen || !detailedPatient) return;
+      try {
+        if (activeTab === 'revenue' && transactions.length === 0) {
+          const res = await api.get(`/transactions`, { params: { patient_id: detailedPatient.id, sort_by: 'created_at', order: 'desc', limit: 100 } });
+          setTransactions(res.data || []);
+          if (appointmentsList.length === 0) {
+            const appts = await api.get(`/appointments`, { params: { patient_id: detailedPatient.id, sort_by: 'appointment_date', order: 'desc', limit: 200 } });
+            setAppointmentsList(appts.data || []);
+          }
+        }
+        if (activeTab === 'records' && medicalRecords.length === 0) {
+          const res = await api.get(`/medical-records`, { params: { patient_id: detailedPatient.id, sort_by: 'created_at', order: 'desc', limit: 100 } });
+          setMedicalRecords(res.data || []);
+        }
+        if (activeTab === 'treatments' && allProfessionals.length === 0) {
+          const profsRes = await api.get(`/professionals`);
+          const allClinicProfessionals = profsRes.data || [];
+          setProfessionals(allClinicProfessionals);
+          setAllProfessionals(allClinicProfessionals);
+        }
+      } catch (e) {}
+    };
+    fetchTabData();
+  }, [activeTab, isOpen, detailedPatient]);
 
   const handleOpenChange = (isOpen) => {
     if (!isOpen) {
@@ -169,43 +212,22 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         },
       };
 
-      const [patientRes, recordsRes, profsRes, servicesRes, debtsRes, appointmentsRes, transactionsRes] = await Promise.all([
+      const [patientRes, debtsRes] = await Promise.all([
         api.get(`/patients/${patientId}`, noCacheConfig),
-        api.get(`/patients/${patientId}/medical-records`, noCacheConfig),
-        api.get(`/professionals`, noCacheConfig),
-        api.get(`/services`, noCacheConfig),
-        api.get(`/patients/${patientId}/debts`, noCacheConfig),
-        api.get(`/appointments?patient_id=${patientId}`, noCacheConfig),
-        api.get(`/transactions`, noCacheConfig)
+        api.get(`/patients/${patientId}/debts`, noCacheConfig)
       ]);
 
       setDetailedPatient(patientRes.data);
-      setMedicalRecords(recordsRes.data);
+      setAttachmentFolders(patientRes.data.attachment_folders || []);
+      setMedicalRecords([]);
       
-      // Corrigido: Filtra profissionais com base no histórico do paciente (agendamentos e tratamentos)
-      const appointments = appointmentsRes.data || [];
-      const treatments = patientRes.data.treatments || [];
-      const allClinicProfessionals = profsRes.data || [];
-
-      const profIdsFromHistory = [
-        ...appointments.map(a => a.professional_id),
-        ...treatments.map(t => t.professional_id)
-      ];
-      
-      const uniqueProfIds = [...new Set(profIdsFromHistory.filter(Boolean))];
-      
-      const associatedProfessionals = allClinicProfessionals.filter(p => uniqueProfIds.includes(p.id));
-      const manualProfIds = (patientRes.data.professionals || []);
-      const mergedIds = [...new Set([...uniqueProfIds, ...manualProfIds])];
-      const mergedProfessionals = allClinicProfessionals.filter(p => mergedIds.includes(p.id));
-      setProfessionals(mergedProfessionals);
-      setAllProfessionals(allClinicProfessionals);
-      setAppointmentsList(appointments.filter(a => a.patient_id === patientId));
-      
-      setServices(servicesRes.data);
+      // Carregamentos pesados movidos para lazy-load por aba
+      setAppointmentsList([]);
+      setProfessionals([]);
+      setAllProfessionals([]);
+      setServices([]);
       setDebts(debtsRes.data);
-      const allTransactions = transactionsRes.data || [];
-      setTransactions(allTransactions.filter(t => t.patient_id === patientId));
+      setTransactions([]);
 
       if (patientRes.data.anamnese) {
         setAnamnese(patientRes.data.anamnese);
@@ -291,6 +313,73 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }
   };
 
+        useEffect(() => {
+            const prefetchPreviewFor = async (attId) => {
+                if (attachmentPreviews[attId]) return;
+                try {
+                    const res = await api.get(`/patients/${detailedPatient.id}/attachments/${attId}/download`, { params: { preview: true, format: 'webp' }, responseType: 'blob' });
+                    const url = URL.createObjectURL(res.data);
+                    setAttachmentPreviews((prev) => (prev[attId] ? prev : { ...prev, [attId]: url }));
+                } catch {}
+            };
+            const prefetchModalFor = async (attId) => {
+                if (attachmentFullPreviews[attId]) return;
+                try {
+                    const res = await api.get(`/patients/${detailedPatient.id}/attachments/${attId}/download`, { params: { modal: true, format: 'webp' }, responseType: 'blob' });
+                    const url = URL.createObjectURL(res.data);
+                    setAttachmentFullPreviews((prev) => (prev[attId] ? prev : { ...prev, [attId]: url }));
+                } catch {}
+            };
+            if (activeTab !== 'attachments') return;
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        const id = entry.target.getAttribute('data-att-id');
+                        if (id) {
+                            prefetchPreviewFor(id);
+                            prefetchModalFor(id);
+                        }
+                        observer.unobserve(entry.target);
+                    }
+                });
+            }, { root: scrollRef.current, rootMargin: '200px', threshold: 0.1 });
+            itemRefs.current.forEach((el) => { if (el) observer.observe(el); });
+            ioRef.current = observer;
+            return () => { try { observer.disconnect(); } catch {} };
+        }, [activeTab, detailedPatient?.attachments, detailedPatient?.id]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      Object.values(attachmentPreviews).forEach((u) => { try { URL.revokeObjectURL(u); } catch {} });
+      setAttachmentPreviews({});
+      Object.values(attachmentFullPreviews).forEach((u) => { try { URL.revokeObjectURL(u); } catch {} });
+      setAttachmentFullPreviews({});
+      itemRefs.current.clear();
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    const ids = new Set(detailedPatient?.attachments?.map((a) => a.id) || []);
+    Object.entries(attachmentPreviews).forEach(([id, url]) => {
+      if (!ids.has(id)) {
+        try { URL.revokeObjectURL(url); } catch {}
+        setAttachmentPreviews((p) => {
+          const { [id]: _, ...rest } = p;
+          return rest;
+        });
+      }
+    });
+    Object.entries(attachmentFullPreviews).forEach(([id, url]) => {
+      if (!ids.has(id)) {
+        try { URL.revokeObjectURL(url); } catch {}
+        setAttachmentFullPreviews((p) => {
+          const { [id]: _, ...rest } = p;
+          return rest;
+        });
+      }
+    });
+  }, [detailedPatient?.attachments]);
+
   const handleDeleteAttachment = async (attachmentId) => {
     try {
       await api.delete(`/patients/${detailedPatient.id}/attachments/${attachmentId}`);
@@ -302,20 +391,149 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }
   };
 
-  const handleDownloadAttachment = async (attachment) => {
-        try {
-            const response = await api.get(`/patients/${detailedPatient.id}/attachments/${attachment.id}`);
-            const fullAttachment = response.data;
+  const handleCreateFolder = async () => {
+    const name = window.prompt("Nome da pasta");
+    if (!name) return;
+    try {
+      const res = await api.post(`/patients/${detailedPatient.id}/attachment-folders`, { name });
+      const updated = await loadPatientData(detailedPatient.id);
+      onUpdate(updated);
+      setAttachmentFolders((prev) => [...prev, res.data]);
+    } catch (e) {
+      toast.error("Erro ao criar pasta");
+    }
+  };
 
-            const link = document.createElement('a');
-            link.href = `data:${fullAttachment.file_type};base64,${fullAttachment.file_data}`;
-            link.download = fullAttachment.filename;
-            link.click();
-        } catch (error) {
-            toast.error('Erro ao baixar o anexo.');
-            console.error('Erro ao baixar o anexo:', error);
-        }
-    };
+  const handleDropToFolder = async (folderId, e) => {
+    e.preventDefault();
+    const attachmentId = e.dataTransfer.getData('text/plain');
+    if (!attachmentId) return;
+    try {
+      await api.put(`/patients/${detailedPatient.id}/attachments/${attachmentId}/move`, { folder_id: folderId });
+      const updated = await loadPatientData(detailedPatient.id);
+      onUpdate(updated);
+      setSelectedFolderId(folderId);
+    } catch (err) {
+      toast.error("Erro ao mover anexo");
+    }
+  };
+
+  const handleDropToUnassigned = async (e) => {
+    e.preventDefault();
+    const attachmentId = e.dataTransfer.getData('text/plain');
+    if (!attachmentId) return;
+    try {
+      await api.put(`/patients/${detailedPatient.id}/attachments/${attachmentId}/move`, { folder_id: null });
+      const updated = await loadPatientData(detailedPatient.id);
+      onUpdate(updated);
+      setSelectedFolderId(null);
+    } catch (err) {
+      toast.error("Erro ao mover anexo");
+    }
+  };
+
+  const refreshPreview = async (id) => {
+    const att = detailedPatient?.attachments?.find((a) => a.id === id);
+    if (!att || !(att.file_type && att.file_type.startsWith('image/'))) return;
+    try {
+      const res = await api.get(`/patients/${detailedPatient.id}/attachments/${att.id}/download`, { params: { preview: true }, responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const prev = attachmentPreviews[id];
+      if (prev) {
+        try { URL.revokeObjectURL(prev); } catch {}
+      }
+      setAttachmentPreviews((p) => ({ ...p, [id]: url }));
+    } catch (err) {}
+  };
+
+  const handleOpenImage = async (att) => {
+    if (!(att.file_type && att.file_type.startsWith('image/'))) return;
+    const fullCached = attachmentFullPreviews[att.id] || null;
+    const previewUrl = attachmentPreviews[att.id] || null;
+    const initialUrl = fullCached || previewUrl || null;
+    setImagePreviewTitle(att.filename);
+    setImageScale(1);
+    setImagePos({ x: 0, y: 0 });
+    setImagePreviewOpen(true);
+    if (initialUrl) {
+      setImagePreviewUrl(initialUrl);
+      setImagePreviewTemp(false);
+    }
+    // Busque em paralelo a versão otimizada para o lightbox
+    try {
+      setImageLoading(true);
+      if (!fullCached) {
+        const res = await api.get(`/patients/${detailedPatient.id}/attachments/${att.id}/download`, { params: { modal: true, format: 'webp' }, responseType: 'blob' });
+        const fullUrl = URL.createObjectURL(res.data);
+        setAttachmentFullPreviews((prev) => (prev[att.id] ? prev : { ...prev, [att.id]: fullUrl }));
+        setImagePreviewUrl(fullUrl);
+        setImagePreviewTemp(false);
+      }
+    } catch (err) {
+      // Se falhar, mantenha o preview da grade
+    } finally {
+      setImageLoading(false);
+    }
+  };
+
+  const handleCloseImage = () => {
+    if (imagePreviewUrl && imagePreviewTemp) {
+      try { URL.revokeObjectURL(imagePreviewUrl); } catch {}
+    }
+    setImagePreviewUrl(null);
+    setImagePreviewOpen(false);
+    setImagePreviewTemp(false);
+    setImageScale(1);
+    setImagePos({ x: 0, y: 0 });
+  };
+
+  const handleWheelZoom = (e) => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.1 : -0.1;
+    setImageScale((s) => Math.min(5, Math.max(1, s + delta)));
+  };
+
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+    dragStartRef.current = { x: e.clientX - imagePos.x, y: e.clientY - imagePos.y };
+  };
+  const handleMouseMove = (e) => {
+    if (!isDragging) return;
+    setImagePos({ x: e.clientX - dragStartRef.current.x, y: e.clientY - dragStartRef.current.y });
+  };
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    setIsDragging(true);
+    dragStartRef.current = { x: t.clientX - imagePos.x, y: t.clientY - imagePos.y };
+  };
+  const handleTouchMove = (e) => {
+    if (!isDragging || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    setImagePos({ x: t.clientX - dragStartRef.current.x, y: t.clientY - dragStartRef.current.y });
+  };
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+  };
+
+  const handleDownloadAttachment = async (attachment) => {
+    try {
+      const response = await api.get(`/patients/${detailedPatient.id}/attachments/${attachment.id}/download`, { responseType: 'blob' });
+      const blobUrl = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = attachment.filename;
+      link.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      toast.error('Erro ao baixar o anexo.');
+    }
+  };
 
   const handleSaveAnamnese = async () => {
     try {
@@ -345,13 +563,13 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }
 
     try {
+      setShowTreatmentDialog(false);
       const payload = {
         ...treatmentForm,
         professional_id: (treatmentForm.professional_id || "").trim() || undefined,
       };
-      await api.post(`/patients/${detailedPatient.id}/treatments`, payload);
+      const { data: newTreatment } = await api.post(`/patients/${detailedPatient.id}/treatments`, payload);
       toast.success("Tratamento adicionado!");
-      setShowTreatmentDialog(false);
       setTreatmentForm({
         name: "",
         start_date: new Date().toISOString().split('T')[0],
@@ -362,8 +580,10 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         professional_id: "",
         status: "ongoing"
       });
-      const updatedPatient = await loadPatientData(detailedPatient.id);
-      onUpdate(updatedPatient);
+      setDetailedPatient(prev => ({
+        ...prev,
+        treatments: [...(prev?.treatments || []), newTreatment]
+      }));
     } catch (error) {
       console.error("Erro ao adicionar tratamento:", error);
       toast.error("Erro ao adicionar tratamento");
@@ -377,16 +597,18 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }
 
     try {
+      setShowTreatmentDialog(false);
       const payload = {
         ...treatmentForm,
         professional_id: (treatmentForm.professional_id || "").trim() || undefined,
       };
-      await api.put(`/patients/${detailedPatient.id}/treatments/${editingTreatment.id}`, payload);
+      const { data: updatedTreatment } = await api.put(`/patients/${detailedPatient.id}/treatments/${editingTreatment.id}`, payload);
       toast.success("Tratamento atualizado com sucesso!");
-      setShowTreatmentDialog(false);
       setEditingTreatment(null);
-      const updatedPatient = await loadPatientData(detailedPatient.id);
-      onUpdate(updatedPatient);
+      setDetailedPatient(prev => ({
+        ...prev,
+        treatments: (prev?.treatments || []).map(t => t.id === updatedTreatment.id ? updatedTreatment : t)
+      }));
     } catch (error) {
       toast.error("Erro ao atualizar tratamento");
     }
@@ -404,8 +626,10 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       toast.success("Tratamento removido!");
       setShowDeleteTreatmentDialog(false);
       setTreatmentToDelete(null);
-      const updatedPatient = await loadPatientData(patient.id);
-      onUpdate(updatedPatient);
+      setDetailedPatient(prev => ({
+        ...prev,
+        treatments: (prev?.treatments || []).filter(t => t.id !== treatmentToDelete)
+      }));
     } catch (error) {
       toast.error("Erro ao remover tratamento");
     }
@@ -563,18 +787,19 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-5xl max-h-[90vh] w-[95vw] md:w-auto flex flex-col p-0 overflow-hidden">
         <div className="flex-shrink-0 p-6 pb-0">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <div>
-                <span className="text-2xl">{detailedPatient.name}</span>
-                {debts.total_debt > 0 && (
-                  <span className="ml-4 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">
-                    Débito: R$ {debts.total_debt.toFixed(2)}
-                  </span>
-                )}
-              </div>
-            </DialogTitle>
-          </DialogHeader>
+      <DialogHeader>
+        <DialogTitle className="flex items-center justify-between">
+          <div>
+            <span className="text-2xl">{detailedPatient.name}</span>
+            {debts.total_debt > 0 && (
+              <span className="ml-4 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">
+                Débito: R$ {debts.total_debt.toFixed(2)}
+              </span>
+            )}
+          </div>
+        </DialogTitle>
+        <DialogDescription>Visualize e gerencie os dados do paciente</DialogDescription>
+      </DialogHeader>
 
           {/* Tabs */}
           <div className="flex border-b border-gray-200 overflow-x-auto mt-4">
@@ -730,39 +955,114 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                 <div className="space-y-4">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-semibold">Anexos</h3>
-                    <label className="btn-primary cursor-pointer inline-flex items-center">
-                      <Upload className="w-4 h-4 mr-2" />
-                      Adicionar Arquivo
-                      <input type="file" className="hidden" onChange={handleFileUpload} />
-                    </label>
+                    <div className="flex items-center gap-2">
+                      <button onClick={handleCreateFolder} className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">
+                        <Plus className="w-4 h-4 mr-1 inline" />
+                        Nova pasta
+                      </button>
+                      <label className="btn-primary cursor-pointer inline-flex items-center">
+                        <Upload className="w-4 h-4 mr-2" />
+                        Adicionar Arquivo
+                        <input type="file" className="hidden" onChange={handleFileUpload} />
+                      </label>
+                    </div>
                   </div>
 
-                  {detailedPatient.attachments && detailedPatient.attachments.length > 0 ? (
-                    <div className="grid gap-3">
-                      {detailedPatient.attachments.map((att) => (
-                        <div key={att.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
-                          <div className="flex items-center gap-3">
-                            <Paperclip className="w-5 h-5 text-gray-400" />
-                            <div>
-                              <p className="font-medium text-gray-900">{att.filename}</p>
-                              <p className="text-sm text-gray-500">
-                                {(att.size_bytes / 1024).toFixed(2)} KB - {new Date(att.upload_date).toLocaleDateString('pt-BR')}
-                              </p>
-                            </div>
+                  <div className="flex flex-wrap gap-3 mb-4">
+                    <button
+                      onClick={() => setSelectedFolderId('ALL')}
+                      className={`group relative flex items-center gap-2 px-3 py-2 rounded-md border shadow-sm transition ${selectedFolderId === 'ALL' ? 'bg-yellow-100 border-yellow-300 ring-2 ring-yellow-300' : 'bg-white hover:bg-yellow-50 border-gray-200'}`}
+                      onDragOver={(e) => e.preventDefault()}
+                      aria-label="Todas as pastas"
+                    >
+                      {selectedFolderId === 'ALL' ? (
+                        <FolderOpen className="w-5 h-5 text-yellow-700" />
+                      ) : (
+                        <Folder className="w-5 h-5 text-yellow-600" />
+                      )}
+                      <span className={`text-sm ${selectedFolderId === 'ALL' ? 'text-yellow-800 font-semibold' : 'text-gray-800'}`}>Todas</span>
+                    </button>
+                    <button
+                      onClick={() => setSelectedFolderId(null)}
+                      className={`group relative flex items-center gap-2 px-3 py-2 rounded-md border shadow-sm transition ${selectedFolderId === null ? 'bg-yellow-100 border-yellow-300 ring-2 ring-yellow-300' : 'bg-white hover:bg-yellow-50 border-gray-200'}`}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => handleDropToUnassigned(e)}
+                      aria-label="Sem pasta"
+                    >
+                      {selectedFolderId === null ? (
+                        <FolderOpen className="w-5 h-5 text-yellow-700" />
+                      ) : (
+                        <Folder className="w-5 h-5 text-yellow-600" />
+                      )}
+                      <span className={`text-sm ${selectedFolderId === null ? 'text-yellow-800 font-semibold' : 'text-gray-800'}`}>Sem pasta</span>
+                    </button>
+                    {attachmentFolders.map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={() => setSelectedFolderId(f.id)}
+                        className={`group relative flex items-center gap-2 px-3 py-2 rounded-md border shadow-sm transition ${selectedFolderId === f.id ? 'bg-yellow-100 border-yellow-300 ring-2 ring-yellow-300' : 'bg-white hover:bg-yellow-50 border-gray-200'}`}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => handleDropToFolder(f.id, e)}
+                        aria-label={f.name}
+                        title="Arraste anexos para mover para esta pasta"
+                      >
+                        {selectedFolderId === f.id ? (
+                          <FolderOpen className="w-5 h-5 text-yellow-700" />
+                        ) : (
+                          <Folder className="w-5 h-5 text-yellow-600" />
+                        )}
+                        <span className={`text-sm truncate max-w-[10rem] ${selectedFolderId === f.id ? 'text-yellow-800 font-semibold' : 'text-gray-800'}`}>{f.name}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {detailedPatient?.attachments && detailedPatient?.attachments?.length > 0 ? (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {(detailedPatient?.attachments || [])
+                        .filter((att) => selectedFolderId === 'ALL' ? true : (selectedFolderId === null ? !att.folder_id : att.folder_id === selectedFolderId))
+                        .map((att) => (
+                        <div
+                          key={att.id}
+                          data-att-id={att.id}
+                          ref={(el) => { if (el) itemRefs.current.set(att.id, el); }}
+                          className="group border rounded-lg overflow-hidden bg-white"
+                          draggable
+                          onDragStart={(e) => { try { e.dataTransfer.setData('text/plain', att.id); } catch {} }}
+                        >
+                          <div className="aspect-square bg-gray-100 flex items-center justify-center">
+                            {att.file_type?.startsWith('image/') ? (
+                              <picture>
+                                <source srcSet={attachmentPreviews[att.id] || `${process.env.REACT_APP_BACKEND_URL}/api/patients/${detailedPatient.id}/attachments/${att.id}/download?preview=true&format=webp&token=${encodeURIComponent(localStorage.getItem('token') || '')}`} type="image/webp" />
+                                <img
+                                  src={attachmentPreviews[att.id] || `${process.env.REACT_APP_BACKEND_URL}/api/patients/${detailedPatient.id}/attachments/${att.id}/download?preview=true&token=${encodeURIComponent(localStorage.getItem('token') || '')}`}
+                                  alt={att.filename}
+                                  loading="eager"
+                                  decoding="async"
+                                  fetchpriority="high"
+                                  onClick={() => handleOpenImage(att)}
+                                  className="w-full h-full object-cover cursor-zoom-in"
+                                />
+                              </picture>
+                            ) : (
+                              <div className="flex flex-col items-center text-gray-500">
+                                <Paperclip className="w-8 h-8 mb-2" />
+                                <span className="text-xs">{att.file_type?.split('/')[1] || 'arquivo'}</span>
+                              </div>
+                            )}
                           </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handleDownloadAttachment(att)}
-                              className="text-blue-500 hover:text-blue-700"
-                            >
-                              <Download className="w-5 h-5" />
-                            </button>
-                            <button
-                              onClick={() => { setAttachmentToDelete(att.id); setShowDeleteAttachmentDialog(true); }}
-                              className="text-red-500 hover:text-red-700"
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
+                          <div className="p-3 flex items-center justify-between">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{att.filename}</p>
+                              <p className="text-xs text-gray-500">{(att.size_bytes / 1024).toFixed(2)} KB - {new Date(att.upload_date).toLocaleDateString('pt-BR')}</p>
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => handleDownloadAttachment(att)} className="text-blue-500 hover:text-blue-700">
+                                <Download className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => { setAttachmentToDelete(att.id); setShowDeleteAttachmentDialog(true); }} className="text-red-500 hover:text-red-700">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -1112,10 +1412,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
           appointment_id: ""
         });
       }
-    }}>
+  }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{editingTransaction ? "Editar Faturamento" : "Adicionar Faturamento"}</DialogTitle>
+          <DialogDescription>Preencha os dados do faturamento</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
@@ -1219,11 +1520,57 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       </DialogContent>
     </Dialog>
 
+    <Dialog open={imagePreviewOpen} onOpenChange={(open) => { if (!open) handleCloseImage(); }}>
+      <DialogContent className="max-w-5xl w-[95vw] h-[85vh] p-0">
+        <DialogDescription className="sr-only">Visualização da imagem do anexo</DialogDescription>
+        <div className="relative w-full h-full bg-black/80">
+          {imageLoading && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="h-10 w-10 rounded-full border-4 border-white/60 border-t-transparent animate-spin" />
+            </div>
+          )}
+          {imagePreviewUrl && (
+            <div
+              className={`w-full h-full overflow-hidden ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+              onWheel={handleWheelZoom}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
+              <img
+                src={imagePreviewUrl}
+                alt={imagePreviewTitle}
+                draggable={false}
+                className="select-none block mx-auto"
+                style={{
+                  transform: `translate(${imagePos.x}px, ${imagePos.y}px) scale(${imageScale})`,
+                  transformOrigin: 'center center',
+                  maxHeight: '85vh',
+                  maxWidth: '100%',
+                  objectFit: 'contain'
+                }}
+              />
+            </div>
+          )}
+          <div className="absolute bottom-3 right-3 flex gap-2">
+            <button className="btn-primary px-3 py-2" onClick={() => setImageScale((s) => Math.min(5, s + 0.2))}><Plus className="w-4 h-4" /></button>
+            <button className="btn-primary px-3 py-2" onClick={() => setImageScale((s) => Math.max(1, s - 0.2))}><Minus className="w-4 h-4" /></button>
+            <button className="btn-secondary px-3 py-2" onClick={() => { setImageScale(1); setImagePos({ x: 0, y: 0 }); }}>Resetar</button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+
     {/* Treatment Dialog - Moved outside main dialog */}
     <Dialog open={showTreatmentDialog} onOpenChange={handleTreatmentDialogOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-xl w-[95vw] md:w-auto max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingTreatment ? "Editar Tratamento" : "Adicionar Tratamento"}</DialogTitle>
+          <DialogDescription>Preencha os dados do tratamento</DialogDescription>
         </DialogHeader>
         <div className="p-6 space-y-4">
           {/* Campos Obrigatórios */}
@@ -1326,6 +1673,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       <DialogContent className="max-w-3xl max-h-[90vh] w-[95vw] md:w-auto overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingRecord ? "Editar Documento" : "Novo Documento"} - {patient?.name}</DialogTitle>
+          <DialogDescription>Crie ou edite um documento do paciente</DialogDescription>
         </DialogHeader>
         
         {/* Templates Rápidos */}
@@ -1480,6 +1828,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Confirmar Exclusão</DialogTitle>
+          <DialogDescription>Confirme a exclusão do documento</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-gray-700">
@@ -1516,6 +1865,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Confirmar Exclusão</DialogTitle>
+          <DialogDescription>Confirme a exclusão do tratamento</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-gray-700">
@@ -1552,6 +1902,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Confirmar Exclusão</DialogTitle>
+          <DialogDescription>Confirme a exclusão do anexo</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-gray-700">

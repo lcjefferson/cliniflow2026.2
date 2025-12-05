@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request
 from fastapi.responses import StreamingResponse
 import io
+import asyncio
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
@@ -8,7 +9,8 @@ from fastapi_socketio import SocketManager
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
+from bson import ObjectId
 import os
 import logging
 from pathlib import Path
@@ -35,6 +37,7 @@ except Exception:
 import httpx
 import json
 import base64
+from PIL import Image
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -42,7 +45,7 @@ load_dotenv(ROOT_DIR / '.env')
 # MongoDB connection
 mongo_url = os.environ.get('MONGO_URL', '').strip()
 db_name = os.environ.get('DB_NAME', 'clinicflow').strip()
-allowed_origins_env = os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000')
+allowed_origins_env = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,https://cliniflow-frontend.onrender.com')
 ALLOWED_ORIGINS = [o.strip() for o in allowed_origins_env.split(',') if o.strip()]
 client: Optional[AsyncIOMotorClient] = None
 db = None
@@ -158,10 +161,14 @@ JWT_SECRET = os.environ.get('JWT_SECRET_KEY', 'your-secret-key')
 JWT_ALGORITHM = os.environ.get('JWT_ALGORITHM', 'HS256')
 JWT_EXPIRATION = int(os.environ.get('JWT_EXPIRATION_MINUTES', '10080'))
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    token = credentials.credentials
+from fastapi import Request
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), request: Request = None):
+    token = credentials.credentials if credentials else None
+    if request and not token:
+        token = request.query_params.get('token') or request.cookies.get('token')
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id: str = payload.get("sub")
@@ -235,8 +242,104 @@ async def check_and_send_birthday_greetings():
     except Exception as e:
         logging.error(f"Error during birthday check: {e}")
 
+async def normalize_all_thumbnails():
+    if db is None:
+        return
+    try:
+        fs = AsyncIOMotorGridFSBucket(db)
+        cursor = db.patients.find({}, {"_id": 0, "id": 1, "attachments": 1})
+        async for patient in cursor:
+            patient_id = patient.get("id")
+            for attachment in patient.get("attachments", []):
+                if not str(attachment.get("file_type", "")).startswith("image/"):
+                    continue
+                attachment_id = attachment.get("id")
+                need_thumb = (not attachment.get("thumbnail_gridfs_id") and not attachment.get("thumbnail_webp_gridfs_id")) or ((attachment.get("thumbnail_size_bytes") or 0) > 40000) or ((attachment.get("thumbnail_webp_size_bytes") or 0) > 40000)
+                need_modal = (not attachment.get("preview_modal_gridfs_id") and not attachment.get("preview_modal_webp_gridfs_id")) or ((attachment.get("preview_modal_size_bytes") or 0) > 350000) or ((attachment.get("preview_modal_webp_size_bytes") or 0) > 350000)
+                if not (need_thumb or need_modal):
+                    continue
+                try:
+                    buf = io.BytesIO()
+                    if attachment.get("gridfs_id"):
+                        grid_out = await fs.open_download_stream(ObjectId(attachment["gridfs_id"]))
+                        while True:
+                            chunk = await grid_out.readchunk()
+                            if not chunk:
+                                break
+                            buf.write(chunk)
+                    elif attachment.get("file_data"):
+                        raw_bytes = base64.b64decode(attachment["file_data"]) if isinstance(attachment.get("file_data"), str) else attachment.get("file_data")
+                        if isinstance(raw_bytes, bytes):
+                            buf.write(raw_bytes)
+                    else:
+                        continue
+                    buf.seek(0)
+                    img = Image.open(buf)
+                    update_fields = {}
+                    if need_thumb:
+                        timg = img.copy()
+                        timg.thumbnail((128, 128))
+                        out_jpg = io.BytesIO()
+                        timg = timg.convert("RGB")
+                        timg.save(out_jpg, format="JPEG", quality=60, optimize=True, progressive=True)
+                        out_jpg.seek(0)
+                        size_jpg = out_jpg.getbuffer().nbytes
+                        out_webp = io.BytesIO()
+                        size_webp = None
+                        try:
+                            timg.save(out_webp, format="WEBP", quality=60, method=6)
+                            out_webp.seek(0)
+                            size_webp = out_webp.getbuffer().nbytes
+                        except Exception:
+                            pass
+                        new_thumb_id = await fs.upload_from_stream(f"thumb-{attachment.get('filename','file')}.jpg", out_jpg, metadata={"content_type": "image/jpeg", "kind": "thumbnail"})
+                        update_fields.update({"attachments.$.thumbnail_gridfs_id": str(new_thumb_id), "attachments.$.thumbnail_size_bytes": size_jpg})
+                        if size_webp is not None:
+                            new_webp_id = await fs.upload_from_stream(f"thumb-{attachment.get('filename','file')}.webp", out_webp, metadata={"content_type": "image/webp", "kind": "thumbnail_webp"})
+                            update_fields.update({"attachments.$.thumbnail_webp_gridfs_id": str(new_webp_id), "attachments.$.thumbnail_webp_size_bytes": size_webp})
+                    if need_modal:
+                        mimg = img.copy()
+                        mimg.thumbnail((1280, 1280))
+                        out_mjpg = io.BytesIO()
+                        mimg = mimg.convert("RGB")
+                        mimg.save(out_mjpg, format="JPEG", quality=78, optimize=True, progressive=True)
+                        out_mjpg.seek(0)
+                        msize_jpg = out_mjpg.getbuffer().nbytes
+                        out_mwebp = io.BytesIO()
+                        msize_webp = None
+                        try:
+                            mimg.save(out_mwebp, format="WEBP", quality=78, method=6)
+                            out_mwebp.seek(0)
+                            msize_webp = out_mwebp.getbuffer().nbytes
+                        except Exception:
+                            pass
+                        new_modal_id = await fs.upload_from_stream(f"modal-{attachment.get('filename','file')}.jpg", out_mjpg, metadata={"content_type": "image/jpeg", "kind": "modal"})
+                        update_fields.update({"attachments.$.preview_modal_gridfs_id": str(new_modal_id), "attachments.$.preview_modal_size_bytes": msize_jpg})
+                        if msize_webp is not None:
+                            new_mwebp_id = await fs.upload_from_stream(f"modal-{attachment.get('filename','file')}.webp", out_mwebp, metadata={"content_type": "image/webp", "kind": "modal_webp"})
+                            update_fields.update({"attachments.$.preview_modal_webp_gridfs_id": str(new_mwebp_id), "attachments.$.preview_modal_webp_size_bytes": msize_webp})
+                    if update_fields:
+                        try:
+                            await db.patients.update_one({"id": patient_id, "attachments.id": attachment_id}, {"$set": update_fields})
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                await asyncio.sleep(0)
+    except Exception:
+        pass
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global db, DEMO_MODE
+    if db is not None:
+        try:
+            await client.admin.command('ping')
+        except Exception:
+            print("MongoDB connection failed in lifespan. Switching to DEMO MODE.")
+            db = None
+            DEMO_MODE = True
+
     if scheduler and CronTrigger:
         try:
             scheduler.start()
@@ -265,10 +368,15 @@ async def lifespan(app: FastAPI):
             await db.patients.create_index("id")
             await db.patients.create_index("phone")
             await db.patients.create_index("email")
+            await db.patients.create_index("name")
             await db.patients.create_index([("created_at", -1)])
+            await db.patients.create_index("attachments.id")
+            await db.patients.create_index("treatments.id")
             await db.transactions.create_index("patient_id")
             await db.transactions.create_index([("patient_id", 1), ("status", 1)])
             await db.transactions.create_index([("created_at", -1)])
+            await db.medical_records.create_index("patient_id")
+            await db.medical_records.create_index([("created_at", -1)])
             await db.appointments.create_index([("patient_id", 1), ("paid", 1)])
             await db.appointments.create_index("appointment_date")
             await db.professionals.create_index("id")
@@ -278,8 +386,25 @@ async def lifespan(app: FastAPI):
             await db.leads.create_index("phone")
             await db.leads.create_index("email")
             await db.leads.create_index([("created_at", -1)])
-        except Exception as e:
-            print(f"Error during startup: {e}")
+        except Exception:
+            pass
+        except Exception:
+            pass
+    else:
+        # DEMO MODE: Create default admin
+        admin_email = os.environ.get("ADMIN_EMAIL", "admin@cliniflow.com")
+        admin_password = os.environ.get("ADMIN_PASSWORD", "Admin@2024")
+        if not any(u['email'] == admin_email for u in mem['users']):
+            mem['users'].append({
+                "id": str(uuid.uuid4()),
+                "name": "Administrador",
+                "email": admin_email,
+                "password_hash": hash_password(admin_password),
+                "role": {"is_admin": True, "is_attendant": False},
+                "user_type": "admin",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            print(f"DEMO MODE: Admin user {admin_email} created.")
     yield
     if scheduler:
         try:
@@ -288,6 +413,14 @@ async def lifespan(app: FastAPI):
             pass
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https?://.*:3001",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -310,7 +443,40 @@ api_router = APIRouter(prefix="/api")
 
 @api_router.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    db_connected = False
+    try:
+        if client is not None:
+            await client.admin.command('ping')
+            db_connected = True
+    except Exception:
+        db_connected = False
+    return {"status": "ok", "db_connected": db_connected}
+
+@api_router.get("/version")
+async def get_version():
+    try:
+        p = ROOT_DIR / "version.json"
+        if not p.exists():
+            return {
+                "version": "dev",
+                "commit": "",
+                "date": datetime.now(timezone.utc).isoformat()
+            }
+        with open(p, "r") as f:
+            data = json.load(f)
+        # Garantir tipos
+        v = {
+            "version": str(data.get("version", "dev")),
+            "commit": str(data.get("commit", "")),
+            "date": str(data.get("date", datetime.now(timezone.utc).isoformat()))
+        }
+        return v
+    except Exception:
+        return {
+            "version": "dev",
+            "commit": "",
+            "date": datetime.now(timezone.utc).isoformat()
+        }
 
 # Pydantic Models
 class UserRole(BaseModel):
@@ -352,6 +518,7 @@ class Professional(BaseModel):
     specialty: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: str
+    color: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ProfessionalCreate(BaseModel):
@@ -359,6 +526,7 @@ class ProfessionalCreate(BaseModel):
     specialty: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: str  # Obrigatório
+    color: Optional[str] = None
     
     @field_validator('email', mode='before')
     @classmethod
@@ -396,10 +564,26 @@ class RoomCreate(BaseModel):
 class Attachment(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     filename: str
-    file_data: str  # base64 encoded
+    file_data: Optional[str] = None
+    gridfs_id: Optional[str] = None
     file_type: str
     upload_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     size_bytes: int
+    thumbnail_gridfs_id: Optional[str] = None
+    thumbnail_size_bytes: Optional[int] = None
+    thumbnail_webp_gridfs_id: Optional[str] = None
+    thumbnail_webp_size_bytes: Optional[int] = None
+    preview_modal_gridfs_id: Optional[str] = None
+    preview_modal_size_bytes: Optional[int] = None
+    preview_modal_webp_gridfs_id: Optional[str] = None
+    preview_modal_webp_size_bytes: Optional[int] = None
+    folder_id: Optional[str] = None
+
+class AttachmentFolder(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    parent_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class Treatment(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -531,13 +715,12 @@ async def update_treatment(patient_id: str, treatment_id: str, treatment_update:
         # If both exist but nothing was modified, it might be that the data is the same
         # or another issue. For simplicity, we'll return the current data.
 
-    # Retrieve the updated treatment to return it
-    updated_patient = await db.patients.find_one({"id": patient_id})
-    if updated_patient:
-        for treatment in updated_patient.get("treatments", []):
-            if treatment["id"] == treatment_id:
-                return treatment
-
+    updated_doc = await db.patients.find_one(
+        {"id": patient_id, "treatments.id": treatment_id},
+        {"_id": 0, "treatments.$": 1}
+    )
+    if updated_doc and updated_doc.get("treatments"):
+        return updated_doc["treatments"][0]
     raise HTTPException(status_code=404, detail="Could not retrieve updated treatment")
 
 class Patient(BaseModel):
@@ -548,7 +731,9 @@ class Patient(BaseModel):
     phone: Optional[str] = None
     birthdate: Optional[str] = None
     address: Optional[str] = None
+    cpf: Optional[str] = None
     attachments: List[Attachment] = []
+    attachment_folders: List[AttachmentFolder] = []
     treatments: List[Treatment] = []
     professionals: List[str] = []
     anamnese: Optional[Anamnese] = None
@@ -560,6 +745,7 @@ class PatientCreate(BaseModel):
     phone: Optional[str] = None
     birthdate: Optional[str] = None
     address: Optional[str] = None
+    cpf: Optional[str] = None
     
     @field_validator('email', mode='before')
     @classmethod
@@ -796,20 +982,6 @@ class GenerateDocumentRequest(BaseModel):
 
 
 
-# Transaction Routes
-@api_router.get("/transactions", response_model=List[Transaction])
-async def get_transactions(current_user: dict = Depends(get_current_user)):
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database unavailable")
-    transactions = await db.transactions.find({}, {"_id": 0}).to_list(1000)
-    for trans in transactions:
-        try:
-            if isinstance(trans.get('created_at'), datetime):
-                trans['created_at'] = trans['created_at'].isoformat()
-        except Exception as e:
-            logging.error(f"Error converting created_at for transaction {trans.get('id')}: {e}")
-            trans['created_at'] = None
-    return transactions
 
 @api_router.put("/transactions/{transaction_id}", response_model=Transaction)
 async def update_transaction(transaction_id: str, transaction: TransactionUpdate, current_user: dict = Depends(get_current_user)):
@@ -1085,14 +1257,19 @@ async def create_professional(data: ProfessionalCreate, current_user: dict = Dep
     return professional
 
 @api_router.get("/professionals", response_model=List[dict])
-async def get_professionals(current_user: dict = Depends(get_current_user)):
+async def get_professionals(ids: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     if DEMO_MODE:
         professionals = _find("professionals", {})
         for p in professionals:
             if isinstance(p.get('created_at'), str):
                 p['created_at'] = datetime.fromisoformat(p['created_at'])
         return professionals
-    professionals = await db.professionals.find({}, {"_id": 0}).to_list(1000)
+    query = {}
+    if ids:
+        id_list = [i.strip() for i in ids.split(',') if i.strip()]
+        if id_list:
+            query = {"id": {"$in": id_list}}
+    professionals = await db.professionals.find(query, {"_id": 0}).to_list(1000)
     for p in professionals:
         if isinstance(p.get('created_at'), str):
             p['created_at'] = datetime.fromisoformat(p['created_at'])
@@ -1112,7 +1289,9 @@ async def get_professional(professional_id: str, current_user: dict = Depends(ge
 
 @api_router.put("/professionals/{professional_id}")
 async def update_professional(professional_id: str, data: ProfessionalCreate, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    user_type = current_user.get("user_type", "consultor")
+    is_admin = current_user.get("role", {}).get("is_admin", False)
+    if not (is_admin or user_type == "consultor"):
         raise HTTPException(status_code=403, detail="Not authorized")
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
@@ -1129,7 +1308,9 @@ async def update_professional(professional_id: str, data: ProfessionalCreate, cu
 
 @api_router.delete("/professionals/{professional_id}")
 async def delete_professional(professional_id: str, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    user_type = current_user.get("user_type", "consultor")
+    is_admin = current_user.get("role", {}).get("is_admin", False)
+    if not (is_admin or user_type == "consultor"):
         raise HTTPException(status_code=403, detail="Not authorized")
     if DEMO_MODE:
         result = _delete_one("professionals", {"id": professional_id})
@@ -1154,14 +1335,19 @@ async def create_service(data: ServiceCreate, current_user: dict = Depends(get_c
     return service
 
 @api_router.get("/services", response_model=List[dict])
-async def get_services(current_user: dict = Depends(get_current_user)):
+async def get_services(ids: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     if DEMO_MODE:
         services = _find("services", {})
         for s in services:
             if isinstance(s.get('created_at'), str):
                 s['created_at'] = datetime.fromisoformat(s['created_at'])
         return services
-    services = await db.services.find({}, {"_id": 0}).to_list(1000)
+    query = {}
+    if ids:
+        id_list = [i.strip() for i in ids.split(',') if i.strip()]
+        if id_list:
+            query = {"id": {"$in": id_list}}
+    services = await db.services.find(query, {"_id": 0}).to_list(1000)
     for s in services:
         if isinstance(s.get('created_at'), str):
             s['created_at'] = datetime.fromisoformat(s['created_at'])
@@ -1169,7 +1355,9 @@ async def get_services(current_user: dict = Depends(get_current_user)):
 
 @api_router.put("/services/{service_id}")
 async def update_service(service_id: str, data: ServiceCreate, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    user_type = current_user.get("user_type", "consultor")
+    is_admin = current_user.get("role", {}).get("is_admin", False)
+    if not (is_admin or user_type == "consultor"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     update_data = data.model_dump(exclude_unset=True)
@@ -1183,7 +1371,9 @@ async def update_service(service_id: str, data: ServiceCreate, current_user: dic
 
 @api_router.delete("/services/{service_id}")
 async def delete_service(service_id: str, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    user_type = current_user.get("user_type", "consultor")
+    is_admin = current_user.get("role", {}).get("is_admin", False)
+    if not (is_admin or user_type == "consultor"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     result = await db.services.delete_one({"id": service_id})
@@ -1210,7 +1400,9 @@ async def get_rooms(current_user: dict = Depends(get_current_user)):
 
 @api_router.put("/rooms/{room_id}")
 async def update_room(room_id: str, data: RoomCreate, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    user_type = current_user.get("user_type", "consultor")
+    is_admin = current_user.get("role", {}).get("is_admin", False)
+    if not (is_admin or user_type == "consultor"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     update_data = data.model_dump(exclude_unset=True)
@@ -1224,7 +1416,9 @@ async def update_room(room_id: str, data: RoomCreate, current_user: dict = Depen
 
 @api_router.delete("/rooms/{room_id}")
 async def delete_room(room_id: str, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    user_type = current_user.get("user_type", "consultor")
+    is_admin = current_user.get("role", {}).get("is_admin", False)
+    if not (is_admin or user_type == "consultor"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     result = await db.rooms.delete_one({"id": room_id})
@@ -1248,7 +1442,51 @@ async def add_patient_attachment(patient_id: str, attachment_data: Attachment, c
 
     # Garante que a data de upload está no formato correto
     attachment_data.upload_date = datetime.now(timezone.utc)
-    
+    if attachment_data.file_data:
+        try:
+            fs = AsyncIOMotorGridFSBucket(db)
+            raw_bytes = base64.b64decode(attachment_data.file_data)
+            file_id = await fs.upload_from_stream(
+                attachment_data.filename,
+                io.BytesIO(raw_bytes),
+                metadata={"content_type": attachment_data.file_type}
+            )
+            attachment_data.gridfs_id = str(file_id)
+            attachment_data.size_bytes = attachment_data.size_bytes or len(raw_bytes)
+            attachment_data.file_data = None
+            if str(attachment_data.file_type or '').startswith('image/'):
+                try:
+                    img = Image.open(io.BytesIO(raw_bytes))
+                    img.thumbnail((128, 128))
+                    out = io.BytesIO()
+                    img = img.convert('RGB')
+                    img.save(out, format='JPEG', quality=60, optimize=True, progressive=True)
+                    out.seek(0)
+                    thumb_id = await fs.upload_from_stream(
+                        f"thumb-{attachment_data.filename}.jpg",
+                        out,
+                        metadata={"content_type": "image/jpeg", "kind": "thumbnail"}
+                    )
+                    attachment_data.thumbnail_gridfs_id = str(thumb_id)
+                    attachment_data.thumbnail_size_bytes = out.getbuffer().nbytes
+                    out_webp = io.BytesIO()
+                    try:
+                        img.save(out_webp, format='WEBP', quality=60, method=6)
+                        out_webp.seek(0)
+                        webp_id = await fs.upload_from_stream(
+                            f"thumb-{attachment_data.filename}.webp",
+                            out_webp,
+                            metadata={"content_type": "image/webp", "kind": "thumbnail_webp"}
+                        )
+                        attachment_data.thumbnail_webp_gridfs_id = str(webp_id)
+                        attachment_data.thumbnail_webp_size_bytes = out_webp.getbuffer().nbytes
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     attachment_doc = attachment_data.model_dump()
     attachment_doc['upload_date'] = attachment_data.upload_date.isoformat()
 
@@ -1262,10 +1500,65 @@ async def add_patient_attachment(patient_id: str, attachment_data: Attachment, c
     
     return attachment_data
 
+@api_router.post("/patients/{patient_id}/attachment-folders", response_model=dict)
+async def create_attachment_folder(patient_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    name = str(data.get("name", "")).strip()
+    parent_id = data.get("parent_id")
+    if not name:
+        raise HTTPException(status_code=400, detail="Folder name is required")
+    folder = AttachmentFolder(name=name, parent_id=parent_id)
+    doc = folder.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    result = await db.patients.update_one({"id": patient_id}, {"$push": {"attachment_folders": doc}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return doc
+
+@api_router.get("/patients/{patient_id}/attachment-folders", response_model=List[dict])
+async def get_attachment_folders(patient_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0, "attachment_folders": 1})
+    return (patient.get("attachment_folders") or []) if patient else []
+
+class MoveAttachmentRequest(BaseModel):
+    folder_id: Optional[str] = None
+
+@api_router.put("/patients/{patient_id}/attachments/{attachment_id}/move")
+async def move_attachment(patient_id: str, attachment_id: str, req: MoveAttachmentRequest, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    folder_id = req.folder_id
+    if folder_id:
+        p = await db.patients.find_one({"id": patient_id, "attachment_folders.id": folder_id}, {"_id": 0, "attachment_folders.$": 1})
+        if not p or not p.get('attachment_folders'):
+            raise HTTPException(status_code=404, detail="Folder not found")
+    result = await db.patients.update_one(
+        {"id": patient_id, "attachments.id": attachment_id},
+        {"$set": {"attachments.$.folder_id": folder_id}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    updated = await db.patients.find_one({"id": patient_id, "attachments.id": attachment_id}, {"_id": 0, "attachments.$": 1})
+    att = updated['attachments'][0] if updated and updated.get('attachments') else None
+    if att and isinstance(att.get('upload_date'), str):
+        att['upload_date'] = datetime.fromisoformat(att['upload_date'])
+    return att or {"message": "moved"}
+
 @api_router.delete("/patients/{patient_id}/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_patient_attachment(patient_id: str, attachment_id: str, current_user: dict = Depends(get_current_user)):
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
+    patient = await db.patients.find_one(
+        {"id": patient_id, "attachments.id": attachment_id},
+        {"_id": 0, "attachments.$": 1}
+    )
+    gridfs_id = None
+    if patient and patient.get('attachments'):
+        att = patient['attachments'][0]
+        gridfs_id = att.get('gridfs_id')
 
     result = await db.patients.update_one(
         {"id": patient_id},
@@ -1275,9 +1568,12 @@ async def delete_patient_attachment(patient_id: str, attachment_id: str, current
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Patient not found")
     
-    if result.modified_count == 0:
-        # Opcional: se quiser ter certeza que o anexo existia
-        pass
+    if gridfs_id:
+        try:
+            fs = AsyncIOMotorGridFSBucket(db)
+            await fs.delete(ObjectId(gridfs_id))
+        except Exception:
+            pass
 
 @api_router.get("/patients/{patient_id}/attachments/{attachment_id}", response_model=Attachment)
 async def get_attachment(patient_id: str, attachment_id: str, current_user: dict = Depends(get_current_user)):
@@ -1299,6 +1595,412 @@ async def get_attachment(patient_id: str, attachment_id: str, current_user: dict
         attachment['upload_date'] = datetime.fromisoformat(attachment['upload_date'])
     
     return attachment
+
+@api_router.get("/patients/{patient_id}/attachments/{attachment_id}/download")
+async def download_attachment(
+    patient_id: str,
+    attachment_id: str,
+    preview: bool = False,
+    modal: bool = False,
+    format: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    patient = await db.patients.find_one(
+        {"id": patient_id, "attachments.id": attachment_id},
+        {"_id": 0, "attachments.$": 1}
+    )
+    if not patient or not patient.get('attachments'):
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    attachment = patient['attachments'][0]
+    if attachment.get('gridfs_id'):
+        fs = AsyncIOMotorGridFSBucket(db)
+        if modal and str(attachment.get('file_type', '')).startswith('image/') and attachment.get('preview_modal_gridfs_id'):
+            try:
+                use_webp_modal = (format == 'webp') and bool(attachment.get('preview_modal_webp_gridfs_id'))
+                modal_id = attachment['preview_modal_webp_gridfs_id'] if use_webp_modal else attachment['preview_modal_gridfs_id']
+                modal_out = await fs.open_download_stream(ObjectId(modal_id))
+                async def modal_iter():
+                    while True:
+                        chunk = await modal_out.readchunk()
+                        if not chunk:
+                            break
+                        yield chunk
+                size = (attachment.get('preview_modal_webp_size_bytes') if use_webp_modal else attachment.get('preview_modal_size_bytes')) or getattr(modal_out, 'length', 0)
+                headers = {
+                    "Content-Disposition": f"inline; filename=modal-{attachment.get('filename','file')}.{ 'webp' if use_webp_modal else 'jpg'}",
+                    **({"Content-Length": str(size)} if size else {}),
+                    "ETag": f"modal-{attachment.get('id','')}-{size}-{ 'webp' if use_webp_modal else 'jpg'}",
+                    "Cache-Control": "private, max-age=86400"
+                }
+                return StreamingResponse(modal_iter(), media_type=('image/webp' if use_webp_modal else 'image/jpeg'), headers=headers)
+            except Exception:
+                pass
+        if preview and (attachment.get('thumbnail_gridfs_id') or attachment.get('thumbnail_webp_gridfs_id')):
+            try:
+                use_webp = (format == 'webp') and bool(attachment.get('thumbnail_webp_gridfs_id'))
+                thumb_id = attachment['thumbnail_webp_gridfs_id'] if use_webp else attachment['thumbnail_gridfs_id']
+                thumb_out = await fs.open_download_stream(ObjectId(thumb_id))
+                size = (attachment.get('thumbnail_webp_size_bytes') if use_webp else attachment.get('thumbnail_size_bytes')) or getattr(thumb_out, 'length', 0)
+                if size and size > 30000:
+                    async def _regen_thumb():
+                        try:
+                            orig_out = await fs.open_download_stream(ObjectId(attachment['gridfs_id']))
+                            buf = io.BytesIO()
+                            while True:
+                                chunk = await orig_out.readchunk()
+                                if not chunk:
+                                    break
+                                buf.write(chunk)
+                            buf.seek(0)
+                            img = Image.open(buf)
+                            img.thumbnail((128, 128))
+                            out_jpg = io.BytesIO()
+                            img = img.convert('RGB')
+                            img.save(out_jpg, format='JPEG', quality=60, optimize=True, progressive=True)
+                            out_jpg.seek(0)
+                            size_jpg = out_jpg.getbuffer().nbytes
+                            out_webp = io.BytesIO()
+                            size_webp = None
+                            try:
+                                img.save(out_webp, format='WEBP', quality=60, method=6)
+                                out_webp.seek(0)
+                                size_webp = out_webp.getbuffer().nbytes
+                            except Exception:
+                                pass
+                            try:
+                                new_thumb_id = await fs.upload_from_stream(
+                                    f"thumb-{attachment.get('filename','file')}.jpg",
+                                    out_jpg,
+                                    metadata={"content_type": "image/jpeg", "kind": "thumbnail"}
+                                )
+                                update_fields = {"attachments.$.thumbnail_gridfs_id": str(new_thumb_id), "attachments.$.thumbnail_size_bytes": size_jpg}
+                                if size_webp is not None:
+                                    new_webp_id = await fs.upload_from_stream(
+                                        f"thumb-{attachment.get('filename','file')}.webp",
+                                        out_webp,
+                                        metadata={"content_type": "image/webp", "kind": "thumbnail_webp"}
+                                    )
+                                    update_fields.update({
+                                        "attachments.$.thumbnail_webp_gridfs_id": str(new_webp_id),
+                                        "attachments.$.thumbnail_webp_size_bytes": size_webp
+                                    })
+                                await db.patients.update_one(
+                                    {"id": patient_id, "attachments.id": attachment_id},
+                                    {"$set": update_fields}
+                                )
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+                    try:
+                        asyncio.create_task(_regen_thumb())
+                    except Exception:
+                        pass
+                async def thumb_iter():
+                    while True:
+                        chunk = await thumb_out.readchunk()
+                        if not chunk:
+                            break
+                        yield chunk
+                headers = {
+                    "Content-Disposition": f"inline; filename=preview-{attachment.get('filename','file')}.{ 'webp' if use_webp else 'jpg'}",
+                    **({"Content-Length": str(size)} if size else {}),
+                    "ETag": f"preview-{attachment.get('id','')}-{size}",
+                    "Cache-Control": "private, max-age=86400"
+                }
+                return StreamingResponse(thumb_iter(), media_type=('image/webp' if use_webp else 'image/jpeg'), headers=headers)
+            except Exception:
+                pass
+        grid_out = await fs.open_download_stream(ObjectId(attachment['gridfs_id']))
+        if preview and str(attachment.get('file_type', '')).startswith('image/'):
+            try:
+                buf = io.BytesIO()
+                while True:
+                    chunk = await grid_out.readchunk()
+                    if not chunk:
+                        break
+                    buf.write(chunk)
+                buf.seek(0)
+                img = Image.open(buf)
+                img.thumbnail((128, 128))
+                out = io.BytesIO()
+                img = img.convert('RGB')
+                img.save(out, format='JPEG', quality=60, optimize=True, progressive=True)
+                out.seek(0)
+                size = out.getbuffer().nbytes
+                try:
+                    thumb_id = await fs.upload_from_stream(
+                        f"thumb-{attachment.get('filename','file')}.jpg",
+                        out,
+                        metadata={"content_type": "image/jpeg", "kind": "thumbnail"}
+                    )
+                    await db.patients.update_one(
+                        {"id": patient_id, "attachments.id": attachment_id},
+                        {"$set": {"attachments.$.thumbnail_gridfs_id": str(thumb_id), "attachments.$.thumbnail_size_bytes": size}}
+                    )
+                    out.seek(0)
+                except Exception:
+                    out.seek(0)
+                headers = {
+                    "Content-Disposition": f"inline; filename=preview-{attachment.get('filename','file')}.jpg",
+                    **({"Content-Length": str(size)} if size else {}),
+                    "ETag": f"preview-{attachment.get('id','')}-{size}",
+                    "Cache-Control": "private, max-age=86400"
+                }
+                return StreamingResponse(out, media_type='image/jpeg', headers=headers)
+            except Exception:
+                pass
+        if modal and str(attachment.get('file_type', '')).startswith('image/'):
+            try:
+                buf = io.BytesIO()
+                while True:
+                    chunk = await grid_out.readchunk()
+                    if not chunk:
+                        break
+                    buf.write(chunk)
+                buf.seek(0)
+                img = Image.open(buf)
+                img.thumbnail((1280, 1280))
+                out_jpg = io.BytesIO()
+                img = img.convert('RGB')
+                img.save(out_jpg, format='JPEG', quality=78, optimize=True, progressive=True)
+                out_jpg.seek(0)
+                size_jpg = out_jpg.getbuffer().nbytes
+                out_webp = io.BytesIO()
+                try:
+                    img.save(out_webp, format='WEBP', quality=78, method=6)
+                    out_webp.seek(0)
+                    size_webp = out_webp.getbuffer().nbytes
+                except Exception:
+                    size_webp = None
+                try:
+                    modal_id = await fs.upload_from_stream(
+                        f"modal-{attachment.get('filename','file')}.jpg",
+                        out_jpg,
+                        metadata={"content_type": "image/jpeg", "kind": "modal"}
+                    )
+                    update_fields = {"attachments.$.preview_modal_gridfs_id": str(modal_id), "attachments.$.preview_modal_size_bytes": size_jpg}
+                    if size_webp is not None:
+                        modal_webp_id = await fs.upload_from_stream(
+                            f"modal-{attachment.get('filename','file')}.webp",
+                            out_webp,
+                            metadata={"content_type": "image/webp", "kind": "modal_webp"}
+                        )
+                        update_fields.update({
+                            "attachments.$.preview_modal_webp_gridfs_id": str(modal_webp_id),
+                            "attachments.$.preview_modal_webp_size_bytes": size_webp
+                        })
+                    await db.patients.update_one(
+                        {"id": patient_id, "attachments.id": attachment_id},
+                        {"$set": update_fields}
+                    )
+                    out_jpg.seek(0)
+                except Exception:
+                    out_jpg.seek(0)
+                use_webp_modal = (format == 'webp' and size_webp)
+                chosen_out = out_webp if use_webp_modal else out_jpg
+                chosen_size = size_webp if use_webp_modal else size_jpg
+                headers = {
+                    "Content-Disposition": f"inline; filename=modal-{attachment.get('filename','file')}.{ 'webp' if use_webp_modal else 'jpg'}",
+                    **({"Content-Length": str(chosen_size)} if chosen_size else {}),
+                    "ETag": f"modal-{attachment.get('id','')}-{chosen_size}-{ 'webp' if use_webp_modal else 'jpg'}",
+                    "Cache-Control": "private, max-age=86400"
+                }
+                return StreamingResponse(chosen_out, media_type=('image/webp' if use_webp_modal else 'image/jpeg'), headers=headers)
+            except Exception:
+                pass
+
+        async def gridfs_iter():
+            while True:
+                chunk = await grid_out.readchunk()
+                if not chunk:
+                    break
+                yield chunk
+
+        size = attachment.get('size_bytes') or getattr(grid_out, 'length', 0)
+        headers = {
+            "Content-Disposition": f"attachment; filename={attachment.get('filename','file')}",
+            **({"Content-Length": str(size)} if size else {}),
+            "ETag": f"{attachment.get('id','')}-{size}",
+            "Cache-Control": "private, max-age=300"
+        }
+        return StreamingResponse(
+            gridfs_iter(),
+            media_type=attachment.get('file_type', 'application/octet-stream'),
+            headers=headers
+        )
+
+    def b64_bytes_iter(b64_str: str, chunk_chars: int = 4 * 32768):
+        for i in range(0, len(b64_str), chunk_chars):
+            chunk = b64_str[i:i + chunk_chars]
+            yield base64.b64decode(chunk)
+
+    # Base64 storage fallback
+    if preview and str(attachment.get('file_type', '')).startswith('image/'):
+        if attachment.get('thumbnail_gridfs_id') or attachment.get('thumbnail_webp_gridfs_id'):
+            try:
+                fs = AsyncIOMotorGridFSBucket(db)
+                prefer_webp = (format == 'webp') and bool(attachment.get('thumbnail_webp_gridfs_id'))
+                try:
+                    from fastapi import Request
+                except Exception:
+                    Request = None
+                grid_out = await fs.open_download_stream(ObjectId(attachment.get('thumbnail_webp_gridfs_id') if prefer_webp else attachment['thumbnail_gridfs_id']))
+                async def thumb_iter():
+                    while True:
+                        chunk = await grid_out.readchunk()
+                        if not chunk:
+                            break
+                        yield chunk
+                size = (attachment.get('thumbnail_webp_size_bytes') if prefer_webp else attachment.get('thumbnail_size_bytes')) or getattr(grid_out, 'length', 0)
+                headers = {
+                    "Content-Disposition": f"inline; filename=preview-{attachment.get('filename','file')}.{ 'webp' if prefer_webp else 'jpg'}",
+                    **({"Content-Length": str(size)} if size else {}),
+                    "ETag": f"preview-{attachment.get('id','')}-{size}-{ 'webp' if prefer_webp else 'jpg'}",
+                    "Cache-Control": "private, max-age=86400"
+                }
+                return StreamingResponse(thumb_iter(), media_type=('image/webp' if prefer_webp else 'image/jpeg'), headers=headers)
+            except Exception:
+                pass
+        try:
+            raw_bytes = base64.b64decode(attachment.get('file_data', ''))
+            img = Image.open(io.BytesIO(raw_bytes))
+            img.thumbnail((128, 128))
+            out = io.BytesIO()
+            img = img.convert('RGB')
+            img.save(out, format='JPEG', quality=60, optimize=True, progressive=True)
+            out.seek(0)
+            size = out.getbuffer().nbytes
+            out_webp = io.BytesIO()
+            webp_size = None
+            try:
+                img.save(out_webp, format='WEBP', quality=60, method=6)
+                out_webp.seek(0)
+                webp_size = out_webp.getbuffer().nbytes
+            except Exception:
+                pass
+            try:
+                fs = AsyncIOMotorGridFSBucket(db)
+                thumb_id = await fs.upload_from_stream(
+                    f"thumb-{attachment.get('filename','file')}.jpg",
+                    out,
+                    metadata={"content_type": "image/jpeg", "kind": "thumbnail"}
+                )
+                await db.patients.update_one(
+                    {"id": patient_id, "attachments.id": attachment_id},
+                    {"$set": {"attachments.$.thumbnail_gridfs_id": str(thumb_id), "attachments.$.thumbnail_size_bytes": size}}
+                )
+                out.seek(0)
+                if webp_size is not None:
+                    webp_id = await fs.upload_from_stream(
+                        f"thumb-{attachment.get('filename','file')}.webp",
+                        out_webp,
+                        metadata={"content_type": "image/webp", "kind": "thumbnail_webp"}
+                    )
+                    await db.patients.update_one(
+                        {"id": patient_id, "attachments.id": attachment_id},
+                        {"$set": {"attachments.$.thumbnail_webp_gridfs_id": str(webp_id), "attachments.$.thumbnail_webp_size_bytes": webp_size}}
+                    )
+                    out_webp.seek(0)
+            except Exception:
+                out.seek(0)
+            headers = {
+                "Content-Disposition": f"inline; filename=preview-{attachment.get('filename','file')}.jpg",
+                **({"Content-Length": str(size)} if size else {}),
+                "ETag": f"preview-{attachment.get('id','')}-{size}",
+                "Cache-Control": "private, max-age=86400"
+            }
+            return StreamingResponse(out, media_type='image/jpeg', headers=headers)
+        except Exception:
+            pass
+    if modal and str(attachment.get('file_type', '')).startswith('image/'):
+        if attachment.get('preview_modal_gridfs_id'):
+            try:
+                fs = AsyncIOMotorGridFSBucket(db)
+                use_webp_modal = (format == 'webp') and bool(attachment.get('preview_modal_webp_gridfs_id'))
+                grid_out = await fs.open_download_stream(ObjectId(attachment.get('preview_modal_webp_gridfs_id') if use_webp_modal else attachment['preview_modal_gridfs_id']))
+                async def modal_iter():
+                    while True:
+                        chunk = await grid_out.readchunk()
+                        if not chunk:
+                            break
+                        yield chunk
+                size = (attachment.get('preview_modal_webp_size_bytes') if use_webp_modal else attachment.get('preview_modal_size_bytes')) or getattr(grid_out, 'length', 0)
+                headers = {
+                    "Content-Disposition": f"inline; filename=modal-{attachment.get('filename','file')}.{ 'webp' if use_webp_modal else 'jpg'}",
+                    **({"Content-Length": str(size)} if size else {}),
+                    "ETag": f"modal-{attachment.get('id','')}-{size}-{ 'webp' if use_webp_modal else 'jpg'}",
+                    "Cache-Control": "private, max-age=300"
+                }
+                return StreamingResponse(modal_iter(), media_type=('image/webp' if use_webp_modal else 'image/jpeg'), headers=headers)
+            except Exception:
+                pass
+        try:
+            raw_bytes = base64.b64decode(attachment.get('file_data', ''))
+            img = Image.open(io.BytesIO(raw_bytes))
+            img.thumbnail((1280, 1280))
+            out = io.BytesIO()
+            img = img.convert('RGB')
+            img.save(out, format='JPEG', quality=82)
+            out.seek(0)
+            size = out.getbuffer().nbytes
+            try:
+                fs = AsyncIOMotorGridFSBucket(db)
+                modal_id = await fs.upload_from_stream(
+                    f"modal-{attachment.get('filename','file')}.jpg",
+                    out,
+                    metadata={"content_type": "image/jpeg", "kind": "modal"}
+                )
+                await db.patients.update_one(
+                    {"id": patient_id, "attachments.id": attachment_id},
+                    {"$set": {"attachments.$.preview_modal_gridfs_id": str(modal_id), "attachments.$.preview_modal_size_bytes": size}}
+                )
+                out.seek(0)
+            except Exception:
+                out.seek(0)
+            headers = {
+                "Content-Disposition": f"inline; filename=modal-{attachment.get('filename','file')}.jpg",
+                **({"Content-Length": str(size)} if size else {}),
+                "ETag": f"modal-{attachment.get('id','')}-{size}",
+                "Cache-Control": "private, max-age=86400"
+            }
+            return StreamingResponse(out, media_type='image/jpeg', headers=headers)
+        except Exception:
+            pass
+
+    size = attachment.get('size_bytes') or 0
+    headers = {
+        "Content-Disposition": f"attachment; filename={attachment.get('filename','file')}",
+        **({"Content-Length": str(size)} if size else {}),
+        "ETag": f"{attachment.get('id','')}-{size}",
+        "Cache-Control": "private, max-age=300"
+    }
+    async def _migrate_to_gridfs():
+        try:
+            fs = AsyncIOMotorGridFSBucket(db)
+            raw_bytes = base64.b64decode(attachment.get('file_data', ''))
+            file_id = await fs.upload_from_stream(
+                attachment.get('filename', 'file'),
+                io.BytesIO(raw_bytes),
+                metadata={"content_type": attachment.get('file_type', 'application/octet-stream')}
+            )
+            await db.patients.update_one(
+                {"id": patient_id, "attachments.id": attachment_id},
+                {"$set": {"attachments.$.gridfs_id": str(file_id), "attachments.$.size_bytes": len(raw_bytes), "attachments.$.file_data": None}}
+            )
+        except Exception:
+            pass
+    try:
+        asyncio.create_task(_migrate_to_gridfs())
+    except Exception:
+        pass
+    return StreamingResponse(
+        b64_bytes_iter(attachment.get('file_data', '')),
+        media_type=attachment.get('file_type', 'application/octet-stream'),
+        headers=headers
+    )
 
 @api_router.get("/patients", response_model=List[dict])
 async def get_patients(
@@ -1358,6 +2060,7 @@ async def get_patients(
                 "phone": 1,
                 "birthdate": 1,
                 "address": 1,
+                "cpf": 1,
                 "created_at": 1,
                 "total_debt": 1
             }
@@ -1401,7 +2104,7 @@ async def get_patient_medical_records(patient_id: str, current_user: dict = Depe
 
 @api_router.get("/patients/{patient_id}", response_model=dict)
 async def get_patient(patient_id: str, current_user: dict = Depends(get_current_user)):
-    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0})
+    patient = await db.patients.find_one({"id": patient_id}, {"_id": 0, "attachments.file_data": 0})
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
     if isinstance(patient.get('created_at'), str):
@@ -1484,9 +2187,12 @@ async def create_appointment(data: AppointmentCreate, current_user: dict = Depen
 async def get_appointments(
     sort_by: Optional[str] = None,
     order: Optional[str] = "asc",
+    patient_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     query = {}
+    if patient_id:
+        query["patient_id"] = patient_id
     sort_order = 1 if order == "asc" else -1
 
     cursor = db.appointments.find(query, {"_id": 0})
@@ -1538,8 +2244,22 @@ async def create_transaction(data: TransactionCreate, current_user: dict = Depen
     return transaction
 
 @api_router.get("/transactions", response_model=List[dict])
-async def get_transactions(current_user: dict = Depends(get_current_user)):
-    transactions = await db.transactions.find({}, {"_id": 0}).to_list(1000)
+async def get_transactions(
+    patient_id: Optional[str] = None,
+    sort_by: Optional[str] = "created_at",
+    order: Optional[str] = "desc",
+    limit: Optional[int] = 200,
+    current_user: dict = Depends(get_current_user)
+):
+    query = {}
+    if patient_id:
+        query["patient_id"] = patient_id
+    sort_field = sort_by if sort_by in {"created_at", "transaction_date", "amount", "status"} else "created_at"
+    sort_order = -1 if order == "desc" else 1
+    cursor = db.transactions.find(query, {"_id": 0}).sort(sort_field, sort_order)
+    if limit and isinstance(limit, int):
+        cursor = cursor.limit(max(1, min(limit, 1000)))
+    transactions = await cursor.to_list(length=1000)
     for t in transactions:
         if isinstance(t.get('created_at'), str):
             t['created_at'] = datetime.fromisoformat(t['created_at'])
@@ -1555,8 +2275,19 @@ async def create_medical_record(data: MedicalRecordCreate, current_user: dict = 
     return record
 
 @api_router.get("/medical-records", response_model=List[dict])
-async def get_medical_records(patient_id: str, current_user: dict = Depends(get_current_user)):
-    records = await db.medical_records.find({"patient_id": patient_id}, {"_id": 0}).to_list(1000)
+async def get_medical_records(
+    patient_id: str,
+    sort_by: Optional[str] = "created_at",
+    order: Optional[str] = "desc",
+    limit: Optional[int] = 200,
+    current_user: dict = Depends(get_current_user)
+):
+    sort_field = sort_by if sort_by in {"created_at"} else "created_at"
+    sort_order = -1 if order == "desc" else 1
+    cursor = db.medical_records.find({"patient_id": patient_id}, {"_id": 0}).sort(sort_field, sort_order)
+    if limit and isinstance(limit, int):
+        cursor = cursor.limit(max(1, min(limit, 1000)))
+    records = await cursor.to_list(length=1000)
     for r in records:
         if isinstance(r.get('created_at'), str):
             r['created_at'] = datetime.fromisoformat(r['created_at'])

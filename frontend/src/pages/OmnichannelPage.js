@@ -20,7 +20,7 @@ export default function OmnichannelPage() {
   useEffect(() => {
     if (!selectedConv) return;
 
-    const socket = io("http://localhost:8000");
+    const socket = io("http://localhost:8001");
 
     socket.on("connect", () => {
       console.log("Socket.IO connected");
@@ -85,8 +85,8 @@ export default function OmnichannelPage() {
     <Layout>
       <div>
         <h1 className="text-4xl font-bold text-gray-900 mb-8" data-testid="omnichannel-page-title">Omnichannel</h1>
-        
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden" style={{height: '600px'}}>
+
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden" style={{ height: '600px' }}>
           <div className="flex h-full">
             {/* Lista de conversas */}
             <div className="w-1/3 border-r border-gray-200 overflow-y-auto">
@@ -103,9 +103,8 @@ export default function OmnichannelPage() {
                   <div
                     key={conv.id}
                     onClick={() => loadMessages(conv.id)}
-                    className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-blue-50 transition-colors ${
-                      selectedConv === conv.id ? 'bg-blue-100' : ''
-                    }`}
+                    className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-blue-50 transition-colors ${selectedConv === conv.id ? 'bg-blue-100' : ''
+                      }`}
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-2xl">{getChannelIcon(conv.channel)}</span>
@@ -130,16 +129,14 @@ export default function OmnichannelPage() {
                     {messages.map((msg) => (
                       <div
                         key={msg.id}
-                        className={`flex ${
-                          msg.sender_type === 'user' ? 'justify-end' : 'justify-start'
-                        }`}
+                        className={`flex ${msg.sender_type === 'user' ? 'justify-end' : 'justify-start'
+                          }`}
                       >
                         <div
-                          className={`max-w-xs md:max-w-md px-4 py-2 rounded-2xl ${
-                            msg.sender_type === 'user'
+                          className={`max-w-xs md:max-w-md px-4 py-2 rounded-2xl ${msg.sender_type === 'user'
                               ? 'bg-blue-500 text-white'
                               : 'bg-gray-200 text-gray-900'
-                          }`}
+                            }`}
                         >
                           <p>{msg.content}</p>
                         </div>
@@ -174,7 +171,7 @@ export default function OmnichannelPage() {
 
         <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
           <p className="text-sm text-yellow-800">
-            <strong>Nota:</strong> As integrações com WhatsApp, Instagram e Messenger estão <strong>mockadas</strong> nesta versão. 
+            <strong>Nota:</strong> As integrações com WhatsApp, Instagram e Messenger estão <strong>mockadas</strong> nesta versão.
             Para ativar, configure as credenciais da Meta Business API.
           </p>
         </div>

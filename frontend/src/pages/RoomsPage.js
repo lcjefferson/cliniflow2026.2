@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
+import { useAuth } from "../contexts/AuthContext";
 import api from "../services/api";
 import { Plus, Edit, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
@@ -15,6 +16,9 @@ export default function RoomsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(12);
   const [formData, setFormData] = useState({ name: "", capacity: "" });
+  const { user } = useAuth();
+  const isAdmin = (user?.role?.is_admin) || (user?.user_type === "admin");
+  const canManage = isAdmin || (user?.user_type === "consultor");
 
   useEffect(() => {
     loadRooms();
@@ -81,10 +85,12 @@ export default function RoomsPage() {
       <div>
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900" data-testid="rooms-page-title">Salas</h1>
-          <Button onClick={() => setShowDialog(true)} className="btn-primary">
-            <Plus className="w-5 h-5 mr-2" />
-            Adicionar Sala
-          </Button>
+          {canManage && (
+            <Button onClick={() => setShowDialog(true)} className="btn-primary">
+              <Plus className="w-5 h-5 mr-2" />
+              Adicionar Sala
+            </Button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -95,20 +101,22 @@ export default function RoomsPage() {
                   <h3 className="text-xl font-bold text-gray-900 mb-2">{room.name}</h3>
                   <p className="text-gray-600">Capacidade: {room.capacity} pessoas</p>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleEdit(room)}
-                    className="text-blue-500 hover:text-blue-700"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(room.id)}
-                    className="text-red-500 hover:text-red-700"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                {canManage && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEdit(room)}
+                      className="text-blue-500 hover:text-blue-700"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(room.id)}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}

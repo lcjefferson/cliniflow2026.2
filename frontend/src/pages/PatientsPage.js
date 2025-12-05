@@ -17,7 +17,7 @@ export default function PatientsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
-  const [formData, setFormData] = useState({ name: "", email: "", phone: "", birthdate: "", address: "" });
+  const [formData, setFormData] = useState({ name: "", email: "", phone: "", birthdate: "", address: "", cpf: "" });
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [error, setError] = useState(null);
@@ -61,7 +61,7 @@ export default function PatientsPage() {
       
       setShowDialog(false);
       setEditingId(null);
-      setFormData({ name: "", email: "", phone: "", birthdate: "", address: "" });
+      setFormData({ name: "", email: "", phone: "", birthdate: "", address: "", cpf: "" });
       loadPatients();
     } catch (error) {
       toast.error(editingId ? "Erro ao atualizar paciente" : "Erro ao cadastrar paciente");
@@ -75,7 +75,8 @@ export default function PatientsPage() {
       email: patient.email,
       phone: patient.phone,
       birthdate: patient.birthdate,
-      address: patient.address || ""
+      address: patient.address || "",
+      cpf: patient.cpf || ""
     });
     setShowDialog(true);
   };
@@ -93,7 +94,7 @@ export default function PatientsPage() {
   const handleCloseDialog = () => {
     setShowDialog(false);
     setEditingId(null);
-    setFormData({ name: "", email: "", phone: "", birthdate: "", address: "" });
+    setFormData({ name: "", email: "", phone: "", birthdate: "", address: "", cpf: "" });
   };
 
   const handleViewDetails = (patient) => {
@@ -240,6 +241,7 @@ export default function PatientsPage() {
                     <p className="text-gray-600">{patient.email}</p>
                     <p className="text-gray-600">{patient.phone}</p>
                     <p className="text-gray-600">Nascimento: {patient.birthdate}</p>
+                    {patient.cpf && <p className="text-gray-600">CPF: {patient.cpf}</p>}
                     {patient.address && <p className="text-gray-600">{patient.address}</p>}
                   </div>
                 </div>
@@ -294,6 +296,10 @@ export default function PatientsPage() {
               <div>
                 <Label>Endereço</Label>
                 <Input value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
+              </div>
+              <div>
+                <Label>CPF</Label>
+                <Input value={formData.cpf} onChange={(e) => setFormData({...formData, cpf: e.target.value})} />
               </div>
               <Button type="submit" className="w-full btn-primary">
                 {editingId ? "Atualizar" : "Cadastrar"}

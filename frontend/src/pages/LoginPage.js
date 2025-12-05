@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
 import { Eye, EyeOff } from "lucide-react";
+import api from "../services/api";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -12,21 +13,39 @@ export default function LoginPage() {
   
   const navigate = useNavigate();
   const { login } = useAuth();
+  const [appVersion, setAppVersion] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      await login(email, password);
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
+      await Promise.race([login(email, password), timeout]);
       toast.success("Login realizado com sucesso!");
       navigate("/");
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Erro ao processar requisição");
+      const msg =
+        error.message === 'timeout'
+          ? 'Tempo de conexão esgotado. Verifique o backend.'
+          : (error.response?.data?.detail || (error.request && !error.response ? 'Falha de conexão com o backend (CORS/rede).' : 'Erro ao processar requisição'));
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const loadVersion = async () => {
+      try {
+        const { data } = await api.get("/version");
+        setAppVersion(data);
+      } catch (err) {
+        setAppVersion({ version: "dev" });
+      }
+    };
+    loadVersion();
+  }, []);
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -37,6 +56,13 @@ export default function LoginPage() {
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-blue-600 mb-2">CliniFlow</h1>
             <p className="text-gray-600">Sistema de Gestão de Clínicas</p>
+            {appVersion && (
+              <p className="mt-2 text-xs text-gray-500">
+                Versão: {appVersion.version}
+                {appVersion.commit ? ` • ${String(appVersion.commit).slice(0,7)}` : ""}
+                {appVersion.date ? ` • ${new Date(appVersion.date).toLocaleString('pt-BR')}` : ""}
+              </p>
+            )}
           </div>
 
           <form onSubmit={handleSubmit} data-testid="login-form" className="space-y-6">
