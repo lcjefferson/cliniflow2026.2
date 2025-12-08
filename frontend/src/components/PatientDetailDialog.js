@@ -1439,6 +1439,10 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
               <option value="cash">Dinheiro</option>
               <option value="card">Cartão</option>
               <option value="pix">Pix</option>
+              <option value="transfer">Transferência</option>
+              <option value="check">Cheque</option>
+              <option value="promissory">Promissória</option>
+              <option value="payment_link">Link de Pagamento</option>
             </select>
           </div>
           <div>

@@ -150,7 +150,9 @@ export default function RevenuePage() {
       card: "Cartão",
       pix: "PIX",
       transfer: "Transferência",
-      check: "Cheque"
+      check: "Cheque",
+      promissory: "Promissória",
+      payment_link: "Link de Pagamento"
     };
     return labels[method] || method;
   };
@@ -224,6 +226,8 @@ export default function RevenuePage() {
                 <option value="pix">PIX</option>
                 <option value="transfer">Transferência</option>
                 <option value="check">Cheque</option>
+                <option value="promissory">Promissória</option>
+                <option value="payment_link">Link de Pagamento</option>
               </select>
             </div>
           </div>
@@ -488,6 +492,8 @@ export default function RevenuePage() {
                     <option value="pix">PIX</option>
                     <option value="transfer">Transferência</option>
                     <option value="check">Cheque</option>
+                    <option value="promissory">Promissória</option>
+                    <option value="payment_link">Link de Pagamento</option>
                   </select>
                 </div>
               </div>
