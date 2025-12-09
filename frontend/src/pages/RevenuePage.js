@@ -31,7 +31,7 @@ export default function RevenuePage() {
     amount: "",
     payment_method: "cash",
     description: "",
-    transaction_date: new Date().toISOString().split('T')[0],
+    transaction_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
     status: "paid"
   });
 
@@ -90,7 +90,7 @@ export default function RevenuePage() {
         amount: "",
         payment_method: "cash",
         description: "",
-        transaction_date: new Date().toISOString().split('T')[0],
+        transaction_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
         status: "paid"
       });
       loadData();
@@ -134,7 +134,7 @@ export default function RevenuePage() {
       amount: "",
       payment_method: "cash",
       description: "",
-      transaction_date: new Date().toISOString().split('T')[0],
+      transaction_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
       status: "paid"
     });
   };
@@ -357,7 +357,7 @@ export default function RevenuePage() {
                     </div>
                     <p className="text-gray-600 text-sm">{transaction.description}</p>
                     <p className="text-gray-500 text-xs mt-1">
-                      {new Date(transaction.transaction_date).toLocaleDateString('pt-BR')}
+                      {new Date(transaction.transaction_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
                     </p>
                   </div>
                   <div className="flex items-center gap-4">
@@ -464,7 +464,7 @@ export default function RevenuePage() {
                     .filter(a => a.patient_id === formData.patient_id)
                     .map(a => (
                       <option key={a.id} value={a.id}>
-                        {new Date(a.appointment_date).toLocaleDateString('pt-BR')} - {a.appointment_time}
+                        {new Date(a.appointment_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} - {a.appointment_time}
                       </option>
                     ))}
                 </select>

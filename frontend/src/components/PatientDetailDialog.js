@@ -9,6 +9,7 @@ import {
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { formatDate } from "../utils/dateUtils";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,7 +30,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     amount: "",
     payment_method: "cash",
     description: "",
-    transaction_date: new Date().toISOString().split('T')[0],
+    transaction_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
     status: "paid",
     appointment_id: ""
   });
@@ -879,7 +880,18 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                 <div className="space-y-4">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-semibold">Faturamento do Paciente</h3>
-                    <Button onClick={() => { setEditingTransaction(null); setShowTransactionDialog(true); }} className="btn-primary">
+                    <Button onClick={() => { 
+                      setEditingTransaction(null); 
+                      setTransactionForm({
+                        amount: "",
+                        payment_method: "cash",
+                        description: "",
+                        transaction_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
+                        status: "paid",
+                        appointment_id: ""
+                      });
+                      setShowTransactionDialog(true); 
+                    }} className="btn-primary">
                       <Plus className="w-4 h-4 mr-2" />
                       Adicionar Faturamento
                     </Button>
@@ -898,7 +910,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                                 </span>
                               </div>
                               <p className="text-sm text-gray-700">{t.description}</p>
-                              <p className="text-xs text-gray-500 mt-1">{new Date(t.transaction_date || t.created_at).toLocaleDateString('pt-BR')}</p>
+                              <p className="text-xs text-gray-500 mt-1">{new Date(t.transaction_date || t.created_at).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p>
                               {t.appointment_id && (
                                 <p className="text-xs text-gray-500">Vinculado ao agendamento: {t.appointment_id}</p>
                               )}
@@ -1407,7 +1419,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
           amount: "",
           payment_method: "cash",
           description: "",
-          transaction_date: new Date().toISOString().split('T')[0],
+          transaction_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
           status: "paid",
           appointment_id: ""
         });
