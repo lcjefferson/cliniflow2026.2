@@ -40,7 +40,8 @@ export default function CalendarPage() {
     professional_id: "",
     service_id: "",
     room_id: "",
-    appointment_date: new Date().toISOString().split('T')[0],
+    // Ajuste de fuso horário: usa data local (YYYY-MM-DD) sem deslocamento
+    appointment_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
     appointment_time: "",
     appointment_time_end: "",
     notes: ""
@@ -159,7 +160,8 @@ export default function CalendarPage() {
         professional_id: "",
         service_id: "",
         room_id: "",
-        appointment_date: new Date().toISOString().split('T')[0],
+        // Mantém data local correta após salvar
+        appointment_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
         appointment_time: "",
         appointment_time_end: "",
         notes: ""
@@ -227,7 +229,8 @@ export default function CalendarPage() {
       professional_id: "",
       service_id: "",
       room_id: "",
-      appointment_date: new Date().toISOString().split('T')[0],
+      // Ajuste de fuso horário: reseta com data local (YYYY-MM-DD)
+      appointment_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
       appointment_time: "",
       appointment_time_end: "",
       notes: ""
@@ -331,9 +334,10 @@ export default function CalendarPage() {
     // Dias do mês atual
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
+      // Usa formato local consistente com o restante do sistema
       days.push({ 
         day, 
-        date: date.toISOString().split('T')[0],
+        date: toYMD(date),
         isToday: date.toDateString() === new Date().toDateString()
       });
     }
@@ -648,7 +652,7 @@ export default function CalendarPage() {
             <>
               {/* Visualização de Dia */}
               <div className="space-y-3">
-                {getAppointmentsForDay(currentDate.toISOString().split('T')[0])
+                {getAppointmentsForDay(toYMD(currentDate))
                   .sort((a, b) => a.appointment_time.localeCompare(b.appointment_time))
                   .map((apt, index) => (
                     <button
@@ -672,7 +676,7 @@ export default function CalendarPage() {
                     </button>
                   ))}
                 
-                {getAppointmentsForDay(currentDate.toISOString().split('T')[0]).length === 0 && (
+                {getAppointmentsForDay(toYMD(currentDate)).length === 0 && (
                   <div className="text-center py-12 text-gray-500">
                     <p>Nenhum agendamento para este dia</p>
                   </div>
@@ -729,7 +733,7 @@ export default function CalendarPage() {
                   <div>
                     <Label className="text-gray-600">Data</Label>
                     <p className="font-semibold">
-                      {new Date(selectedAppointment.appointment_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                      {new Date(selectedAppointment.appointment_date + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
                     </p>
                   </div>
                   <div>
