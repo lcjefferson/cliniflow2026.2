@@ -379,6 +379,14 @@ async def lifespan(app: FastAPI):
             await db.medical_records.create_index([("created_at", -1)])
             await db.appointments.create_index([("patient_id", 1), ("paid", 1)])
             await db.appointments.create_index("appointment_date")
+            try:
+                await db.appointments.create_index([("appointment_date", 1), ("appointment_time", 1), ("room_id", 1)], unique=True, name="uniq_date_time_room")
+            except Exception:
+                pass
+            try:
+                await db.appointments.create_index([("appointment_date", 1), ("appointment_time", 1), ("professional_id", 1)], unique=True, name="uniq_date_time_prof")
+            except Exception:
+                pass
             await db.professionals.create_index("id")
             await db.professionals.create_index("name")
             await db.professionals.create_index([("created_at", -1)])
@@ -2177,10 +2185,65 @@ async def create_appointment(data: AppointmentCreate, current_user: dict = Depen
     payload = data.model_dump(exclude_none=True)
     if "status" not in payload:
         payload["status"] = "scheduled"
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    try:
+        duplicate_exists = False
+        duplicate_q_room = {
+            "appointment_date": payload.get("appointment_date"),
+            "appointment_time": payload.get("appointment_time"),
+            "room_id": payload.get("room_id"),
+        }
+        if all(duplicate_q_room.values()):
+            duplicate_exists = await db.appointments.find_one(duplicate_q_room, {"_id": 0}) is not None
+        if not duplicate_exists:
+            duplicate_q_prof = {
+                "appointment_date": payload.get("appointment_date"),
+                "appointment_time": payload.get("appointment_time"),
+                "professional_id": payload.get("professional_id"),
+            }
+            if all(duplicate_q_prof.values()):
+                duplicate_exists = await db.appointments.find_one(duplicate_q_prof, {"_id": 0}) is not None
+        if not duplicate_exists and payload.get("service_id"):
+            duplicate_q_service = {
+                "appointment_date": payload.get("appointment_date"),
+                "appointment_time": payload.get("appointment_time"),
+                "service_id": payload.get("service_id"),
+            }
+            duplicate_exists = await db.appointments.find_one(duplicate_q_service, {"_id": 0}) is not None
+        if duplicate_exists:
+            try:
+                await db.audit_logs.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "type": "duplicate_appointment_attempt",
+                    "user_id": current_user.get("id"),
+                    "payload": payload,
+                    "occurred_at": datetime.now(timezone.utc).isoformat()
+                })
+            except Exception:
+                pass
+            raise HTTPException(status_code=409, detail="Já existe um agendamento para esta data e horário")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     appointment = Appointment(**payload)
     doc = appointment.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
-    await db.appointments.insert_one(doc)
+    try:
+        await db.appointments.insert_one(doc)
+    except Exception:
+        try:
+            await db.audit_logs.insert_one({
+                "id": str(uuid.uuid4()),
+                "type": "duplicate_appointment_attempt",
+                "user_id": current_user.get("id"),
+                "payload": payload,
+                "occurred_at": datetime.now(timezone.utc).isoformat()
+            })
+        except Exception:
+            pass
+        raise HTTPException(status_code=409, detail="Já existe um agendamento para esta data e horário")
     return appointment
 
 @api_router.get("/appointments", response_model=List[dict])
@@ -2213,11 +2276,166 @@ async def update_appointment(appointment_id: str, data: AppointmentUpdate, curre
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    try:
+        current = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+        if not current:
+            raise HTTPException(status_code=404, detail="Appointment not found")
+        target_date = update_data.get("appointment_date", current.get("appointment_date"))
+        target_time = update_data.get("appointment_time", current.get("appointment_time"))
+        target_room = update_data.get("room_id", current.get("room_id"))
+        target_service = update_data.get("service_id", current.get("service_id"))
+        target_professional = update_data.get("professional_id", current.get("professional_id"))
+        duplicate_q_room = {
+            "appointment_date": target_date,
+            "appointment_time": target_time,
+            "room_id": target_room,
+            "id": {"$ne": appointment_id}
+        }
+        duplicate_exists = False
+        if target_date and target_time and target_room:
+            duplicate_exists = await db.appointments.find_one(duplicate_q_room, {"_id": 0}) is not None
+        if not duplicate_exists and target_professional:
+            duplicate_q_prof = {
+                "appointment_date": target_date,
+                "appointment_time": target_time,
+                "professional_id": target_professional,
+                "id": {"$ne": appointment_id}
+            }
+            duplicate_exists = await db.appointments.find_one(duplicate_q_prof, {"_id": 0}) is not None
+        if not duplicate_exists and target_service:
+            duplicate_q_service = {
+                "appointment_date": target_date,
+                "appointment_time": target_time,
+                "service_id": target_service,
+                "id": {"$ne": appointment_id}
+            }
+            duplicate_exists = await db.appointments.find_one(duplicate_q_service, {"_id": 0}) is not None
+        if duplicate_exists:
+            try:
+                await db.audit_logs.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "type": "duplicate_appointment_attempt",
+                    "user_id": current_user.get("id"),
+                    "payload": {
+                        "appointment_id": appointment_id,
+                        "appointment_date": target_date,
+                        "appointment_time": target_time,
+                        "room_id": target_room,
+                        "service_id": target_service
+                    },
+                    "occurred_at": datetime.now(timezone.utc).isoformat()
+                })
+            except Exception:
+                pass
+            raise HTTPException(status_code=409, detail="Já existe um agendamento para esta data e horário")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
 
     result = await db.appointments.update_one({"id": appointment_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Appointment not found")
     return {"message": "Appointment updated successfully"}
+
+@api_router.get("/appointments/check-conflicts")
+async def check_appointments_conflicts(
+    appointment_date: str,
+    appointment_time: str,
+    room_id: str,
+    professional_id: Optional[str] = None,
+    appointment_time_end: Optional[str] = None,
+    exclude_appointment_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    duplicate = False
+    conflicts = {
+        "professional_conflicts": [],
+        "room_conflicts": []
+    }
+    dup_q_room = {
+        "appointment_date": appointment_date,
+        "appointment_time": appointment_time,
+        "room_id": room_id
+    }
+    if exclude_appointment_id:
+        dup_q_room["id"] = {"$ne": exclude_appointment_id}
+    room_doc = await db.rooms.find_one({"id": room_id}, {"_id": 0, "name": 1})
+    room_name = (room_doc or {}).get("name", "")
+    existing_room_apt = await db.appointments.find_one(dup_q_room, {"_id": 0})
+    if existing_room_apt:
+        duplicate = True
+        conflicts["room_conflicts"].append({
+            "time": existing_room_apt.get("appointment_time"),
+            "time_end": existing_room_apt.get("appointment_time_end"),
+            "patient_name": (await db.patients.find_one({"id": existing_room_apt.get("patient_id")}, {"_id": 0, "name": 1}) or {}).get("name", ""),
+            "room_name": room_name
+        })
+    if professional_id:
+        dup_q_prof = {
+            "appointment_date": appointment_date,
+            "appointment_time": appointment_time,
+            "professional_id": professional_id
+        }
+        if exclude_appointment_id:
+            dup_q_prof["id"] = {"$ne": exclude_appointment_id}
+        existing_prof_apt = await db.appointments.find_one(dup_q_prof, {"_id": 0})
+        if existing_prof_apt:
+            duplicate = True
+            conflicts["professional_conflicts"].append({
+                "time": existing_prof_apt.get("appointment_time"),
+                "time_end": existing_prof_apt.get("appointment_time_end"),
+                "patient_name": (await db.patients.find_one({"id": existing_prof_apt.get("patient_id")}, {"_id": 0, "name": 1}) or {}).get("name", "")
+            })
+    day_q = {"appointment_date": appointment_date}
+    room_day = await db.appointments.find({"$and": [day_q, {"room_id": room_id}]}, {"_id": 0}).to_list(500)
+    prof_day = []
+    if professional_id:
+        prof_day = await db.appointments.find({"$and": [day_q, {"professional_id": professional_id}]}, {"_id": 0}).to_list(500)
+    def overlaps(a_start: str, a_end: Optional[str], b_start: str, b_end: Optional[str]) -> bool:
+        a_e = a_end or a_start
+        b_e = b_end or b_start
+        return (a_start < b_e) and (b_start < a_e)
+    patient_cache = {}
+    for r in room_day:
+        if exclude_appointment_id and r.get("id") == exclude_appointment_id:
+            continue
+        if overlaps(appointment_time, appointment_time_end, r.get("appointment_time"), r.get("appointment_time_end")):
+            pid = r.get("patient_id")
+            pn = patient_cache.get(pid)
+            if pn is None:
+                pn = (await db.patients.find_one({"id": pid}, {"_id": 0, "name": 1}) or {}).get("name", "")
+                patient_cache[pid] = pn
+            conflicts["room_conflicts"].append({
+                "time": r.get("appointment_time"),
+                "time_end": r.get("appointment_time_end"),
+                "patient_name": pn,
+                "room_name": room_name
+            })
+    for p in prof_day:
+        if exclude_appointment_id and p.get("id") == exclude_appointment_id:
+            continue
+        if overlaps(appointment_time, appointment_time_end, p.get("appointment_time"), p.get("appointment_time_end")):
+            pid = p.get("patient_id")
+            pn = patient_cache.get(pid)
+            if pn is None:
+                pn = (await db.patients.find_one({"id": pid}, {"_id": 0, "name": 1}) or {}).get("name", "")
+                patient_cache[pid] = pn
+            conflicts["professional_conflicts"].append({
+                "time": p.get("appointment_time"),
+                "time_end": p.get("appointment_time_end"),
+                "patient_name": pn
+            })
+    has_conflicts = duplicate or len(conflicts["room_conflicts"]) > 0 or len(conflicts["professional_conflicts"]) > 0
+    return {
+        "has_conflicts": has_conflicts,
+        "duplicate": duplicate,
+        "conflicts": conflicts
+    }
 
 @api_router.delete("/appointments/{appointment_id}")
 async def delete_appointment(appointment_id: str, current_user: dict = Depends(get_current_user)):

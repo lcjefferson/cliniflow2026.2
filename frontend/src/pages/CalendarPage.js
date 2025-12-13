@@ -109,7 +109,7 @@ export default function CalendarPage() {
 
   const checkConflicts = async () => {
     if (!formData.professional_id || !formData.room_id || !formData.appointment_date || !formData.appointment_time) {
-      return;
+      return null;
     }
     
     setCheckingConflicts(true);
@@ -131,8 +131,10 @@ export default function CalendarPage() {
       
       const response = await api.get(`/appointments/check-conflicts?${params.toString()}`);
       setConflicts(response.data);
+      return response.data;
     } catch (error) {
       console.error("Erro ao verificar conflitos:", error);
+      return null;
     } finally {
       setCheckingConflicts(false);
     }
@@ -142,7 +144,11 @@ export default function CalendarPage() {
     e.preventDefault();
     
     // Verificar conflitos antes de salvar
-    await checkConflicts();
+    const conflictData = await checkConflicts();
+    if (conflictData && (conflictData.duplicate || conflictData.has_conflicts)) {
+      toast.error("Já existe um agendamento para esta data e horário");
+      return;
+    }
     
     try {
       if (editingAppointment) {
@@ -908,7 +914,7 @@ export default function CalendarPage() {
                           <p className="text-sm font-semibold text-red-800 mb-1">🚪 Sala já está ocupada:</p>
                           {conflicts.conflicts.room_conflicts.map((conflict, idx) => (
                             <p key={idx} className="text-sm text-red-700 ml-4">
-                              • {conflict.time}{conflict.time_end ? ` - ${conflict.time_end}` : ''} - Paciente: {conflict.patient_name}
+                              • {conflict.time}{conflict.time_end ? ` - ${conflict.time_end}` : ''} - Sala: {conflict.room_name}{conflict.patient_name ? ` - Paciente: ${conflict.patient_name}` : ""}
                             </p>
                           ))}
                         </div>
