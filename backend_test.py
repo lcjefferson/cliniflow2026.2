@@ -207,6 +207,34 @@ class CliniFlowAPITester:
         today = datetime.now().strftime('%Y-%m-%d')
         self.run_test("Get Appointments by Date", "GET", f"appointments?date={today}", 200)
 
+    def test_duplicate_appointments(self):
+        """Test creating and updating duplicate appointments"""
+        # Create base appointment
+        base_apt = {
+            "patient_id": str(uuid.uuid4()),
+            "professional_id": "prof-dup-test",
+            "service_id": str(uuid.uuid4()),
+            "room_id": "room-dup-test",
+            "appointment_date": datetime.now().strftime('%Y-%m-%d'),
+            "appointment_time": "10:00",
+            "notes": "Teste duplicidade"
+        }
+        ok, created = self.run_test("Create Base Appointment", "POST", "appointments", 200, data=base_apt)
+        # Try duplicate creation (same date/time/room)
+        dup_apt = dict(base_apt)
+        self.run_test("Create Duplicate Appointment", "POST", "appointments", [409], data=dup_apt)
+        # Update other appointment into duplicate
+        other_apt = dict(base_apt)
+        other_apt["room_id"] = "room-dup-test-2"
+        ok2, created2 = self.run_test("Create Other Appointment", "POST", "appointments", 200, data=other_apt)
+        if ok2 and created2:
+            update_payload = {"room_id": base_apt["room_id"]}
+            self.run_test("Update Into Duplicate", "PUT", f"appointments/{created2['id']}", [409], data=update_payload)
+        # Try professional duplicate with different room
+        prof_dup = dict(base_apt)
+        prof_dup["room_id"] = "room-dup-test-3"
+        self.run_test("Create Professional Duplicate", "POST", "appointments", [409], data=prof_dup)
+
     def test_leads_crud(self):
         """Test leads CRUD operations"""
         # Get leads
