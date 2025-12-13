@@ -57,18 +57,18 @@ export default function PatientCombobox({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex h-10 w-full items-center justify-between whitespace-nowrap rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-base text-gray-900 transition-all duration-200 hover:border-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-base text-gray-900 transition-all duration-200 hover:border-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <span className={selectedPatient ? "text-gray-900" : "text-gray-400"}>
-          {selectedPatient ? (
-            <span>
-              {selectedPatient.name}
-              <span className="text-gray-500 text-sm ml-2">• {selectedPatient.phone}</span>
-            </span>
-          ) : (
-            placeholder
-          )}
-        </span>
+        {selectedPatient ? (
+          <div className="flex-1 min-w-0">
+            <p className="text-gray-900 leading-tight">{selectedPatient.name}</p>
+            {selectedPatient.phone && (
+              <p className="text-gray-500 text-sm leading-tight">{selectedPatient.phone}</p>
+            )}
+          </div>
+        ) : (
+          <span className="text-gray-400">{placeholder}</span>
+        )}
         <ChevronsUpDown className="h-4 w-4 opacity-50 flex-shrink-0 ml-2" />
       </button>
 

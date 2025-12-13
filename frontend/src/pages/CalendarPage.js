@@ -230,6 +230,7 @@ export default function CalendarPage() {
   const handleCloseDialog = () => {
     setShowDialog(false);
     setEditingAppointment(null);
+    setConflicts(null);
     setFormData({
       patient_id: "",
       professional_id: "",
@@ -266,6 +267,7 @@ export default function CalendarPage() {
 
   const handleDayDoubleClick = (date) => {
     if (!date) return;
+    setConflicts(null);
     setFormData({
       ...formData,
       appointment_date: date
