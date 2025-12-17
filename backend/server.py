@@ -3120,18 +3120,41 @@ async def uazapi_webhook(request: Request):
             # Try searching as if DB has 55 but incoming doesn't (unlikely for UazApi but possible)
             lead = await db.leads.find_one({"phone": f"55{from_number}"}, {"_id": 0})
 
+        # Get name from payload
+        contact_name = message_data.get("pushName") or \
+                       message_data.get("notifyName") or \
+                       payload.get("sender", {}).get("name") or \
+                       payload.get("data", {}).get("pushName")
+
         if not lead:
             # Create new lead from unknown number
             lead_id = str(uuid.uuid4())
+            # User requested to avoid "WhatsApp {number}" prefix if possible, but we need a name.
+            # If name is present, use it. If not, use just the number or "WhatsApp {number}" based on preference.
+            # User said: "ao invés dele trazer o label whatsapp+numero... Eu preciso que ele traga apenas o nome da pessoa no whatsapp."
+            # This implies if the name is NOT found, we might just want to show the number or a cleaner fallback.
+            # But mostly, we want to ensure we catch the name.
+            
+            final_name = contact_name if contact_name else f"WhatsApp {from_number}"
+            
             lead = {
                 "id": lead_id,
-                "name": message_data.get("pushName") or f"WhatsApp {from_number}",
+                "name": final_name,
                 "phone": from_number,
                 "status": "new",
                 "source": "whatsapp_inbound",
                 "created_at": datetime.now(timezone.utc).isoformat()
             }
             await db.leads.insert_one(lead)
+        else:
+            # Update lead name if we have a better name now and the current one is generic
+            current_name = lead.get("name", "")
+            if contact_name and (current_name.startswith("WhatsApp ") or current_name == from_number):
+                await db.leads.update_one(
+                    {"id": lead["id"]},
+                    {"$set": {"name": contact_name}}
+                )
+                lead["name"] = contact_name # Update local var for message saving if needed
             
         # 2. Find conversation
         conversation = await db.conversations.find_one({"lead_id": lead["id"]}, {"_id": 0})
