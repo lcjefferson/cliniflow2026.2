@@ -2926,6 +2926,36 @@ async def debug_configure_uazapi():
             except Exception as e:
                 results.append({"step": "Get Current Webhook", "error": str(e)})
 
+            # 2.1 Check Current Webhook (Attempt C GET)
+            if "fortalabs" in base_url:
+                try:
+                    url_find_c = f"{base_url}/webhook?token={uazapi_token}"
+                    resp = await client.get(url_find_c, headers=headers, timeout=5)
+                    results.append({
+                        "step": "Get Current Webhook (Attempt C)",
+                        "url": url_find_c,
+                        "status": resp.status_code,
+                        "body": resp.text[:500]
+                    })
+                except Exception as e:
+                    results.append({"step": "Get Current Webhook (Attempt C)", "error": str(e)})
+
+            # 2.2 Connection State
+            try:
+                url_state = f"{base_url}/instance/connectionState/{instance}"
+                if "fortalabs" in base_url:
+                     url_state = f"{url_state}?token={uazapi_token}"
+                
+                resp = await client.get(url_state, headers=headers, timeout=5)
+                results.append({
+                    "step": "Connection State",
+                    "url": url_state,
+                    "status": resp.status_code,
+                    "body": resp.text[:200]
+                })
+            except Exception as e:
+                results.append({"step": "Connection State", "error": str(e)})
+
             # 3. Configure Webhook (POST /webhook/set)
             payload = {
                 "enabled": True,
@@ -3021,8 +3051,12 @@ async def uazapi_webhook(request: Request):
     Handles incoming messages and updates conversations.
     """
     try:
-        payload = await request.json()
-        
+        body_bytes = await request.body()
+        try:
+            payload = json.loads(body_bytes)
+        except:
+            payload = {"raw_body": body_bytes.decode('utf-8', errors='ignore')}
+
         # Log payload for debugging
         log_entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -3033,6 +3067,9 @@ async def uazapi_webhook(request: Request):
             WEBHOOK_LOGS.pop(0)
             
         logging.info(f"UazApi Webhook Payload: {payload}")
+        
+        if "raw_body" in payload:
+             return {"status": "error", "reason": "invalid_json"}
         
         # Check if it's a message
         # Evolution structure usually: data.message or data.data.message
