@@ -3047,6 +3047,44 @@ async def debug_reset_conversations():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.delete("/debug/reset-phone/{phone}")
+async def debug_reset_phone(phone: str):
+    """
+    DANGER: Deletes Lead, Conversation and Messages for a specific phone.
+    """
+    try:
+        if db is None:
+             raise HTTPException(status_code=503, detail="Database unavailable")
+        
+        # 1. Find Lead
+        # Try exact, with 55, without 55
+        lead = await db.leads.find_one({"phone": phone})
+        if not lead and phone.startswith("55"):
+             lead = await db.leads.find_one({"phone": phone[2:]})
+        if not lead:
+             lead = await db.leads.find_one({"phone": f"55{phone}"})
+             
+        if not lead:
+             return {"status": "not_found", "message": "Lead not found"}
+             
+        lead_id = lead["id"]
+        
+        # 2. Delete Lead
+        await db.leads.delete_one({"id": lead_id})
+        
+        # 3. Find Conversation
+        conversation = await db.conversations.find_one({"lead_id": lead_id})
+        if conversation:
+            # 4. Delete Messages
+            await db.messages.delete_many({"conversation_id": conversation["id"]})
+            # 5. Delete Conversation
+            await db.conversations.delete_one({"id": conversation["id"]})
+            
+        return {"status": "success", "message": f"Data for phone {phone} deleted."}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Webhook for UazApi (Evolution/WPPConnect)
 @api_router.post("/webhook/uazapi")
 async def uazapi_webhook(request: Request):
