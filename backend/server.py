@@ -45,7 +45,7 @@ load_dotenv(ROOT_DIR / '.env')
 # MongoDB connection
 mongo_url = os.environ.get('MONGO_URL', '').strip()
 db_name = os.environ.get('DB_NAME', 'clinicflow').strip()
-allowed_origins_env = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,https://cliniflow-frontend.onrender.com')
+allowed_origins_env = os.environ.get('ALLOWED_ORIGINS') or os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,https://cliniflow-frontend.onrender.com')
 ALLOWED_ORIGINS = [o.strip() for o in allowed_origins_env.split(',') if o.strip()]
 client: Optional[AsyncIOMotorClient] = None
 db = None
@@ -222,9 +222,10 @@ async def check_and_send_birthday_greetings():
                 if _is_birthday_with_offset(patient.get('birthdate'), days_offset):
                     message = rule['message_template'].format(patient_name=patient['name'])
                     
-                    # Here, you would integrate with a messaging service (e.g., WhatsApp)
-                    # to send the message to patient['phone']
+                    # Send via WhatsApp
                     logging.info(f"Sending birthday greeting to {patient['name']} (phone: {patient['phone']}): {message}")
+                    if patient.get("phone"):
+                        await send_whatsapp_message(patient['phone'], message)
                     
                     # Optional: Create a follow-up record for tracking
                     follow_up = FollowUp(
@@ -2637,6 +2638,95 @@ async def get_conversations(current_user: dict = Depends(get_current_user)):
             c['last_message_at'] = datetime.fromisoformat(c['last_message_at'])
     return conversations
 
+async def send_whatsapp_message(to_phone: str, message_body: str):
+    """
+    Sends a WhatsApp message using the configured provider (Official Meta or UazApi).
+    Returns True if successful, False otherwise.
+    """
+    try:
+        settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+        whatsapp = settings.get("whatsapp") if settings else None
+        
+        if not whatsapp or not whatsapp.get('enabled'):
+            logging.warning("WhatsApp not configured or disabled.")
+            return False
+
+        # Clean phone number
+        clean_phone = "".join(filter(str.isdigit, to_phone))
+        if not clean_phone.startswith("55") and len(clean_phone) <= 11:
+             clean_phone = "55" + clean_phone
+
+        provider = whatsapp.get('provider', 'official')
+        
+        async with httpx.AsyncClient() as client:
+            if provider == 'official':
+                # Meta API
+                if not whatsapp.get('phone_number_id') or not whatsapp.get('access_token'):
+                    logging.error("Meta credentials missing.")
+                    return False
+                    
+                url = f"https://graph.facebook.com/v21.0/{whatsapp['phone_number_id']}/messages"
+                headers = {
+                    "Authorization": f"Bearer {whatsapp['access_token']}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "messaging_product": "whatsapp",
+                    "to": clean_phone,
+                    "type": "text",
+                    "text": {"body": message_body}
+                }
+                
+                response = await client.post(url, json=payload, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    return True
+                else:
+                    logging.error(f"Meta API Error: {response.text}")
+                    return False
+
+            elif provider == 'uazapi':
+                # UazApi (Evolution/WPPConnect)
+                base_url = whatsapp.get('uazapi_url')
+                token = whatsapp.get('uazapi_token')
+                instance = whatsapp.get('uazapi_instance', 'default')
+                
+                if not base_url or not token:
+                    logging.error("UazApi credentials missing.")
+                    return False
+                
+                base_url = base_url.rstrip('/')
+                # Assuming Evolution API style: /message/sendText/{instance}
+                url = f"{base_url}/message/sendText/{instance}"
+                
+                headers = {
+                    "apikey": token,
+                    "Content-Type": "application/json"
+                }
+                
+                payload = {
+                    "number": clean_phone,
+                    "options": {
+                        "delay": 1200,
+                        "presence": "composing",
+                        "linkPreview": False
+                    },
+                    "textMessage": {
+                        "text": message_body
+                    }
+                }
+                
+                response = await client.post(url, json=payload, headers=headers, timeout=10)
+                
+                if response.status_code in [200, 201]:
+                    return True
+                else:
+                    logging.error(f"UazApi Error: {response.text}")
+                    return False
+                    
+    except Exception as e:
+        logging.error(f"Error sending WhatsApp message: {e}")
+        return False
+
 # Message Routes
 @api_router.post("/messages", response_model=Message)
 async def create_message(data: MessageCreate, current_user: dict = Depends(get_current_user)):
@@ -2660,6 +2750,11 @@ async def create_message(data: MessageCreate, current_user: dict = Depends(get_c
         {"id": data.conversation_id},
         {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
     )
+
+    # Send via WhatsApp
+    lead = await db.leads.find_one({"id": conversation["lead_id"]}, {"_id": 0})
+    if lead and lead.get("phone"):
+        asyncio.create_task(send_whatsapp_message(lead["phone"], data.content))
     
     return message
 
@@ -2766,8 +2861,6 @@ def _is_birthday_with_offset(birthdate_str, days_offset):
 async def run_birthday_followup_automation(current_user: dict = Depends(get_current_user)):
     created = 0
     sent = 0
-    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
-    whatsapp = settings.get("whatsapp") if settings else None
     rule = await db.follow_up_rules.find_one({"trigger": "patient_birthday", "active": True}, {"_id": 0})
     if not rule:
         return {"created": 0, "sent": 0}
@@ -2794,20 +2887,10 @@ async def run_birthday_followup_automation(current_user: dict = Depends(get_curr
             created += 1
             
             # Send whatsapp
-            if whatsapp and whatsapp.get('phone_number_id') and whatsapp.get('access_token'):
-                try:
-                    clean = "".join(filter(str.isdigit, p.get("phone")))
-                    if not clean.startswith("55"):
-                        clean = "55" + clean
-                    send_url = f"https://graph.facebook.com/v21.0/{whatsapp['phone_number_id']}/messages"
-                    headers = {"Authorization": f"Bearer {whatsapp['access_token']}", "Content-Type": "application/json"}
-                    payload = {"messaging_product": "whatsapp", "to": clean, "type": "text", "text": {"body": msg or f"Parabéns {name}!"}}
-                    async with httpx.AsyncClient() as client:
-                        r = await client.post(send_url, json=payload, headers=headers, timeout=10)
-                        if r.status_code == 200:
-                            sent += 1
-                except Exception:
-                    pass
+            if p.get("phone"):
+                if await send_whatsapp_message(p.get("phone"), msg or f"Parabéns {name}!"):
+                    sent += 1
+                    
     return {"created": created, "sent": sent}
 
 @api_router.post("/automations/auto-message")
@@ -2815,11 +2898,6 @@ async def send_auto_message(req: AutoMessageRequest, current_user: dict = Depend
     patient = await db.patients.find_one({"id": req.patient_id}, {"_id": 0})
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
-
-    settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
-    whatsapp = settings.get("whatsapp") if settings else None
-    if not whatsapp or not whatsapp.get('phone_number_id') or not whatsapp.get('access_token'):
-        raise HTTPException(status_code=400, detail="WhatsApp not configured")
 
     message_body = ""
     if req.message_type == "birthday":
@@ -2834,18 +2912,12 @@ async def send_auto_message(req: AutoMessageRequest, current_user: dict = Depend
     else:
         raise HTTPException(status_code=400, detail="Invalid message type")
 
-    clean_phone = "".join(filter(str.isdigit, patient.get("phone")))
-    if not clean_phone.startswith("55"):
-        clean_phone = "55" + clean_phone
+    if not patient.get("phone"):
+        raise HTTPException(status_code=400, detail="Patient has no phone number")
 
-    send_url = f"https://graph.facebook.com/v21.0/{whatsapp['phone_number_id']}/messages"
-    headers = {"Authorization": f"Bearer {whatsapp['access_token']}", "Content-Type": "application/json"}
-    payload = {"messaging_product": "whatsapp", "to": clean_phone, "type": "text", "text": {"body": message_body}}
-
-    async with httpx.AsyncClient() as client:
-        r = await client.post(send_url, json=payload, headers=headers, timeout=10)
-        if r.status_code != 200:
-            raise HTTPException(status_code=500, detail=f"Failed to send message: {r.text}")
+    success = await send_whatsapp_message(patient["phone"], message_body)
+    if not success:
+         raise HTTPException(status_code=500, detail="Failed to send message via WhatsApp")
 
     return {"message": "Message sent successfully"}
 
@@ -2887,8 +2959,17 @@ async def generate_document(req: GenerateDocumentRequest, current_user: dict = D
 
 # Settings Routes
 class WhatsAppSettings(BaseModel):
-    phone_number_id: str
-    access_token: str
+    provider: str = "official"  # official, uazapi
+    enabled: bool = False
+    # Official Meta
+    phone_number_id: Optional[str] = None
+    business_account_id: Optional[str] = None
+    access_token: Optional[str] = None
+    verify_token: Optional[str] = None
+    # UazApi (Evolution/WPPConnect)
+    uazapi_url: Optional[str] = None
+    uazapi_token: Optional[str] = None
+    uazapi_instance: Optional[str] = None
 
 class OmnichannelSettings(BaseModel):
     whatsapp: Optional[WhatsAppSettings] = None
@@ -2918,6 +2999,62 @@ async def save_omnichannel_settings(data: OmnichannelSettings, current_user: dic
         upsert=True
     )
     return {"message": "Settings saved"}
+
+@api_router.post("/settings/omnichannel/whatsapp/test")
+async def test_whatsapp_connection(settings: WhatsAppSettings, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    provider = settings.provider
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            if provider == 'official':
+                if not settings.phone_number_id or not settings.access_token:
+                    raise HTTPException(status_code=400, detail="Meta credentials missing")
+                
+                url = f"https://graph.facebook.com/v21.0/{settings.phone_number_id}"
+                headers = {"Authorization": f"Bearer {settings.access_token}"}
+                
+                response = await client.get(url, headers=headers, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    return {"success": True, "message": f"Connected to Meta API. ID: {data.get('id')}"}
+                else:
+                    return {"success": False, "detail": f"Meta API Error: {response.text}"}
+                    
+            elif provider == 'uazapi':
+                if not settings.uazapi_url or not settings.uazapi_token:
+                    raise HTTPException(status_code=400, detail="UazApi credentials missing")
+                
+                base_url = settings.uazapi_url.rstrip('/')
+                instance = settings.uazapi_instance or 'default'
+                
+                # Check connection state (Evolution API style)
+                url = f"{base_url}/instance/connectionState/{instance}"
+                headers = {"apikey": settings.uazapi_token}
+                
+                response = await client.get(url, headers=headers, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    # Evolution returns { "instance": ..., "state": "open" }
+                    state = data.get('instance', {}).get('state') or data.get('state')
+                    return {"success": True, "message": f"Connected to UazApi. State: {state}"}
+                elif response.status_code == 404:
+                     # Instance might not exist or endpoint is different
+                     return {"success": False, "detail": "Instance not found or invalid URL"}
+                else:
+                    return {"success": False, "detail": f"UazApi Error: {response.status_code} - {response.text}"}
+            
+            else:
+                raise HTTPException(status_code=400, detail="Invalid provider")
+                
+        except httpx.RequestError as e:
+            return {"success": False, "detail": f"Connection error: {str(e)}"}
+        except Exception as e:
+            return {"success": False, "detail": f"Unexpected error: {str(e)}"}
 
 @api_router.get("/settings/clinic")
 async def get_clinic_settings(current_user: dict = Depends(get_current_user)):

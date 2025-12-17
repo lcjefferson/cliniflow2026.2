@@ -19,11 +19,15 @@ export default function SettingsPageV2() {
   
   const [whatsappConfig, setWhatsappConfig] = useState({
     enabled: false,
+    provider: "official",
     phone_number_id: "",
     access_token: "",
     verify_token: "",
     webhook_url: "",
-    business_account_id: ""
+    business_account_id: "",
+    uazapi_url: "",
+    uazapi_token: "",
+    uazapi_instance: ""
   });
 
   const [instagramConfig, setInstagramConfig] = useState({
@@ -159,14 +163,20 @@ export default function SettingsPageV2() {
   const handleTestConnection = async (channel) => {
     setLoading(true);
     try {
-      const response = await api.post(`/settings/omnichannel/${channel}/test`);
+      let payload = {};
+      if (channel === 'whatsapp') {
+        payload = whatsappConfig;
+      }
+      
+      const response = await api.post(`/settings/omnichannel/${channel}/test`, payload);
       if (response.data.success) {
         toast.success(`Conexão com ${channel} testada com sucesso!`);
       } else {
-        toast.error(`Falha ao conectar com ${channel}`);
+        toast.error(response.data.detail || `Falha ao conectar com ${channel}`);
       }
     } catch (error) {
-      toast.error("Erro ao testar conexão");
+      console.error(error);
+      toast.error(error.response?.data?.detail || "Erro ao testar conexão");
     } finally {
       setLoading(false);
     }
@@ -401,95 +411,155 @@ export default function SettingsPageV2() {
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Configuração da API</h3>
               
               <div>
-                <Label>Phone Number ID *</Label>
-                <Input
-                  type="text"
-                  placeholder="Ex: 123456789012345"
-                  value={whatsappConfig.phone_number_id}
-                  onChange={(e) => setWhatsappConfig({...whatsappConfig, phone_number_id: e.target.value})}
-                />
-                <p className="text-xs text-gray-500 mt-1">ID do número de telefone do WhatsApp Business</p>
+                <Label>Provedor *</Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  value={whatsappConfig.provider || "official"}
+                  onChange={(e) => setWhatsappConfig({...whatsappConfig, provider: e.target.value})}
+                >
+                  <option value="official">Meta (Oficial)</option>
+                  <option value="uazapi">UazApi (Evolution/WPPConnect)</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Selecione o provedor de WhatsApp</p>
               </div>
 
-              <div>
-                <Label>Business Account ID</Label>
-                <Input
-                  type="text"
-                  placeholder="Ex: 987654321098765"
-                  value={whatsappConfig.business_account_id}
-                  onChange={(e) => setWhatsappConfig({...whatsappConfig, business_account_id: e.target.value})}
-                />
-                <p className="text-xs text-gray-500 mt-1">ID da conta WhatsApp Business</p>
-              </div>
+              {whatsappConfig.provider === 'uazapi' ? (
+                <>
+                  <div>
+                    <Label>UazApi URL *</Label>
+                    <Input
+                      type="text"
+                      placeholder="Ex: https://api.uazapi.com"
+                      value={whatsappConfig.uazapi_url || ""}
+                      onChange={(e) => setWhatsappConfig({...whatsappConfig, uazapi_url: e.target.value})}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">URL base da API (sem barra no final)</p>
+                  </div>
+                  <div>
+                    <Label>API Key / Token *</Label>
+                    <div className="relative">
+                      <Input
+                        type={showWhatsAppToken ? "text" : "password"}
+                        placeholder="Sua chave de API..."
+                        value={whatsappConfig.uazapi_token || ""}
+                        onChange={(e) => setWhatsappConfig({...whatsappConfig, uazapi_token: e.target.value})}
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowWhatsAppToken(!showWhatsAppToken)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {showWhatsAppToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Chave de autenticação da API</p>
+                  </div>
+                  <div>
+                    <Label>Instance Name *</Label>
+                    <Input
+                      type="text"
+                      placeholder="Ex: ClinicaPrincipal"
+                      value={whatsappConfig.uazapi_instance || ""}
+                      onChange={(e) => setWhatsappConfig({...whatsappConfig, uazapi_instance: e.target.value})}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Nome da instância conectada</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <Label>Phone Number ID *</Label>
+                    <Input
+                      type="text"
+                      placeholder="Ex: 123456789012345"
+                      value={whatsappConfig.phone_number_id || ""}
+                      onChange={(e) => setWhatsappConfig({...whatsappConfig, phone_number_id: e.target.value})}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">ID do número de telefone do WhatsApp Business</p>
+                  </div>
 
-              <div>
-                <Label>Access Token *</Label>
-                <div className="relative">
-                  <Input
-                    type={showWhatsAppToken ? "text" : "password"}
-                    placeholder="EAAxxxxxxxxxxxxx..."
-                    value={whatsappConfig.access_token}
-                    onChange={(e) => setWhatsappConfig({...whatsappConfig, access_token: e.target.value})}
-                    className="pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowWhatsAppToken(!showWhatsAppToken)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showWhatsAppToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Token de acesso permanente da API</p>
-              </div>
+                  <div>
+                    <Label>Business Account ID</Label>
+                    <Input
+                      type="text"
+                      placeholder="Ex: 987654321098765"
+                      value={whatsappConfig.business_account_id || ""}
+                      onChange={(e) => setWhatsappConfig({...whatsappConfig, business_account_id: e.target.value})}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">ID da conta WhatsApp Business</p>
+                  </div>
 
-              <div>
-                <Label>Verify Token *</Label>
-                <div className="flex gap-2">
-                  <Input
-                    type="text"
-                    placeholder="Ex: meu_token_secreto_123"
-                    value={whatsappConfig.verify_token}
-                    onChange={(e) => setWhatsappConfig({...whatsappConfig, verify_token: e.target.value})}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      const randomToken = Math.random().toString(36).substring(2, 15);
-                      setWhatsappConfig({...whatsappConfig, verify_token: randomToken});
-                    }}
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </Button>
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Token para verificação do webhook (crie um aleatório)</p>
-              </div>
+                  <div>
+                    <Label>Access Token *</Label>
+                    <div className="relative">
+                      <Input
+                        type={showWhatsAppToken ? "text" : "password"}
+                        placeholder="EAAxxxxxxxxxxxxx..."
+                        value={whatsappConfig.access_token || ""}
+                        onChange={(e) => setWhatsappConfig({...whatsappConfig, access_token: e.target.value})}
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowWhatsAppToken(!showWhatsAppToken)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {showWhatsAppToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Token de acesso permanente da API</p>
+                  </div>
 
-              <div>
-                <Label>Webhook URL</Label>
-                <div className="flex gap-2">
-                  <Input
-                    type="text"
-                    value={`${webhookBaseUrl}/api/webhooks/whatsapp`}
-                    readOnly
-                    className="bg-gray-50"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => copyToClipboard(`${webhookBaseUrl}/api/webhooks/whatsapp`)}
-                  >
-                    <Copy className="w-4 h-4" />
-                  </Button>
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Use esta URL no painel do Meta Developers</p>
-              </div>
+                  <div>
+                    <Label>Verify Token *</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="text"
+                        placeholder="Ex: meu_token_secreto_123"
+                        value={whatsappConfig.verify_token || ""}
+                        onChange={(e) => setWhatsappConfig({...whatsappConfig, verify_token: e.target.value})}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          const randomToken = Math.random().toString(36).substring(2, 15);
+                          setWhatsappConfig({...whatsappConfig, verify_token: randomToken});
+                        }}
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Token para verificação do webhook (crie um aleatório)</p>
+                  </div>
+
+                  <div>
+                    <Label>Webhook URL</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="text"
+                        value={`${webhookBaseUrl}/api/webhooks/whatsapp`}
+                        readOnly
+                        className="bg-gray-50"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => copyToClipboard(`${webhookBaseUrl}/api/webhooks/whatsapp`)}
+                      >
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Use esta URL no painel do Meta Developers</p>
+                  </div>
+                </>
+              )}
 
               <div className="flex gap-3 pt-4">
                 <Button
                   onClick={handleSaveWhatsApp}
-                  disabled={loading || !whatsappConfig.phone_number_id || !whatsappConfig.access_token || !whatsappConfig.verify_token}
+                  disabled={loading}
                   className="btn-primary"
                 >
                   <Save className="w-4 h-4 mr-2" />
