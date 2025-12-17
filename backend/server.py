@@ -2937,6 +2937,10 @@ async def debug_configure_uazapi():
             # Attempt A: Standard /webhook/set/{instance}
             url_set = f"{base_url}/webhook/set/{instance}"
             try:
+                # FortaLabs might need token in query param too
+                if "fortalabs" in base_url:
+                    url_set = f"{url_set}?token={uazapi_token}"
+                
                 resp = await client.post(url_set, json=payload, headers=headers, timeout=10)
                 results.append({
                     "step": "Set Webhook (Standard)",
@@ -2961,6 +2965,26 @@ async def debug_configure_uazapi():
 
     except Exception as e:
         return {"status": "critical_error", "detail": str(e)}
+
+@api_router.delete("/debug/reset-conversations")
+async def debug_reset_conversations():
+    """
+    DANGER: Deletes ALL conversations and messages.
+    For testing purposes only.
+    """
+    try:
+        if db is None:
+             raise HTTPException(status_code=503, detail="Database unavailable")
+             
+        await db.conversations.delete_many({})
+        await db.messages.delete_many({})
+        
+        global WEBHOOK_LOGS
+        WEBHOOK_LOGS = []
+        
+        return {"status": "success", "message": "All conversations and messages deleted."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Webhook for UazApi (Evolution/WPPConnect)
 @api_router.post("/webhook/uazapi")
