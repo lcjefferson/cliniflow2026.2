@@ -2843,56 +2843,57 @@ async def debug_configure_uazapi():
         webhook_url = f"{my_url}/api/webhook/uazapi"
         
         results = []
+        instance = whatsapp.get("uazapi_instance", "default")
+        base_url = uazapi_url.rstrip('/')
         
         async with httpx.AsyncClient() as client:
-            # Attempt 1: Standard Evolution API
-            # /webhook/set/{instance}
-            instance = whatsapp.get("uazapi_instance", "default")
-            url_evolution = f"{uazapi_url.rstrip('/')}/webhook/set/{instance}"
             
-            payload_evolution = {
+            # Common Payloads
+            payload_std = {
                 "enabled": True,
                 "url": webhook_url,
                 "webhookByEvents": False,
                 "events": ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE"]
             }
-            headers_evolution = {
+            
+            headers_std = {
                 "apikey": uazapi_token,
                 "Content-Type": "application/json"
             }
             
-            try:
-                resp = await client.post(url_evolution, json=payload_evolution, headers=headers_evolution, timeout=10)
-                results.append({
-                    "method": "Evolution Standard",
-                    "url": url_evolution,
-                    "status": resp.status_code,
-                    "response": resp.text
-                })
-            except Exception as e:
-                results.append({"method": "Evolution Standard", "error": str(e)})
-
-            # Attempt 2: FortaLabs/Custom Style (Query Param Token)
-            # /webhook/set?token=XYZ
-            url_custom = f"{uazapi_url.rstrip('/')}/webhook/set"
-            params = {"token": uazapi_token}
-            payload_custom = {
-                "enabled": True,
-                "url": webhook_url,
-                "webhookByEvents": False,
-                "events": ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE"]
-            }
+            # --- Attempt Strategy ---
             
+            # 1. POST /webhook/set/{instance} (Standard Evolution)
+            url_1 = f"{base_url}/webhook/set/{instance}"
             try:
-                resp = await client.post(url_custom, params=params, json=payload_custom, timeout=10)
-                results.append({
-                    "method": "Custom/FortaLabs",
-                    "url": str(resp.url),
-                    "status": resp.status_code,
-                    "response": resp.text
-                })
+                resp = await client.post(url_1, json=payload_std, headers=headers_std, timeout=10)
+                results.append({"method": "POST /webhook/set/{instance}", "url": url_1, "status": resp.status_code, "response": resp.text})
             except Exception as e:
-                results.append({"method": "Custom/FortaLabs", "error": str(e)})
+                results.append({"method": "POST /webhook/set/{instance}", "error": str(e)})
+
+            # 2. PUT /webhook/set/{instance} (Alternative Method)
+            try:
+                resp = await client.put(url_1, json=payload_std, headers=headers_std, timeout=10)
+                results.append({"method": "PUT /webhook/set/{instance}", "url": url_1, "status": resp.status_code, "response": resp.text})
+            except Exception as e:
+                results.append({"method": "PUT /webhook/set/{instance}", "error": str(e)})
+
+            # 3. POST /webhook/instance/{instance} (Variant)
+            url_3 = f"{base_url}/webhook/instance/{instance}"
+            try:
+                resp = await client.post(url_3, json=payload_std, headers=headers_std, timeout=10)
+                results.append({"method": "POST /webhook/instance/{instance}", "url": url_3, "status": resp.status_code, "response": resp.text})
+            except Exception as e:
+                results.append({"method": "POST /webhook/instance/{instance}", "error": str(e)})
+            
+            # 4. POST /webhook/set?token={token} (FortaLabs Query Param Style)
+            url_4 = f"{base_url}/webhook/set"
+            params_4 = {"token": uazapi_token}
+            try:
+                resp = await client.post(url_4, params=params_4, json=payload_std, timeout=10)
+                results.append({"method": "POST /webhook/set?token=...", "url": url_4, "status": resp.status_code, "response": resp.text})
+            except Exception as e:
+                results.append({"method": "POST /webhook/set?token=...", "error": str(e)})
 
         return {
             "status": "completed",
