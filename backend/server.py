@@ -2695,27 +2695,38 @@ async def send_whatsapp_message(to_phone: str, message_body: str):
                     return False
                 
                 base_url = base_url.rstrip('/')
-                # Assuming Evolution API style: /message/sendText/{instance}
-                url = f"{base_url}/message/sendText/{instance}"
                 
-                headers = {
-                    "apikey": token,
-                    "Content-Type": "application/json"
-                }
-                
-                payload = {
-                    "number": clean_phone,
-                    "options": {
-                        "delay": 1200,
-                        "presence": "composing",
-                        "linkPreview": False
-                    },
-                    "textMessage": {
+                # Special logic for FortaLabs (User specific request)
+                if "fortalabs.uazapi.com" in base_url:
+                    url = f"{base_url}/send/text"
+                    # Query param authentication + simple payload
+                    url_with_token = f"{url}?token={token}"
+                    headers = {"Content-Type": "application/json"}
+                    payload = {
+                        "number": clean_phone,
                         "text": message_body
                     }
-                }
-                
-                response = await client.post(url, json=payload, headers=headers, timeout=10)
+                    
+                    response = await client.post(url_with_token, json=payload, headers=headers, timeout=10)
+                else:
+                    # Standard Evolution API style: /message/sendText/{instance}
+                    url = f"{base_url}/message/sendText/{instance}"
+                    headers = {
+                        "apikey": token,
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "number": clean_phone,
+                        "options": {
+                            "delay": 1200,
+                            "presence": "composing",
+                            "linkPreview": False
+                        },
+                        "textMessage": {
+                            "text": message_body
+                        }
+                    }
+                    response = await client.post(url, json=payload, headers=headers, timeout=10)
                 
                 if response.status_code in [200, 201]:
                     return True
@@ -3093,22 +3104,36 @@ async def test_whatsapp_connection(settings: WhatsAppSettings, current_user: dic
                 base_url = settings.uazapi_url.rstrip('/')
                 instance = settings.uazapi_instance or 'default'
                 
-                # Check connection state (Evolution API style)
-                url = f"{base_url}/instance/connectionState/{instance}"
-                headers = {"apikey": settings.uazapi_token}
-                
-                response = await client.get(url, headers=headers, timeout=10)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    # Evolution returns { "instance": ..., "state": "open" }
-                    state = data.get('instance', {}).get('state') or data.get('state')
-                    return {"success": True, "message": f"Connected to UazApi. State: {state}"}
-                elif response.status_code == 404:
-                     # Instance might not exist or endpoint is different
-                     return {"success": False, "detail": "Instance not found or invalid URL"}
+                # Special logic for FortaLabs
+                if "fortalabs.uazapi.com" in base_url:
+                    url = f"{base_url}/status"
+                    # Try to call status endpoint
+                    response = await client.get(url, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        # Extract status info if available
+                        status_info = data.get('status', {}).get('checked_instance', {}).get('connection_status', 'connected')
+                        return {"success": True, "message": f"Connected to UazApi (FortaLabs). Status: {status_info}"}
+                    else:
+                         return {"success": False, "detail": f"UazApi Error: {response.status_code}"}
+
                 else:
-                    return {"success": False, "detail": f"UazApi Error: {response.status_code} - {response.text}"}
+                    # Check connection state (Evolution API style)
+                    url = f"{base_url}/instance/connectionState/{instance}"
+                    headers = {"apikey": settings.uazapi_token}
+                    
+                    response = await client.get(url, headers=headers, timeout=10)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        # Evolution returns { "instance": ..., "state": "open" }
+                        state = data.get('instance', {}).get('state') or data.get('state')
+                        return {"success": True, "message": f"Connected to UazApi. State: {state}"}
+                    elif response.status_code == 404:
+                         # Instance might not exist or endpoint is different
+                         return {"success": False, "detail": "Instance not found or invalid URL"}
+                    else:
+                        return {"success": False, "detail": f"UazApi Error: {response.status_code} - {response.text}"}
             
             else:
                 raise HTTPException(status_code=400, detail="Invalid provider")
