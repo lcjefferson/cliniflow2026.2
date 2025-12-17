@@ -2969,7 +2969,10 @@ async def uazapi_webhook(request: Request):
         
         # Check if it's a message
         # Evolution structure usually: data.message or data.data.message
-        message_data = payload.get("data", {}).get("message") or payload.get("data")
+        # FortaLabs structure: payload.message
+        message_data = payload.get("data", {}).get("message") or \
+                       payload.get("data") or \
+                       payload.get("message")
         
         # Adjust for FortaLabs custom payload if needed
         if not message_data and "content" in payload:
@@ -2982,9 +2985,14 @@ async def uazapi_webhook(request: Request):
         from_number = message_data.get("remoteJid", "").split("@")[0]
         if not from_number:
              from_number = message_data.get("from", "").split("@")[0]
+        if not from_number:
+             from_number = message_data.get("sender_pn", "").split("@")[0]
+        if not from_number:
+             from_number = message_data.get("chatid", "").split("@")[0]
              
         body = message_data.get("conversation") or \
                message_data.get("text") or \
+               message_data.get("content") or \
                message_data.get("body") or \
                (message_data.get("extendedTextMessage", {}).get("text"))
                
