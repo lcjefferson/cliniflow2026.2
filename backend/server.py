@@ -3141,6 +3141,7 @@ async def uazapi_webhook(request: Request):
                 "id": conversation_id,
                 "lead_id": lead["id"],
                 "channel": "whatsapp",
+                "status": "active",
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "last_message_at": datetime.now(timezone.utc).isoformat()
             }

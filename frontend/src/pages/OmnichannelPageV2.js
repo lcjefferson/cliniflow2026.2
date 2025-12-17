@@ -391,7 +391,7 @@ export default function OmnichannelPageV2() {
               </div>
 
               {/* Message Input */}
-              {selectedConversation.status === "active" && (!selectedConversation.assigned_to || String(selectedConversation.assigned_to) === String(user?.id)) && (
+              {(selectedConversation.status === "active" || !selectedConversation.status) && (!selectedConversation.assigned_to || String(selectedConversation.assigned_to) === String(user?.id)) && (
                 <div className="bg-white border-t border-gray-200 p-4">
                   <form onSubmit={handleSendMessage} className="flex gap-2">
                     <Input
@@ -419,7 +419,7 @@ export default function OmnichannelPageV2() {
               )}
               
               {/* Debug Info for Assignment Mismatch */}
-              {selectedConversation.status === "active" && selectedConversation.assigned_to && String(selectedConversation.assigned_to) !== String(user?.id) && (
+              {(selectedConversation.status === "active" || !selectedConversation.status) && selectedConversation.assigned_to && String(selectedConversation.assigned_to) !== String(user?.id) && (
                  <div className="bg-red-50 border-t border-red-200 p-4 text-center">
                     <p className="text-red-800 font-medium">Debug: ID Mismatch</p>
                     <p className="text-xs text-red-600">
