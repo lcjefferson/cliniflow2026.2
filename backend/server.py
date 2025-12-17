@@ -2957,11 +2957,15 @@ async def debug_configure_uazapi():
                 results.append({"step": "Connection State", "error": str(e)})
 
             # 3. Configure Webhook (POST /webhook/set)
+            # NOTE: FortaLabs seems to use lowercase 'messages' based on previous config
             payload = {
                 "enabled": True,
                 "url": webhook_target,
                 "webhookByEvents": False,
-                "events": ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE"]
+                "events": [
+                    "messages", "messages_update", "send_message", 
+                    "MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE"
+                ]
             }
             
             # Attempt A: Standard /webhook/set/{instance}
