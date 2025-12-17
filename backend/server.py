@@ -2818,6 +2818,91 @@ WEBHOOK_LOGS = []
 async def get_webhook_logs(limit: int = 10):
     return WEBHOOK_LOGS[-limit:]
 
+@api_router.get("/debug/configure-uazapi")
+async def debug_configure_uazapi():
+    """
+    Force configuration of UazApi webhook using stored settings.
+    """
+    try:
+        settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+        if not settings:
+            return {"status": "error", "message": "No omnichannel settings found"}
+            
+        whatsapp = settings.get("whatsapp")
+        if not whatsapp or whatsapp.get("provider") != "uazapi":
+            return {"status": "error", "message": "UazApi not configured or not selected provider"}
+            
+        uazapi_url = whatsapp.get("uazapi_url")
+        uazapi_token = whatsapp.get("uazapi_token")
+        
+        if not uazapi_url or not uazapi_token:
+            return {"status": "error", "message": "Missing URL or Token"}
+            
+        # Hardcoded for reliability in this specific fix
+        my_url = "https://clinicflow-lucj.onrender.com"
+        webhook_url = f"{my_url}/api/webhook/uazapi"
+        
+        results = []
+        
+        async with httpx.AsyncClient() as client:
+            # Attempt 1: Standard Evolution API
+            # /webhook/set/{instance}
+            instance = whatsapp.get("uazapi_instance", "default")
+            url_evolution = f"{uazapi_url.rstrip('/')}/webhook/set/{instance}"
+            
+            payload_evolution = {
+                "enabled": True,
+                "url": webhook_url,
+                "webhookByEvents": False,
+                "events": ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE"]
+            }
+            headers_evolution = {
+                "apikey": uazapi_token,
+                "Content-Type": "application/json"
+            }
+            
+            try:
+                resp = await client.post(url_evolution, json=payload_evolution, headers=headers_evolution, timeout=10)
+                results.append({
+                    "method": "Evolution Standard",
+                    "url": url_evolution,
+                    "status": resp.status_code,
+                    "response": resp.text
+                })
+            except Exception as e:
+                results.append({"method": "Evolution Standard", "error": str(e)})
+
+            # Attempt 2: FortaLabs/Custom Style (Query Param Token)
+            # /webhook/set?token=XYZ
+            url_custom = f"{uazapi_url.rstrip('/')}/webhook/set"
+            params = {"token": uazapi_token}
+            payload_custom = {
+                "enabled": True,
+                "url": webhook_url,
+                "webhookByEvents": False,
+                "events": ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE"]
+            }
+            
+            try:
+                resp = await client.post(url_custom, params=params, json=payload_custom, timeout=10)
+                results.append({
+                    "method": "Custom/FortaLabs",
+                    "url": str(resp.url),
+                    "status": resp.status_code,
+                    "response": resp.text
+                })
+            except Exception as e:
+                results.append({"method": "Custom/FortaLabs", "error": str(e)})
+
+        return {
+            "status": "completed",
+            "webhook_target": webhook_url,
+            "attempts": results
+        }
+
+    except Exception as e:
+        return {"status": "critical_error", "detail": str(e)}
+
 # Webhook for UazApi (Evolution/WPPConnect)
 @api_router.post("/webhook/uazapi")
 async def uazapi_webhook(request: Request):
