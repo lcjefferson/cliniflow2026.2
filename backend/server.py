@@ -2815,7 +2815,7 @@ async def assign_conversation(conversation_id: str, current_user: dict = Depends
 WEBHOOK_LOGS = []
 
 @api_router.get("/webhook/logs")
-async def get_webhook_logs(limit: int = 10, current_user: dict = Depends(get_current_user)):
+async def get_webhook_logs(limit: int = 10):
     return WEBHOOK_LOGS[-limit:]
 
 # Webhook for UazApi (Evolution/WPPConnect)
