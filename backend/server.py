@@ -2943,13 +2943,40 @@ async def debug_configure_uazapi():
                 
                 resp = await client.post(url_set, json=payload, headers=headers, timeout=10)
                 results.append({
-                    "step": "Set Webhook (Standard)",
+                    "step": "Set Webhook (Attempt A: Standard)",
                     "url": url_set,
                     "status": resp.status_code,
                     "response": resp.text
                 })
             except Exception as e:
-                results.append({"step": "Set Webhook (Standard)", "error": str(e)})
+                results.append({"step": "Set Webhook (Attempt A)", "error": str(e)})
+
+            # Attempt B: FortaLabs Variation 1 (No instance in path)
+            if "fortalabs" in base_url:
+                 try:
+                     url_set_b = f"{base_url}/webhook/set?token={uazapi_token}"
+                     resp = await client.post(url_set_b, json=payload, headers=headers, timeout=10)
+                     results.append({
+                         "step": "Set Webhook (Attempt B: No Instance)",
+                         "url": url_set_b,
+                         "status": resp.status_code,
+                         "response": resp.text
+                     })
+                 except Exception as e:
+                     results.append({"step": "Set Webhook (Attempt B)", "error": str(e)})
+
+                 # Attempt C: Just /webhook
+                 try:
+                     url_set_c = f"{base_url}/webhook?token={uazapi_token}"
+                     resp = await client.post(url_set_c, json=payload, headers=headers, timeout=10)
+                     results.append({
+                         "step": "Set Webhook (Attempt C: /webhook)",
+                         "url": url_set_c,
+                         "status": resp.status_code,
+                         "response": resp.text
+                     })
+                 except Exception as e:
+                     results.append({"step": "Set Webhook (Attempt C)", "error": str(e)})
                 
         return {
             "status": "completed",
