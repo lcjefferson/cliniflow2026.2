@@ -2777,6 +2777,95 @@ async def get_messages(conversation_id: str, current_user: dict = Depends(get_cu
             m['created_at'] = datetime.fromisoformat(m['created_at'])
     return messages
 
+# Webhook for UazApi (Evolution/WPPConnect)
+@api_router.post("/webhook/uazapi")
+async def uazapi_webhook(request: Request):
+    """
+    Receives webhooks from UazApi/Evolution/WPPConnect.
+    Handles incoming messages and updates conversations.
+    """
+    try:
+        payload = await request.json()
+        logging.info(f"UazApi Webhook Payload: {payload}")
+        
+        # Check if it's a message
+        # Evolution structure usually: data.message or data.data.message
+        message_data = payload.get("data", {}).get("message") or payload.get("data")
+        
+        # Adjust for FortaLabs custom payload if needed
+        if not message_data and "content" in payload:
+             message_data = payload # Maybe it's flat
+             
+        if not message_data:
+            return {"status": "ignored", "reason": "no_message_data"}
+
+        # Extract info
+        from_number = message_data.get("remoteJid", "").split("@")[0]
+        if not from_number:
+             from_number = message_data.get("from", "").split("@")[0]
+             
+        body = message_data.get("conversation") or \
+               message_data.get("text") or \
+               message_data.get("body") or \
+               (message_data.get("extendedTextMessage", {}).get("text"))
+               
+        if not from_number or not body:
+             return {"status": "ignored", "reason": "incomplete_data"}
+
+        # Find or create lead/conversation
+        # 1. Find lead by phone
+        lead = await db.leads.find_one({"phone": {"$regex": f"{from_number}$"}}, {"_id": 0})
+        
+        if not lead:
+            # Create new lead from unknown number
+            lead_id = str(uuid.uuid4())
+            lead = {
+                "id": lead_id,
+                "name": message_data.get("pushName") or f"WhatsApp {from_number}",
+                "phone": from_number,
+                "status": "new",
+                "source": "whatsapp_inbound",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.leads.insert_one(lead)
+            
+        # 2. Find conversation
+        conversation = await db.conversations.find_one({"lead_id": lead["id"]}, {"_id": 0})
+        if not conversation:
+            conversation_id = str(uuid.uuid4())
+            conversation = {
+                "id": conversation_id,
+                "lead_id": lead["id"],
+                "channel": "whatsapp",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "last_message_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.conversations.insert_one(conversation)
+            
+        # 3. Save Message
+        message = {
+            "id": str(uuid.uuid4()),
+            "conversation_id": conversation["id"],
+            "sender_type": "lead",
+            "sender_id": lead["id"],
+            "sender_name": lead["name"],
+            "content": body,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.messages.insert_one(message)
+        
+        # Update conversation timestamp
+        await db.conversations.update_one(
+            {"id": conversation["id"]},
+            {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
+        )
+
+        return {"status": "processed"}
+
+    except Exception as e:
+        logging.error(f"Error processing UazApi webhook: {e}")
+        return {"status": "error", "detail": str(e)}
+
 # Follow-up Routes
 @api_router.post("/follow-ups", response_model=FollowUp)
 async def create_follow_up(data: FollowUpCreate, current_user: dict = Depends(get_current_user)):
@@ -3047,6 +3136,43 @@ async def save_whatsapp_settings(data: WhatsAppSettings, current_user: dict = De
         {"$set": {"whatsapp": data.model_dump()}},
         upsert=True
     )
+    
+    # Attempt to configure Webhook if UazApi/FortaLabs
+    if data.provider == 'uazapi' and data.uazapi_url and data.uazapi_token:
+        try:
+             # Determine current backend URL (for webhook callback)
+             # In production (Render), this should be the public URL.
+             # We can try to infer or use an ENV var.
+             public_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("BACKEND_URL")
+             
+             if public_url:
+                 webhook_url = f"{public_url}/api/webhook/uazapi"
+                 
+                 async with httpx.AsyncClient() as client:
+                     if "fortalabs.uazapi.com" in data.uazapi_url:
+                         # FortaLabs specific webhook config
+                         # Assuming endpoint /webhook/set or similar based on Evolution API
+                         # We'll try standard Evolution endpoint first
+                         api_url = f"{data.uazapi_url.rstrip('/')}/webhook/set/{data.uazapi_instance or 'default'}"
+                         payload = {
+                             "enabled": True,
+                             "url": webhook_url,
+                             "webhookByEvents": False,
+                             "events": ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE"]
+                         }
+                         headers = {"apikey": data.uazapi_token, "Content-Type": "application/json"}
+                         
+                         # Note: FortaLabs might use query param for token as seen before
+                         if "fortalabs" in data.uazapi_url:
+                              api_url = f"{data.uazapi_url.rstrip('/')}/webhook/set?token={data.uazapi_token}"
+                              headers = {"Content-Type": "application/json"}
+                              
+                         logging.info(f"Attempting to set UazApi webhook to {webhook_url}")
+                         await client.post(api_url, json=payload, headers=headers, timeout=5)
+                         
+        except Exception as e:
+            logging.error(f"Failed to auto-configure UazApi webhook: {e}")
+
     return {"message": "WhatsApp settings saved"}
 
 @api_router.post("/settings/omnichannel/instagram")
