@@ -45,7 +45,7 @@ load_dotenv(ROOT_DIR / '.env')
 # MongoDB connection
 mongo_url = os.environ.get('MONGO_URL', '').strip()
 db_name = os.environ.get('DB_NAME', 'clinicflow').strip()
-allowed_origins_env = os.environ.get('ALLOWED_ORIGINS') or os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,https://cliniflow-frontend.onrender.com')
+allowed_origins_env = os.environ.get('ALLOWED_ORIGINS') or os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,https://cliniflow-frontend.onrender.com,https://clinicflow-lucj.onrender.com')
 ALLOWED_ORIGINS = [o.strip() for o in allowed_origins_env.split(',') if o.strip()]
 client: Optional[AsyncIOMotorClient] = None
 db = None
