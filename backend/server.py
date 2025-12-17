@@ -2777,6 +2777,40 @@ async def get_messages(conversation_id: str, current_user: dict = Depends(get_cu
             m['created_at'] = datetime.fromisoformat(m['created_at'])
     return messages
 
+# Nested Routes for Conversations (Frontend Compatibility)
+@api_router.get("/conversations/{conversation_id}/messages", response_model=List[dict])
+async def get_conversation_messages(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    return await get_messages(conversation_id, current_user)
+
+@api_router.post("/conversations/{conversation_id}/messages", response_model=Message)
+async def create_conversation_message(conversation_id: str, data: MessageCreate, current_user: dict = Depends(get_current_user)):
+    data.conversation_id = conversation_id
+    return await create_message(data, current_user)
+
+@api_router.put("/conversations/{conversation_id}/assign", response_model=Conversation)
+async def assign_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    conversation = await db.conversations.find_one({"id": conversation_id}, {"_id": 0})
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    update_data = {
+        "assigned_to": current_user.get("id"),
+        "assigned_to_name": current_user.get("name")
+    }
+    
+    await db.conversations.update_one(
+        {"id": conversation_id},
+        {"$set": update_data}
+    )
+    
+    updated_conv = await db.conversations.find_one({"id": conversation_id}, {"_id": 0})
+    if isinstance(updated_conv.get('created_at'), str):
+        updated_conv['created_at'] = datetime.fromisoformat(updated_conv['created_at'])
+    if isinstance(updated_conv.get('last_message_at'), str):
+        updated_conv['last_message_at'] = datetime.fromisoformat(updated_conv['last_message_at'])
+        
+    return updated_conv
+
 # Webhook for UazApi (Evolution/WPPConnect)
 @api_router.post("/webhook/uazapi")
 async def uazapi_webhook(request: Request):
