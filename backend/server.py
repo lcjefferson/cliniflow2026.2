@@ -2821,7 +2821,7 @@ async def get_webhook_logs(limit: int = 10):
 @api_router.get("/debug/configure-uazapi")
 async def debug_configure_uazapi():
     """
-    Force configuration of UazApi webhook using stored settings.
+    Diagnostic tool for UazApi connection and Webhook configuration.
     """
     try:
         settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
@@ -2834,71 +2834,84 @@ async def debug_configure_uazapi():
             
         uazapi_url = whatsapp.get("uazapi_url")
         uazapi_token = whatsapp.get("uazapi_token")
+        instance = whatsapp.get("uazapi_instance", "default")
         
         if not uazapi_url or not uazapi_token:
             return {"status": "error", "message": "Missing URL or Token"}
             
-        # Hardcoded for reliability in this specific fix
-        my_url = "https://clinicflow-lucj.onrender.com"
-        webhook_url = f"{my_url}/api/webhook/uazapi"
-        
-        results = []
-        instance = whatsapp.get("uazapi_instance", "default")
+        # Ensure base URL format
         base_url = uazapi_url.rstrip('/')
         
+        # Target Webhook URL (Your Backend)
+        my_url = "https://clinicflow-lucj.onrender.com"
+        webhook_target = f"{my_url}/api/webhook/uazapi"
+        
+        results = []
+        
         async with httpx.AsyncClient() as client:
-            
-            # Common Payloads
-            payload_std = {
-                "enabled": True,
-                "url": webhook_url,
-                "webhookByEvents": False,
-                "events": ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE"]
-            }
-            
-            headers_std = {
+            headers = {
                 "apikey": uazapi_token,
                 "Content-Type": "application/json"
             }
             
-            # --- Attempt Strategy ---
+            # 1. Connectivity Check (GET Instances)
+            # Tries to see if we can reach the API at all
+            try:
+                url_check = f"{base_url}/instance/fetchInstances"
+                resp = await client.get(url_check, headers=headers, timeout=5)
+                results.append({
+                    "step": "Connectivity Check",
+                    "url": url_check,
+                    "status": resp.status_code,
+                    "success": resp.status_code == 200
+                })
+            except Exception as e:
+                results.append({"step": "Connectivity Check", "error": str(e)})
+
+            # 2. Check Current Webhook (GET /webhook/find)
+            try:
+                url_find = f"{base_url}/webhook/find/{instance}"
+                resp = await client.get(url_find, headers=headers, timeout=5)
+                results.append({
+                    "step": "Get Current Webhook",
+                    "url": url_find,
+                    "status": resp.status_code,
+                    "body": resp.text[:200]
+                })
+            except Exception as e:
+                results.append({"step": "Get Current Webhook", "error": str(e)})
+
+            # 3. Configure Webhook (POST /webhook/set)
+            payload = {
+                "enabled": True,
+                "url": webhook_target,
+                "webhookByEvents": False,
+                "events": ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE"]
+            }
             
-            # 1. POST /webhook/set/{instance} (Standard Evolution)
-            url_1 = f"{base_url}/webhook/set/{instance}"
+            # Attempt A: Standard /webhook/set/{instance}
+            url_set = f"{base_url}/webhook/set/{instance}"
             try:
-                resp = await client.post(url_1, json=payload_std, headers=headers_std, timeout=10)
-                results.append({"method": "POST /webhook/set/{instance}", "url": url_1, "status": resp.status_code, "response": resp.text})
+                resp = await client.post(url_set, json=payload, headers=headers, timeout=10)
+                results.append({
+                    "step": "Set Webhook (Standard)",
+                    "url": url_set,
+                    "status": resp.status_code,
+                    "response": resp.text
+                })
             except Exception as e:
-                results.append({"method": "POST /webhook/set/{instance}", "error": str(e)})
-
-            # 2. PUT /webhook/set/{instance} (Alternative Method)
-            try:
-                resp = await client.put(url_1, json=payload_std, headers=headers_std, timeout=10)
-                results.append({"method": "PUT /webhook/set/{instance}", "url": url_1, "status": resp.status_code, "response": resp.text})
-            except Exception as e:
-                results.append({"method": "PUT /webhook/set/{instance}", "error": str(e)})
-
-            # 3. POST /webhook/instance/{instance} (Variant)
-            url_3 = f"{base_url}/webhook/instance/{instance}"
-            try:
-                resp = await client.post(url_3, json=payload_std, headers=headers_std, timeout=10)
-                results.append({"method": "POST /webhook/instance/{instance}", "url": url_3, "status": resp.status_code, "response": resp.text})
-            except Exception as e:
-                results.append({"method": "POST /webhook/instance/{instance}", "error": str(e)})
-            
-            # 4. POST /webhook/set?token={token} (FortaLabs Query Param Style)
-            url_4 = f"{base_url}/webhook/set"
-            params_4 = {"token": uazapi_token}
-            try:
-                resp = await client.post(url_4, params=params_4, json=payload_std, timeout=10)
-                results.append({"method": "POST /webhook/set?token=...", "url": url_4, "status": resp.status_code, "response": resp.text})
-            except Exception as e:
-                results.append({"method": "POST /webhook/set?token=...", "error": str(e)})
-
+                results.append({"step": "Set Webhook (Standard)", "error": str(e)})
+                
         return {
             "status": "completed",
-            "webhook_target": webhook_url,
-            "attempts": results
+            "webhook_target_url": webhook_target,
+            "diagnostics": results,
+            "manual_configuration": {
+                "method": "POST",
+                "url": f"{base_url}/webhook/set/{instance}",
+                "headers": headers,
+                "body": payload
+            }
         }
 
     except Exception as e:
