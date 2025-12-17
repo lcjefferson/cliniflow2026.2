@@ -2769,6 +2769,35 @@ async def create_message(data: MessageCreate, current_user: dict = Depends(get_c
     
     return message
 
+@api_router.get("/conversations/{conversation_id}/messages", response_model=List[dict])
+async def get_conversation_messages(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Get messages for a specific conversation (Path Parameter version for Frontend).
+    """
+    messages = await db.messages.find({"conversation_id": conversation_id}, {"_id": 0}).to_list(1000)
+    for m in messages:
+        if isinstance(m.get('created_at'), str):
+            m['created_at'] = datetime.fromisoformat(m['created_at'])
+    return messages
+
+@api_router.put("/conversations/{conversation_id}/assign")
+async def assign_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Assign conversation to current user.
+    """
+    conversation = await db.conversations.find_one({"id": conversation_id}, {"_id": 0})
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+        
+    await db.conversations.update_one(
+        {"id": conversation_id},
+        {"$set": {
+            "assigned_to": current_user.get("id"),
+            "assigned_to_name": current_user.get("name")
+        }}
+    )
+    return {"message": "Conversation assigned"}
+
 @api_router.get("/messages", response_model=List[dict])
 async def get_messages(conversation_id: str, current_user: dict = Depends(get_current_user)):
     messages = await db.messages.find({"conversation_id": conversation_id}, {"_id": 0}).to_list(1000)
