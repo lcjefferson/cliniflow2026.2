@@ -90,19 +90,13 @@ export default function OmnichannelPageV2() {
     try {
       await api.put(`/conversations/${conversationId}/assign`);
       toast.success("Atendimento assumido!");
-      await loadData();
       
-      // Se esta conversa estava selecionada, atualizar
-      if (selectedConversation?.id === conversationId) {
-        const updatedConv = conversations.find(c => c.id === conversationId);
-        if (updatedConv) {
-          setSelectedConversation({
-            ...updatedConv,
-            assigned_to: user.id,
-            assigned_to_name: user.name
-          });
-        }
-      }
+      // Fetch the updated conversation directly to ensure state consistency
+      const response = await api.get(`/conversations/${conversationId}`);
+      setSelectedConversation(response.data);
+      
+      // Refresh the list in background
+      await loadData();
     } catch (error) {
       toast.error("Erro ao assumir atendimento");
     }

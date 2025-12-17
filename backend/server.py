@@ -2769,6 +2769,22 @@ async def create_message(data: MessageCreate, current_user: dict = Depends(get_c
     
     return message
 
+@api_router.get("/conversations/{conversation_id}", response_model=dict)
+async def get_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Get a specific conversation by ID.
+    """
+    conversation = await db.conversations.find_one({"id": conversation_id}, {"_id": 0})
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+        
+    if isinstance(conversation.get('created_at'), str):
+        conversation['created_at'] = datetime.fromisoformat(conversation['created_at'])
+    if isinstance(conversation.get('last_message_at'), str):
+        conversation['last_message_at'] = datetime.fromisoformat(conversation['last_message_at'])
+        
+    return conversation
+
 @api_router.get("/conversations/{conversation_id}/messages", response_model=List[dict])
 async def get_conversation_messages(conversation_id: str, current_user: dict = Depends(get_current_user)):
     """
