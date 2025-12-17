@@ -2811,6 +2811,13 @@ async def assign_conversation(conversation_id: str, current_user: dict = Depends
         
     return updated_conv
 
+# Webhook Logs (In-Memory for debugging)
+WEBHOOK_LOGS = []
+
+@api_router.get("/webhook/logs")
+async def get_webhook_logs(limit: int = 10, current_user: dict = Depends(get_current_user)):
+    return WEBHOOK_LOGS[-limit:]
+
 # Webhook for UazApi (Evolution/WPPConnect)
 @api_router.post("/webhook/uazapi")
 async def uazapi_webhook(request: Request):
@@ -2820,6 +2827,16 @@ async def uazapi_webhook(request: Request):
     """
     try:
         payload = await request.json()
+        
+        # Log payload for debugging
+        log_entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "payload": payload
+        }
+        WEBHOOK_LOGS.append(log_entry)
+        if len(WEBHOOK_LOGS) > 50:
+            WEBHOOK_LOGS.pop(0)
+            
         logging.info(f"UazApi Webhook Payload: {payload}")
         
         # Check if it's a message
@@ -2846,10 +2863,19 @@ async def uazapi_webhook(request: Request):
         if not from_number or not body:
              return {"status": "ignored", "reason": "incomplete_data"}
 
-        # Find or create lead/conversation
-        # 1. Find lead by phone
-        lead = await db.leads.find_one({"phone": {"$regex": f"{from_number}$"}}, {"_id": 0})
+        # Normalize phone for search
+        # Try exact match first, then without 55 if present
+        lead = await db.leads.find_one({"phone": from_number}, {"_id": 0})
         
+        if not lead and from_number.startswith("55"):
+            # Try without 55
+            short_number = from_number[2:]
+            lead = await db.leads.find_one({"phone": short_number}, {"_id": 0})
+            
+        if not lead:
+            # Try searching as if DB has 55 but incoming doesn't (unlikely for UazApi but possible)
+            lead = await db.leads.find_one({"phone": f"55{from_number}"}, {"_id": 0})
+
         if not lead:
             # Create new lead from unknown number
             lead_id = str(uuid.uuid4())
