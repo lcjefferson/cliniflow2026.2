@@ -2971,8 +2971,24 @@ class WhatsAppSettings(BaseModel):
     uazapi_token: Optional[str] = None
     uazapi_instance: Optional[str] = None
 
+class InstagramSettings(BaseModel):
+    enabled: bool = False
+    page_id: Optional[str] = None
+    access_token: Optional[str] = None
+    verify_token: Optional[str] = None
+    webhook_url: Optional[str] = None
+
+class MessengerSettings(BaseModel):
+    enabled: bool = False
+    page_id: Optional[str] = None
+    access_token: Optional[str] = None
+    verify_token: Optional[str] = None
+    webhook_url: Optional[str] = None
+
 class OmnichannelSettings(BaseModel):
     whatsapp: Optional[WhatsAppSettings] = None
+    instagram: Optional[InstagramSettings] = None
+    messenger: Optional[MessengerSettings] = None
 
 class ClinicSettings(BaseModel):
     clinic_name: Optional[str] = None
@@ -2993,12 +3009,58 @@ async def get_omnichannel_settings(current_user: dict = Depends(get_current_user
 async def save_omnichannel_settings(data: OmnichannelSettings, current_user: dict = Depends(get_current_user)):
     if not current_user.get("role", {}).get("is_admin", False):
         raise HTTPException(status_code=403, detail="Not authorized")
+    
+    update_data = {}
+    if data.whatsapp:
+        update_data["whatsapp"] = data.whatsapp.model_dump()
+    if data.instagram:
+        update_data["instagram"] = data.instagram.model_dump()
+    if data.messenger:
+        update_data["messenger"] = data.messenger.model_dump()
+        
+    if update_data:
+        await db.settings.update_one(
+            {"type": "omnichannel"},
+            {"$set": update_data},
+            upsert=True
+        )
+    return {"message": "Settings saved"}
+
+@api_router.post("/settings/omnichannel/whatsapp")
+async def save_whatsapp_settings(data: WhatsAppSettings, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
     await db.settings.update_one(
         {"type": "omnichannel"},
-        {"$set": {"whatsapp": data.whatsapp.model_dump() if data.whatsapp else {}}},
+        {"$set": {"whatsapp": data.model_dump()}},
         upsert=True
     )
-    return {"message": "Settings saved"}
+    return {"message": "WhatsApp settings saved"}
+
+@api_router.post("/settings/omnichannel/instagram")
+async def save_instagram_settings(data: InstagramSettings, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    await db.settings.update_one(
+        {"type": "omnichannel"},
+        {"$set": {"instagram": data.model_dump()}},
+        upsert=True
+    )
+    return {"message": "Instagram settings saved"}
+
+@api_router.post("/settings/omnichannel/messenger")
+async def save_messenger_settings(data: MessengerSettings, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("role", {}).get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    await db.settings.update_one(
+        {"type": "omnichannel"},
+        {"$set": {"messenger": data.model_dump()}},
+        upsert=True
+    )
+    return {"message": "Messenger settings saved"}
 
 @api_router.post("/settings/omnichannel/whatsapp/test")
 async def test_whatsapp_connection(settings: WhatsAppSettings, current_user: dict = Depends(get_current_user)):
