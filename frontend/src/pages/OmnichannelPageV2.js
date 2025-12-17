@@ -29,9 +29,17 @@ export default function OmnichannelPageV2() {
   }, []);
 
   useEffect(() => {
+    let interval;
     if (selectedConversation) {
       loadMessages(selectedConversation.id);
+      // Poll messages every 3 seconds to keep chat live
+      interval = setInterval(() => {
+        loadMessages(selectedConversation.id);
+      }, 3000);
     }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [selectedConversation]);
 
   useEffect(() => {
@@ -93,11 +101,20 @@ export default function OmnichannelPageV2() {
       
       // Fetch the updated conversation directly to ensure state consistency
       const response = await api.get(`/conversations/${conversationId}`);
+      console.log("Updated conversation:", response.data);
+      console.log("Current User:", user);
       setSelectedConversation(response.data);
+      
+      // If we are in "unassigned" filter, switching to "mine" helps the user keep track
+      // of the conversation they just picked up, preventing it from disappearing.
+      if (filter === "unassigned") {
+          setFilter("mine");
+      }
       
       // Refresh the list in background
       await loadData();
     } catch (error) {
+      console.error("Error assigning conversation:", error);
       toast.error("Erro ao assumir atendimento");
     }
   };
@@ -374,7 +391,7 @@ export default function OmnichannelPageV2() {
               </div>
 
               {/* Message Input */}
-              {selectedConversation.status === "active" && (!selectedConversation.assigned_to || selectedConversation.assigned_to === user?.id) && (
+              {selectedConversation.status === "active" && (!selectedConversation.assigned_to || String(selectedConversation.assigned_to) === String(user?.id)) && (
                 <div className="bg-white border-t border-gray-200 p-4">
                   <form onSubmit={handleSendMessage} className="flex gap-2">
                     <Input
@@ -399,6 +416,17 @@ export default function OmnichannelPageV2() {
                     </p>
                   )}
                 </div>
+              )}
+              
+              {/* Debug Info for Assignment Mismatch */}
+              {selectedConversation.status === "active" && selectedConversation.assigned_to && String(selectedConversation.assigned_to) !== String(user?.id) && (
+                 <div className="bg-red-50 border-t border-red-200 p-4 text-center">
+                    <p className="text-red-800 font-medium">Debug: ID Mismatch</p>
+                    <p className="text-xs text-red-600">
+                        Conversation Assigned To: {selectedConversation.assigned_to} <br/>
+                        Current User ID: {user?.id}
+                    </p>
+                 </div>
               )}
               
               {selectedConversation.status === "closed" && (
