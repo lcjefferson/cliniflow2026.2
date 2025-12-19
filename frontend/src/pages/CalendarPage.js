@@ -666,7 +666,7 @@ export default function CalendarPage() {
                     <button
                       key={index}
                       onClick={() => openAppointmentDetails(apt)}
-                      className={`w-full text-left p-4 rounded-lg text-white hover:opacity-90 transition-opacity ${
+                      className={`w-full text-left p-4 rounded-xl text-white hover:opacity-90 transition-opacity shadow-sm ${
                         getAppointmentColor(apt)
                       }`}
                     >
@@ -674,11 +674,11 @@ export default function CalendarPage() {
                         <div className="text-2xl font-bold mb-2">{apt.appointment_time}</div>
                         <span
                           onClick={(e) => { e.stopPropagation(); openPatientDialog(apt.patient_id); }}
-                          className="text-lg font-semibold text-left cursor-pointer"
+                          className="text-2xl font-bold text-left cursor-pointer hover:underline block mb-1"
                         >
                           {getPatientName(apt.patient_id)}
                         </span>
-                        <div className="text-sm opacity-90">{getProfessionalName(apt.professional_id)}</div>
+                        <div className="text-base opacity-95 font-medium">{getProfessionalName(apt.professional_id)}</div>
                         <div className="text-sm opacity-80">{getServiceName(apt.service_id)}</div>
                       </div>
                     </button>
@@ -709,22 +709,22 @@ export default function CalendarPage() {
 
         {/* Modal de Detalhes do Agendamento */}
         <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
-          <DialogContent>
+          <DialogContent className="rounded-2xl shadow-2xl border-0">
             <DialogHeader>
               <DialogTitle>Detalhes do Agendamento</DialogTitle>
             </DialogHeader>
             {selectedAppointment && (
               <div className="space-y-4">
                 <div>
-                  <Label className="text-gray-600 block mb-1">Paciente</Label>
-                  <button
-                    type="button"
-                    onClick={() => openPatientDialog(selectedAppointment.patient_id)}
-                    className="font-semibold text-left"
-                  >
-                    {getPatientName(selectedAppointment.patient_id)}
-                  </button>
-                </div>
+                <Label className="text-gray-600 block mb-1">Paciente</Label>
+                <button
+                  type="button"
+                  onClick={() => openPatientDialog(selectedAppointment.patient_id)}
+                  className="text-2xl font-bold text-blue-600 hover:text-blue-800 text-left transition-colors"
+                >
+                  {getPatientName(selectedAppointment.patient_id)}
+                </button>
+              </div>
                 <div>
                   <Label className="text-gray-600">Profissional</Label>
                   <p className="font-semibold">{getProfessionalName(selectedAppointment.professional_id)}</p>
@@ -798,7 +798,7 @@ export default function CalendarPage() {
 
         {/* Modal de Novo Agendamento */}
         <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl rounded-2xl">
             <DialogHeader>
               <DialogTitle>{editingAppointment ? "Editar Agendamento" : "Novo Agendamento"}</DialogTitle>
             </DialogHeader>
@@ -951,7 +951,7 @@ export default function CalendarPage() {
 
         {/* Modal de Novo Paciente */}
         <Dialog open={showNewPatientDialog} onOpenChange={setShowNewPatientDialog}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-lg rounded-2xl">
             <DialogHeader>
               <DialogTitle>Adicionar Novo Paciente</DialogTitle>
             </DialogHeader>
@@ -1004,7 +1004,7 @@ export default function CalendarPage() {
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={deleteDialog} onOpenChange={setDeleteDialog}>
-          <DialogContent>
+          <DialogContent className="rounded-2xl">
             <DialogHeader>
               <DialogTitle>Confirmar Exclusão</DialogTitle>
             </DialogHeader>

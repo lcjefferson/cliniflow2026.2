@@ -786,12 +786,12 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   return (
     <>
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] w-[95vw] md:w-auto flex flex-col p-0 overflow-hidden">
+      <DialogContent className="max-w-5xl max-h-[90vh] w-[95vw] md:w-auto flex flex-col p-0 overflow-hidden rounded-2xl">
         <div className="flex-shrink-0 p-6 pb-0">
       <DialogHeader>
         <DialogTitle className="flex items-center justify-between">
           <div>
-            <span className="text-2xl">{detailedPatient.name}</span>
+            <span className="text-2xl font-bold text-gray-900">{detailedPatient.name}</span>
             {debts.total_debt > 0 && (
               <span className="ml-4 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">
                 Débito: R$ {debts.total_debt.toFixed(2)}
@@ -803,20 +803,21 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       </DialogHeader>
 
           {/* Tabs */}
-          <div className="flex border-b border-gray-200 overflow-x-auto mt-4">
+          <div className="flex gap-2 overflow-x-auto mt-6 pb-2 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
             {tabs.map((tab) => {
               const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-3 font-medium text-sm whitespace-nowrap transition-colors ${
-                    activeTab === tab.id
-                      ? "border-b-2 border-blue-500 text-blue-600"
-                      : "text-gray-600 hover:text-gray-900"
+                  className={`flex items-center gap-2 px-4 py-2.5 font-medium text-sm whitespace-nowrap transition-all rounded-xl ${
+                    isActive
+                      ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-md transform scale-[1.02]"
+                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 bg-white border border-transparent hover:border-gray-200"
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-gray-500"}`} />
                   {tab.label}
                 </button>
               );

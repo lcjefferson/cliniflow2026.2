@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "../contexts/AuthContext";
 
+import LeadCombobox from "../components/LeadCombobox";
+
 export default function FollowUpPage() {
   const { user } = useAuth();
   const isAdmin = user?.role?.is_admin;
@@ -411,14 +413,12 @@ export default function FollowUpPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <Label>Lead (opcional)</Label>
-                <select
-                  className="input-field"
+                <LeadCombobox
+                  leads={leads}
                   value={formData.lead_id}
-                  onChange={(e) => setFormData({...formData, lead_id: e.target.value, patient_id: ""})}
-                >
-                  <option value="">Selecione um lead</option>
-                  {leads.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
+                  onChange={(leadId) => setFormData({...formData, lead_id: leadId, patient_id: ""})}
+                  placeholder="Selecione um lead"
+                />
               </div>
               <div>
                 <Label>Paciente (opcional)</Label>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
-import api from "../services/api";
+import api, { API_BASE } from "../services/api";
 import { MessageSquare, Send } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ export default function OmnichannelPage() {
   useEffect(() => {
     if (!selectedConv) return;
 
-    const socket = io("http://localhost:8001");
+    const socket = io(API_BASE);
 
     socket.on("connect", () => {
       console.log("Socket.IO connected");
@@ -81,6 +81,23 @@ export default function OmnichannelPage() {
     return icons[channel] || "💬";
   };
 
+  const renderMessageContent = (content) => {
+    if (!content) return null;
+    if (typeof content === 'string') return content;
+    
+    if (typeof content === 'object') {
+      if (content.mimetype?.includes('audio') || content.PTT) {
+        return (
+          <div className="flex items-center gap-2 bg-gray-100 p-2 rounded">
+             <span>🎵 Áudio {content.seconds ? `(${content.seconds}s)` : ''}</span>
+          </div>
+        );
+      }
+      return <div className="text-xs font-mono">{JSON.stringify(content)}</div>;
+    }
+    return String(content);
+  };
+
   return (
     <Layout>
       <div>
@@ -138,7 +155,7 @@ export default function OmnichannelPage() {
                               : 'bg-gray-200 text-gray-900'
                             }`}
                         >
-                          <p>{msg.content}</p>
+                          <div>{renderMessageContent(msg.content)}</div>
                         </div>
                       </div>
                     ))}

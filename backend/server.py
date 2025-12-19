@@ -1,6 +1,9 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, File, UploadFile, Form
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 import io
+import json
+import shutil
 import asyncio
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
@@ -15,7 +18,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
-from typing import List, Optional
+from typing import List, Optional, Union, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
@@ -38,9 +41,63 @@ import httpx
 import json
 import base64
 from PIL import Image
+from cryptography.hazmat.primitives import hashes, hmac
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# ... (imports)
+
+def decrypt_whatsapp_media(enc_data: bytes, media_key: str, media_type: str):
+    try:
+        media_key_bytes = base64.b64decode(media_key)
+        
+        if media_type == "image":
+            info = b"WhatsApp Image Keys"
+        elif media_type == "video":
+            info = b"WhatsApp Video Keys"
+        elif media_type == "audio":
+            info = b"WhatsApp Audio Keys"
+        elif media_type == "document":
+            info = b"WhatsApp Document Keys"
+        else:
+            info = b"WhatsApp Image Keys" # Default fallback
+
+        # HKDF Expansion
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=112,
+            salt=None,
+            info=info,
+            backend=default_backend()
+        )
+        key_material = hkdf.derive(media_key_bytes)
+        
+        iv = key_material[0:16]
+        cipher_key = key_material[16:48]
+        mac_key = key_material[48:80]
+        
+        # Validate MAC (Optional, skipping for robustness in recovery)
+        file_mac = enc_data[-10:]
+        file_data = enc_data[:-10]
+        
+        cipher = Cipher(algorithms.AES(cipher_key), modes.CBC(iv), backend=default_backend())
+        decryptor = cipher.decryptor()
+        decrypted_data = decryptor.update(file_data) + decryptor.finalize()
+        
+        # Remove padding (PKCS7)
+        pad = decrypted_data[-1]
+        if pad < 1 or pad > 16:
+             # Sometimes padding is weird or it's a stream, return as is if check fails
+             return decrypted_data
+        return decrypted_data[:-pad]
+        
+    except Exception as e:
+        logging.error(f"Decryption failed: {e}")
+        return None
 
 # MongoDB connection
 mongo_url = os.environ.get('MONGO_URL', '').strip()
@@ -422,6 +479,8 @@ async def lifespan(app: FastAPI):
             pass
 
 app = FastAPI(lifespan=lifespan)
+app.mount("/media", StaticFiles(directory="media"), name="media")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -431,13 +490,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
 
 @app.middleware("http")
 async def add_no_cache_header(request: Request, call_next):
@@ -447,7 +500,7 @@ async def add_no_cache_header(request: Request, call_next):
     response.headers["Expires"] = "0"
     return response
 
-sio = SocketManager(app=app)
+sio = SocketManager(app=app, mount_location='/socket.io', cors_allowed_origins="*")
 api_router = APIRouter(prefix="/api")
 
 @api_router.get("/health")
@@ -919,9 +972,9 @@ class Message(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     conversation_id: str
     sender_type: str  # consultant, lead
-    sender_id: str
-    sender_name: str
-    content: str
+    sender_id: Optional[str] = None
+    sender_name: Optional[str] = None
+    content: Union[str, Dict[str, Any], Any]
     read: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -2630,12 +2683,15 @@ async def create_conversation(lead_id: str, current_user: dict = Depends(get_cur
 
 @api_router.get("/conversations", response_model=List[dict])
 async def get_conversations(current_user: dict = Depends(get_current_user)):
-    conversations = await db.conversations.find({}, {"_id": 0}).to_list(1000)
+    conversations = await db.conversations.find({}, {"_id": 0}).sort("last_message_at", -1).to_list(1000)
     for c in conversations:
-        if isinstance(c.get('created_at'), str):
-            c['created_at'] = datetime.fromisoformat(c['created_at'])
-        if isinstance(c.get('last_message_at'), str):
-            c['last_message_at'] = datetime.fromisoformat(c['last_message_at'])
+        try:
+            if isinstance(c.get('created_at'), str):
+                c['created_at'] = datetime.fromisoformat(c['created_at'])
+            if isinstance(c.get('last_message_at'), str):
+                c['last_message_at'] = datetime.fromisoformat(c['last_message_at'])
+        except ValueError:
+            pass # Keep as string if parse fails
     return conversations
 
 async def send_whatsapp_message(to_phone: str, message_body: str):
@@ -2738,6 +2794,158 @@ async def send_whatsapp_message(to_phone: str, message_body: str):
         logging.error(f"Error sending WhatsApp message: {e}")
         return False
 
+async def send_whatsapp_media(to_phone: str, media_type: str, media_data: str, caption: str = None, is_url: bool = False):
+    """
+    Sends a WhatsApp media message.
+    media_data: Base64 string or URL.
+    media_type: image, audio, document.
+    """
+    try:
+        settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+        whatsapp = settings.get("whatsapp") if settings else None
+        
+        if not whatsapp or not whatsapp.get('enabled'):
+            return False
+
+        # Clean phone number
+        clean_phone = "".join(filter(str.isdigit, to_phone))
+        if not clean_phone.startswith("55") and len(clean_phone) <= 11:
+             clean_phone = "55" + clean_phone
+
+        provider = whatsapp.get('provider', 'official')
+        
+        async with httpx.AsyncClient() as client:
+            if provider == 'uazapi':
+                base_url = whatsapp.get('uazapi_url', "").rstrip('/')
+                token = whatsapp.get('uazapi_token')
+                instance = whatsapp.get('uazapi_instance', 'default')
+                
+                if not base_url or not token:
+                    return False
+                
+                if "fortalabs.uazapi.com" in base_url:
+                    # FortaLabs Custom: /send/media
+                    url = f"{base_url}/send/media?token={token}"
+                    
+                    payload = {
+                        "number": clean_phone,
+                        "type": media_type, # "image", "audio", "document", "video"
+                        "file": media_data # URL or Base64 (data URI)
+                    }
+                    
+                    if caption: 
+                        payload["caption"] = caption
+                        # Also support "text" as caption just in case
+                        payload["text"] = caption
+                    
+                    # Try sending
+                    response = await client.post(url, json=payload, timeout=60)
+                    if response.status_code not in [200, 201]:
+                        logging.error(f"FortaLabs Media Error: {response.text}")
+                        return False
+                    return True
+
+                else:
+                    # Standard Evolution
+                    url = f"{base_url}/message/sendMedia/{instance}"
+                    headers = {"apikey": token, "Content-Type": "application/json"}
+                    payload = {
+                        "number": clean_phone,
+                        "options": {"delay": 1200},
+                        "mediaMessage": {
+                            "mediatype": media_type,
+                            "caption": caption or "",
+                            "media": media_data
+                        }
+                    }
+                    response = await client.post(url, json=payload, headers=headers, timeout=30)
+                    return response.status_code in [200, 201]
+
+    except Exception as e:
+        logging.error(f"Error sending media: {e}")
+        return False
+    return False
+
+@api_router.post("/conversations/{conversation_id}/media", response_model=Message)
+async def create_media_message(
+    conversation_id: str,
+    file: UploadFile = File(...),
+    caption: Optional[str] = Form(None),
+    current_user: dict = Depends(get_current_user)
+):
+    conversation = await db.conversations.find_one({"id": conversation_id}, {"_id": 0})
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # 1. Save file locally
+    media_dir = ROOT_DIR / "media"
+    media_dir.mkdir(exist_ok=True)
+    
+    # Simple extension extraction
+    if '.' in file.filename:
+        ext = file.filename.split('.')[-1]
+    else:
+        ext = "bin"
+        
+    filename = f"{uuid.uuid4()}.{ext}"
+    file_path = media_dir / filename
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    # 2. Determine type
+    content_type = file.content_type
+    media_type = "document"
+    if "image" in content_type: media_type = "image"
+    elif "audio" in content_type: media_type = "audio"
+    
+    # 3. Prepare content for DB
+    file_url = f"/media/{filename}" # Relative to frontend proxy or base URL
+    
+    # Read file for Base64 (needed for WhatsApp API usually)
+    with open(file_path, "rb") as f:
+        file_content = f.read()
+        base64_data = base64.b64encode(file_content).decode('utf-8')
+        # Add prefix
+        base64_full = f"data:{content_type};base64,{base64_data}"
+
+    # 4. Create Message in DB
+    # Ensure Message model fields match
+    message = Message(
+        conversation_id=conversation_id,
+        sender_type="consultant",
+        sender_id=current_user.get("id"),
+        sender_name=current_user.get("name"),
+        content={
+            "mimetype": content_type,
+            "url": file_url, 
+            "fileName": file.filename,
+            "caption": caption
+        }
+    )
+    doc = message.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.messages.insert_one(doc)
+    
+    # Update conversation
+    await db.conversations.update_one(
+        {"id": conversation_id},
+        {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+    # 5. Send to WhatsApp
+    lead = await db.leads.find_one({"id": conversation["lead_id"]}, {"_id": 0})
+    if lead and lead.get("phone"):
+        asyncio.create_task(send_whatsapp_media(
+            lead["phone"], 
+            media_type, 
+            base64_full, 
+            caption, 
+            is_url=False
+        ))
+    
+    return message
+
 # Message Routes
 @api_router.post("/messages", response_model=Message)
 async def create_message(data: MessageCreate, current_user: dict = Depends(get_current_user)):
@@ -2766,6 +2974,81 @@ async def create_message(data: MessageCreate, current_user: dict = Depends(get_c
     lead = await db.leads.find_one({"id": conversation["lead_id"]}, {"_id": 0})
     if lead and lead.get("phone"):
         asyncio.create_task(send_whatsapp_message(lead["phone"], data.content))
+    
+    return message
+
+@api_router.post("/conversations/{conversation_id}/media", response_model=Message)
+async def create_media_message(
+    conversation_id: str,
+    file: UploadFile = File(...),
+    caption: Optional[str] = Form(None),
+    current_user: dict = Depends(get_current_user)
+):
+    conversation = await db.conversations.find_one({"id": conversation_id}, {"_id": 0})
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # 1. Save file locally
+    media_dir = ROOT_DIR / "media"
+    media_dir.mkdir(exist_ok=True)
+    
+    ext = file.filename.split('.')[-1]
+    filename = f"{uuid.uuid4()}.{ext}"
+    file_path = media_dir / filename
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    # 2. Determine type
+    content_type = file.content_type
+    media_type = "document"
+    if "image" in content_type: media_type = "image"
+    elif "audio" in content_type: media_type = "audio"
+    elif "video" in content_type: media_type = "video"
+    
+    # 3. Prepare content for DB
+    file_url = f"/media/{filename}" # Relative to frontend proxy or base URL
+    
+    # Read file for Base64 (needed for WhatsApp API usually)
+    with open(file_path, "rb") as f:
+        file_content = f.read()
+        base64_data = base64.b64encode(file_content).decode('utf-8')
+        # Add prefix
+        base64_full = f"data:{content_type};base64,{base64_data}"
+
+    # 4. Create Message in DB
+    message = Message(
+        conversation_id=conversation_id,
+        sender_type="consultant",
+        sender_id=current_user.get("id"),
+        sender_name=current_user.get("name"),
+        content={
+            "mimetype": content_type,
+            "url": file_url, 
+            "fileName": file.filename,
+            "caption": caption
+        }
+    )
+    doc = message.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.messages.insert_one(doc)
+    
+    # Update conversation
+    await db.conversations.update_one(
+        {"id": conversation_id},
+        {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+    # 5. Send to WhatsApp
+    lead = await db.leads.find_one({"id": conversation["lead_id"]}, {"_id": 0})
+    if lead and lead.get("phone"):
+        asyncio.create_task(send_whatsapp_media(
+            lead["phone"], 
+            media_type, 
+            base64_full, 
+            caption, 
+            is_url=False
+        ))
     
     return message
 
@@ -3085,6 +3368,532 @@ async def debug_reset_phone(phone: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.get("/messages/{message_id}/play-audio")
+async def play_audio_proxy(message_id: str):
+    """
+    Proxy to fetch audio from UazApi/WhatsApp given a message ID.
+    Handles encrypted (.enc) files by requesting download from provider.
+    """
+    try:
+        # 1. Find message
+        message = await db.messages.find_one({"id": message_id}, {"_id": 0})
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+            
+        content = message.get("content")
+        
+        # If we already have a direct playable link or base64, redirect/return it?
+        # But if the user is calling this, it's likely because the current link failed.
+        
+        # 2. Check for external ID
+        external_id = message.get("external_id")
+        
+        # 2.1 BACKFILL ATTEMPT: If no external_id, try to find it in content if structured strangely
+        if not external_id and content:
+            # Sometimes 'id' is in content directly?
+            if isinstance(content, dict):
+                 external_id = content.get("id") or content.get("key", {}).get("id")
+        
+        if not external_id:
+             # Try to find it in content if we missed it during save (for old messages)
+             # Sometimes it might be hidden in deep structure?
+             # But likely we just don't have it for old messages.
+             logging.warning(f"External Message ID not found for message {message_id}")
+             
+             # FALLBACK: Try Manual Decryption if we have URL and MediaKey
+             media_key = content.get("mediaKey") if isinstance(content, dict) else None
+             url = content.get("url") or content.get("URL") if isinstance(content, dict) else None
+             
+             if media_key and url and "mmg.whatsapp.net" in url:
+                  logging.info(f"Attempting manual decryption for audio {message_id}")
+                  try:
+                      async with httpx.AsyncClient(follow_redirects=True) as client:
+                           resp = await client.get(url, timeout=30)
+                           if resp.status_code == 200:
+                               # Pass "audio" to use "WhatsApp Audio Keys" info string
+                               decrypted = decrypt_whatsapp_media(resp.content, media_key, "audio")
+                               if decrypted:
+                                   base64_data = base64.b64encode(decrypted).decode('utf-8')
+                                   mimetype = content.get("mimetype") or "audio/ogg; codecs=opus"
+                                   
+                                   # Update DB
+                                   update_fields = {
+                                      "content.file_data": base64_data,
+                                      "content.mimetype": mimetype
+                                   }
+                                   await db.messages.update_one(
+                                      {"id": message_id},
+                                      {"$set": update_fields}
+                                   )
+                                   return {
+                                      "src": f"data:{mimetype};base64,{base64_data}",
+                                      "type": "base64"
+                                   }
+                           elif resp.status_code in [404, 410, 403]:
+                               logging.warning(f"Media URL expired ({resp.status_code}) for {message_id}")
+                               raise HTTPException(status_code=410, detail="Media URL expired and no external ID to refresh")
+                           else:
+                               logging.warning(f"Media URL returned {resp.status_code} for {message_id}")
+                               raise HTTPException(status_code=422, detail=f"Media URL returned {resp.status_code}")
+                  except HTTPException:
+                      raise
+                  except Exception as e:
+                      logging.error(f"Manual decryption failed: {e}")
+                      raise HTTPException(status_code=422, detail=f"Manual decryption failed: {str(e)}")
+
+             raise HTTPException(status_code=400, detail="External Message ID not found and manual decryption failed")
+
+        # 3. Get Provider Settings
+        settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+        whatsapp = settings.get("whatsapp") if settings else None
+        
+        if not whatsapp or not whatsapp.get('enabled'):
+             raise HTTPException(status_code=503, detail="WhatsApp provider not configured")
+             
+        provider = whatsapp.get('provider', 'official')
+        
+        if provider == 'uazapi':
+             uazapi_url = whatsapp.get('uazapi_url')
+             uazapi_token = whatsapp.get('uazapi_token')
+             # uazapi_instance = whatsapp.get('uazapi_instance') 
+             
+             if not uazapi_url or not uazapi_token:
+                  raise HTTPException(status_code=503, detail="UazApi credentials missing")
+             
+             # Clean URL
+             if uazapi_url.endswith('/'):
+                 uazapi_url = uazapi_url[:-1]
+                 
+             # 4. Call Download Endpoint
+             # User doc: POST https://fortalabs.uazapi.com/message/download
+             # We should use the configured uazapi_url
+             
+             target_url = f"{uazapi_url}/message/download"
+             
+             # Prepare headers and auth based on provider implementation
+             headers = {
+                 "Content-Type": "application/json",
+                 "Accept": "application/json"
+             }
+             
+             # Special handling for FortaLabs (Token in Header)
+             if "fortalabs.uazapi.com" in uazapi_url:
+                 headers["token"] = uazapi_token
+             else:
+                 headers["apikey"] = uazapi_token
+
+             payload = {
+                 "id": external_id,
+                 "messageId": external_id, # Alias often used
+                 "key": {"id": external_id}, # Standard Evolution format
+                 "return_base64": True, 
+                 "return_link": True,
+                 "generate_mp3": True
+             }
+             
+             logging.info(f"Proxying audio download for {external_id} to {target_url}")
+             
+             async with httpx.AsyncClient() as client:
+                 resp = await client.post(target_url, json=payload, headers=headers, timeout=30)
+                 
+                 if resp.status_code != 200:
+                      logging.error(f"UazApi Download Failed: {resp.status_code} - {resp.text}")
+                      raise HTTPException(status_code=502, detail=f"Provider failed to download media: {resp.text}")
+                 
+                 try:
+                     data = resp.json()
+                     new_url = data.get("fileURL") or data.get("url")
+                     base64_data = data.get("base64Data") or data.get("base64")
+                     mimetype = data.get("mimetype") or "audio/mp3"
+                 except ValueError:
+                    # Fallback: Provider returned raw binary content
+                    logging.warning("Provider returned non-JSON response. Treating as raw binary.")
+                    # import base64 (already imported globally)
+                    base64_data = base64.b64encode(resp.content).decode('utf-8')
+                    new_url = None
+                    mimetype = resp.headers.get("Content-Type") or "audio/mpeg"
+                 
+                 if base64_data:
+                      # Return as a stream or direct base64 text?
+                      # Let's return a JSON with the source usable by <audio>
+                      
+                      # Update DB
+                      update_fields = {
+                          "content.file_data": base64_data,
+                          "content.mimetype": mimetype
+                      }
+                      if new_url:
+                          update_fields["content.url"] = new_url
+                          
+                      await db.messages.update_one(
+                          {"id": message_id},
+                          {"$set": update_fields}
+                      )
+                      
+                      return {
+                          "src": f"data:{mimetype};base64,{base64_data}",
+                          "type": "base64"
+                      }
+                 elif new_url:
+                      # Update DB
+                      await db.messages.update_one(
+                          {"id": message_id},
+                          {"$set": {"content.url": new_url}}
+                      )
+                      return {
+                          "src": new_url,
+                          "type": "url"
+                      }
+                 else:
+                      raise HTTPException(status_code=502, detail="Provider returned no media data")
+
+        else:
+             raise HTTPException(status_code=501, detail="Provider not supported for media proxy")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Play Audio Proxy Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/messages/{message_id}/view-image")
+async def view_image_proxy(message_id: str):
+    """
+    Proxy to fetch image from UazApi/WhatsApp given a message ID.
+    Handles encrypted (.enc) files by requesting download from provider.
+    """
+    try:
+        # 1. Find message
+        message = await db.messages.find_one({"id": message_id}, {"_id": 0})
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+            
+        content = message.get("content")
+        
+        # 2. Check for external ID
+        external_id = message.get("external_id")
+        
+        # 2.1 BACKFILL ATTEMPT
+        if not external_id and content:
+            if isinstance(content, dict):
+                 external_id = content.get("id") or content.get("key", {}).get("id")
+        
+        if not external_id:
+             logging.warning(f"External Message ID not found for message {message_id}")
+             # FALLBACK: Try Manual Decryption if we have URL and MediaKey
+             media_key = content.get("mediaKey") if isinstance(content, dict) else None
+             url = content.get("url") or content.get("URL") if isinstance(content, dict) else None
+             
+             if media_key and url and "mmg.whatsapp.net" in url:
+                  logging.info(f"Attempting manual decryption for {message_id}")
+                  try:
+                      async with httpx.AsyncClient(follow_redirects=True) as client:
+                           resp = await client.get(url, timeout=30)
+                           if resp.status_code == 200:
+                               decrypted = decrypt_whatsapp_media(resp.content, media_key, "image")
+                               if decrypted:
+                                   base64_data = base64.b64encode(decrypted).decode('utf-8')
+                                   mimetype = content.get("mimetype") or "image/jpeg"
+                                   
+                                   # Update DB
+                                   update_fields = {
+                                      "content.file_data": base64_data,
+                                      "content.mimetype": mimetype
+                                   }
+                                   await db.messages.update_one(
+                                      {"id": message_id},
+                                      {"$set": update_fields}
+                                   )
+                                   return {
+                                      "src": f"data:{mimetype};base64,{base64_data}",
+                                      "type": "base64"
+                                   }
+                           elif resp.status_code in [404, 410, 403]:
+                               logging.warning(f"Media URL expired ({resp.status_code}) for {message_id}")
+                               raise HTTPException(status_code=410, detail="Media URL expired and no external ID to refresh")
+                           else:
+                               logging.warning(f"Media URL returned {resp.status_code} for {message_id}")
+                               raise HTTPException(status_code=422, detail=f"Media URL returned {resp.status_code}")
+                  except HTTPException:
+                      raise
+                  except Exception as e:
+                      logging.error(f"Manual decryption failed: {e}")
+                      raise HTTPException(status_code=422, detail=f"Manual decryption failed: {str(e)}")
+             
+             raise HTTPException(status_code=400, detail="External Message ID not found and manual decryption failed")
+
+        # 3. Get Provider Settings
+        settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+        whatsapp = settings.get("whatsapp") if settings else None
+        
+        if not whatsapp or not whatsapp.get('enabled'):
+             raise HTTPException(status_code=503, detail="WhatsApp provider not configured")
+             
+        provider = whatsapp.get('provider', 'official')
+        
+        if provider == 'uazapi':
+             uazapi_url = whatsapp.get('uazapi_url')
+             uazapi_token = whatsapp.get('uazapi_token')
+             
+             if not uazapi_url or not uazapi_token:
+                  raise HTTPException(status_code=503, detail="UazApi credentials missing")
+             
+             if uazapi_url.endswith('/'):
+                 uazapi_url = uazapi_url[:-1]
+                 
+             # 4. Call Download Endpoint
+             target_url = f"{uazapi_url}/message/download"
+             
+             headers = {
+                 "Content-Type": "application/json",
+                 "Accept": "application/json"
+             }
+             
+             if "fortalabs.uazapi.com" in uazapi_url:
+                 headers["token"] = uazapi_token
+             else:
+                 headers["apikey"] = uazapi_token
+
+             payload = {
+                 "id": external_id,
+                 "messageId": external_id,
+                 "key": {"id": external_id},
+                 "return_base64": True, 
+                 "return_link": True
+             }
+             
+             logging.info(f"Proxying image download for {external_id} to {target_url}")
+             
+             async with httpx.AsyncClient() as client:
+                 resp = await client.post(target_url, json=payload, headers=headers, timeout=30)
+                 
+                 if resp.status_code != 200:
+                      logging.error(f"UazApi Download Failed: {resp.status_code} - {resp.text}")
+                      raise HTTPException(status_code=502, detail=f"Provider failed to download media: {resp.text}")
+                 
+                 try:
+                     data = resp.json()
+                     new_url = data.get("fileURL") or data.get("url")
+                     base64_data = data.get("base64Data") or data.get("base64")
+                     mimetype = data.get("mimetype") or "image/jpeg"
+                 except ValueError:
+                     logging.warning("Provider returned non-JSON response.")
+                     # import base64 (already imported globally)
+                     base64_data = base64.b64encode(resp.content).decode('utf-8')
+                     new_url = None
+                     mimetype = resp.headers.get("Content-Type") or "image/jpeg"
+                 
+                 if base64_data:
+                      update_fields = {
+                          "content.file_data": base64_data,
+                          "content.mimetype": mimetype
+                      }
+                      if new_url:
+                          update_fields["content.url"] = new_url
+                          
+                      await db.messages.update_one(
+                          {"id": message_id},
+                          {"$set": update_fields}
+                      )
+                      
+                      return {
+                          "src": f"data:{mimetype};base64,{base64_data}",
+                          "type": "base64"
+                      }
+                 elif new_url:
+                      await db.messages.update_one(
+                          {"id": message_id},
+                          {"$set": {"content.url": new_url}}
+                      )
+                      return {
+                          "src": new_url,
+                          "type": "url"
+                      }
+                 else:
+                      raise HTTPException(status_code=502, detail="Provider returned no media data")
+
+        else:
+             raise HTTPException(status_code=501, detail="Provider not supported for media proxy")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"View Image Proxy Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/messages/{message_id}/download-document")
+async def download_document_proxy(message_id: str):
+    """
+    Proxy to fetch document from UazApi/WhatsApp given a message ID.
+    Handles encrypted (.enc) files by requesting download from provider or manual decryption.
+    """
+    try:
+        # 1. Find message
+        message = await db.messages.find_one({"id": message_id}, {"_id": 0})
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+            
+        content = message.get("content")
+        
+        # 2. Check for external ID
+        external_id = message.get("external_id")
+        
+        # 2.1 BACKFILL ATTEMPT
+        if not external_id and content:
+            if isinstance(content, dict):
+                 external_id = content.get("id") or content.get("key", {}).get("id")
+        
+        if not external_id:
+             logging.warning(f"External Message ID not found for message {message_id}")
+             # FALLBACK: Try Manual Decryption if we have URL and MediaKey
+             media_key = content.get("mediaKey") if isinstance(content, dict) else None
+             url = content.get("url") or content.get("URL") if isinstance(content, dict) else None
+             
+             if media_key and url and "mmg.whatsapp.net" in url:
+                  logging.info(f"Attempting manual decryption for document {message_id}")
+                  try:
+                      async with httpx.AsyncClient(follow_redirects=True) as client:
+                           resp = await client.get(url, timeout=30)
+                           if resp.status_code == 200:
+                               decrypted = decrypt_whatsapp_media(resp.content, media_key, "document")
+                               if decrypted:
+                                   base64_data = base64.b64encode(decrypted).decode('utf-8')
+                                   mimetype = content.get("mimetype") or "application/pdf"
+                                   filename = content.get("fileName") or f"document_{message_id}.pdf"
+                                   
+                                   # Update DB
+                                   update_fields = {
+                                      "content.file_data": base64_data,
+                                      "content.mimetype": mimetype
+                                   }
+                                   await db.messages.update_one(
+                                      {"id": message_id},
+                                      {"$set": update_fields}
+                                   )
+                                   return {
+                                      "src": f"data:{mimetype};base64,{base64_data}",
+                                      "type": "base64",
+                                      "filename": filename
+                                   }
+                           elif resp.status_code in [404, 410, 403]:
+                               logging.warning(f"Media URL expired ({resp.status_code}) for {message_id}")
+                               raise HTTPException(status_code=410, detail="Media URL expired and no external ID to refresh")
+                           else:
+                               logging.warning(f"Media URL returned {resp.status_code} for {message_id}")
+                               raise HTTPException(status_code=422, detail=f"Media URL returned {resp.status_code}")
+                  except HTTPException:
+                      raise
+                  except Exception as e:
+                      logging.error(f"Manual decryption failed: {e}")
+                      raise HTTPException(status_code=422, detail=f"Manual decryption failed: {str(e)}")
+             
+             raise HTTPException(status_code=400, detail="External Message ID not found and manual decryption failed")
+
+        # 3. Get Provider Settings
+        settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+        whatsapp = settings.get("whatsapp") if settings else None
+        
+        if not whatsapp or not whatsapp.get('enabled'):
+             raise HTTPException(status_code=503, detail="WhatsApp provider not configured")
+             
+        provider = whatsapp.get('provider', 'official')
+        
+        if provider == 'uazapi':
+             uazapi_url = whatsapp.get('uazapi_url')
+             uazapi_token = whatsapp.get('uazapi_token')
+             
+             if not uazapi_url or not uazapi_token:
+                  raise HTTPException(status_code=503, detail="UazApi credentials missing")
+             
+             if uazapi_url.endswith('/'):
+                 uazapi_url = uazapi_url[:-1]
+                 
+             # 4. Call Download Endpoint
+             target_url = f"{uazapi_url}/message/download"
+             
+             headers = {
+                 "Content-Type": "application/json",
+                 "Accept": "application/json"
+             }
+             
+             if "fortalabs.uazapi.com" in uazapi_url:
+                 headers["token"] = uazapi_token
+             else:
+                 headers["apikey"] = uazapi_token
+
+             payload = {
+                 "id": external_id,
+                 "messageId": external_id,
+                 "key": {"id": external_id},
+                 "return_base64": True, 
+                 "return_link": True
+             }
+             
+             logging.info(f"Proxying document download for {external_id} to {target_url}")
+             
+             async with httpx.AsyncClient() as client:
+                 resp = await client.post(target_url, json=payload, headers=headers, timeout=30)
+                 
+                 if resp.status_code != 200:
+                      logging.error(f"UazApi Download Failed: {resp.status_code} - {resp.text}")
+                      raise HTTPException(status_code=502, detail=f"Provider failed to download media: {resp.text}")
+                 
+                 try:
+                     data = resp.json()
+                     new_url = data.get("fileURL") or data.get("url")
+                     base64_data = data.get("base64Data") or data.get("base64")
+                     mimetype = data.get("mimetype") or "application/pdf"
+                 except ValueError:
+                     logging.warning("Provider returned non-JSON response.")
+                     # import base64 (already imported globally)
+                     base64_data = base64.b64encode(resp.content).decode('utf-8')
+                     new_url = None
+                     mimetype = resp.headers.get("Content-Type") or "application/pdf"
+                 
+                 filename = content.get("fileName") or f"document_{message_id}.{mimetype.split('/')[-1]}"
+
+                 if base64_data:
+                      update_fields = {
+                          "content.file_data": base64_data,
+                          "content.mimetype": mimetype
+                      }
+                      if new_url:
+                          update_fields["content.url"] = new_url
+                          
+                      await db.messages.update_one(
+                          {"id": message_id},
+                          {"$set": update_fields}
+                      )
+                      
+                      return {
+                          "src": f"data:{mimetype};base64,{base64_data}",
+                          "type": "base64",
+                          "filename": filename
+                      }
+                 elif new_url:
+                      await db.messages.update_one(
+                          {"id": message_id},
+                          {"$set": {"content.url": new_url}}
+                      )
+                      return {
+                          "src": new_url,
+                          "type": "url",
+                          "filename": filename
+                      }
+                 else:
+                      raise HTTPException(status_code=502, detail="Provider returned no media data")
+
+        else:
+             raise HTTPException(status_code=501, detail="Provider not supported for media proxy")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Download Document Proxy Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 # Webhook for UazApi (Evolution/WPPConnect)
 @api_router.post("/webhook/uazapi")
 async def uazapi_webhook(request: Request):
@@ -3096,8 +3905,32 @@ async def uazapi_webhook(request: Request):
         body_bytes = await request.body()
         try:
             payload = json.loads(body_bytes)
+            print(f"\n\n[WEBHOOK] RECEIVED PAYLOAD: {json.dumps(payload, default=str)[:200]}...\n\n")
         except:
             payload = {"raw_body": body_bytes.decode('utf-8', errors='ignore')}
+            print(f"\n\n[WEBHOOK] RECEIVED RAW BODY (not json): {payload['raw_body'][:200]}...\n\n")
+
+        # Log payload to file for persistent debugging
+        try:
+            with open("webhook_log.txt", "a") as f:
+                f.write(f"\n--- {datetime.now(timezone.utc).isoformat()} ---\n")
+                f.write(json.dumps(payload, default=str))
+                f.write("\n------------------------------------------------\n")
+        except Exception as e:
+            print(f"[WEBHOOK] Failed to write webhook log: {e}")
+
+        # DEBUG: Save full payload to a debug collection
+        try:
+            if db is not None:
+                await db.debug_payloads.insert_one({
+                    "payload": payload,
+                    "received_at": datetime.now(timezone.utc).isoformat()
+                })
+                print("[WEBHOOK] Saved to debug_payloads")
+            else:
+                 print("[WEBHOOK] DB is None, cannot save debug payload")
+        except Exception as e:
+            print(f"[WEBHOOK] Failed to save debug payload: {e}")
 
         # Log payload for debugging
         log_entry = {
@@ -3113,6 +3946,42 @@ async def uazapi_webhook(request: Request):
         if "raw_body" in payload:
              return {"status": "error", "reason": "invalid_json"}
         
+        # HANDLE FORTALABS FILE DOWNLOADED EVENT
+        # This event comes with the actual downloadable URL for media
+        if payload.get("type") == "FileDownloadedMessage" or \
+           (payload.get("EventType") == "messages_update" and payload.get("event", {}).get("Type") == "FileDownloaded"):
+            
+            event_data = payload.get("event", {})
+            file_url = event_data.get("FileURL")
+            mime_type = event_data.get("MimeType")
+            message_ids = event_data.get("MessageIDs", [])
+            
+            if file_url and message_ids:
+                logging.info(f"Received FileDownloaded event for IDs {message_ids}: {file_url}")
+                
+                # Update messages with this external_id
+                # We might have multiple IDs, usually just one
+                for ext_id in message_ids:
+                    # Update the message content with the new URL
+                    # We need to find the message first.
+                    # The message might have been saved with a different URL (mmg.whatsapp.net) or no URL.
+                    
+                    # Note: The original message might be saved with 'external_id' = ext_id
+                    result = await db.messages.update_one(
+                        {"external_id": ext_id},
+                        {"$set": {
+                            "content.url": file_url,
+                            "content.mimetype": mime_type, # Update mimetype just in case (e.g. audio/mpeg vs ogg)
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }}
+                    )
+                    if result.modified_count > 0:
+                        logging.info(f"Updated message {ext_id} with new FileURL")
+                    else:
+                        logging.warning(f"Could not find message {ext_id} to update with FileURL")
+                        
+                return {"status": "processed", "type": "FileDownloaded"}
+
         # Check if it's a message
         # Evolution structure usually: data.message or data.data.message
         # FortaLabs structure: payload.message
@@ -3136,11 +4005,48 @@ async def uazapi_webhook(request: Request):
         if not from_number:
              from_number = message_data.get("chatid", "").split("@")[0]
              
-        body = message_data.get("conversation") or \
-               message_data.get("text") or \
-               message_data.get("content") or \
-               message_data.get("body") or \
-               (message_data.get("extendedTextMessage", {}).get("text"))
+        # Check for Media Message first
+        msg_type = message_data.get("messageType") or message_data.get("type")
+        # Normalize msg_type to handle "ImageMessage", "AudioMessage" etc.
+        if msg_type and isinstance(msg_type, str):
+            msg_type = msg_type.lower().replace("message", "")
+        
+        body = None
+        
+        if msg_type in ["image", "video", "audio", "voice", "ptt", "document", "sticker"]:
+             # Try to extract media info
+             media_url = message_data.get("mediaUrl") or message_data.get("url") or message_data.get("URL")
+             # Some providers put URL inside content/body
+             if not media_url and isinstance(message_data.get("content"), dict):
+                 media_url = message_data.get("content").get("url") or message_data.get("content").get("URL")
+                 
+             base64_data = message_data.get("base64") or message_data.get("file", {}).get("base64")
+             
+             body = {
+                 "mimetype": message_data.get("mimetype") or message_data.get("mediaType") or "application/octet-stream",
+                 "url": media_url,
+                 "file_data": base64_data,
+                 "caption": message_data.get("caption"),
+                 "fileName": message_data.get("fileName"),
+                 "seconds": message_data.get("duration") or message_data.get("seconds"),
+                 "PTT": msg_type in ["ptt", "voice"]
+             }
+             
+             # If no URL and no Base64, but we have an encrypted file (.enc), we might need to rely on the frontend or provider settings
+             # But let's ensure we capture everything we can
+             if not body["url"] and not body["file_data"]:
+                 # Fallback to saving the whole message_data as content to debug/display raw
+                 logging.warning(f"Media message without URL or Base64: {message_data}")
+                 # Try to look deeper
+                 if "content" in message_data and isinstance(message_data["content"], dict):
+                     body.update(message_data["content"])
+
+        if not body:
+            body = message_data.get("conversation") or \
+                   message_data.get("text") or \
+                   message_data.get("content") or \
+                   message_data.get("body") or \
+                   (message_data.get("extendedTextMessage", {}).get("text"))
                
         if not from_number or not body:
              return {"status": "ignored", "reason": "incomplete_data"}
@@ -3158,11 +4064,49 @@ async def uazapi_webhook(request: Request):
             # Try searching as if DB has 55 but incoming doesn't (unlikely for UazApi but possible)
             lead = await db.leads.find_one({"phone": f"55{from_number}"}, {"_id": 0})
 
+        # Handle Brazil 9th digit (55 + XX + 9 + 8 digits vs 55 + XX + 8 digits)
+        if not lead and from_number.startswith("55"):
+            # If we have 13 digits (55 XX 9 XXXX XXXX), try removing the 9
+            if len(from_number) == 13 and from_number[4] == '9':
+                no_nine = from_number[:4] + from_number[5:]
+                lead = await db.leads.find_one({"phone": no_nine}, {"_id": 0})
+            
+            # If we have 12 digits (55 XX XXXX XXXX), try adding the 9
+            elif len(from_number) == 12:
+                with_nine = from_number[:4] + '9' + from_number[4:]
+                lead = await db.leads.find_one({"phone": with_nine}, {"_id": 0})
+
         # Get name from payload
         contact_name = message_data.get("pushName") or \
                        message_data.get("notifyName") or \
                        payload.get("sender", {}).get("name") or \
-                       payload.get("data", {}).get("pushName")
+                       payload.get("data", {}).get("pushName") or \
+                       payload.get("chat", {}).get("name") or \
+                       payload.get("chat", {}).get("wa_name") or \
+                       payload.get("chat", {}).get("contactName")
+
+        # Try to fetch name from API if missing (FortaLabs/UazApi)
+        if not contact_name:
+             try:
+                 settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
+                 if settings and settings.get("whatsapp", {}).get("provider") == "uazapi":
+                     whatsapp = settings["whatsapp"]
+                     uazapi_url = whatsapp.get("uazapi_url", "").rstrip('/')
+                     uazapi_token = whatsapp.get("uazapi_token")
+                     
+                     if uazapi_url and uazapi_token and "fortalabs.uazapi.com" in uazapi_url:
+                          api_url = f"{uazapi_url}/chat/details"
+                          headers = {"token": uazapi_token, "Content-Type": "application/json"}
+                          api_payload = {"number": from_number, "preview": False}
+                          async with httpx.AsyncClient() as client:
+                              resp = await client.post(api_url, json=api_payload, headers=headers, timeout=5)
+                              if resp.status_code == 200:
+                                  data = resp.json()
+                                  contact_name = data.get("name") or data.get("wa_name") or data.get("wa_contactName")
+                                  if contact_name:
+                                      logging.info(f"Fetched name from API for {from_number}: {contact_name}")
+             except Exception as e:
+                 logging.error(f"Failed to fetch name from API: {e}")
 
         if not lead:
             # Create new lead from unknown number
@@ -3209,14 +4153,135 @@ async def uazapi_webhook(request: Request):
             await db.conversations.insert_one(conversation)
             
         # 3. Save Message
+        # Extract external message ID if available
+        external_id = None
+        
+        # Helper to find ID recursively if needed
+        def find_id_recursive(obj, depth=0):
+            if depth > 20: return None
+            if isinstance(obj, dict):
+                # Check priority keys
+                if "key" in obj and isinstance(obj["key"], dict) and "id" in obj["key"]:
+                    return obj["key"]["id"]
+                # Common ID keys
+                for id_key in ["id", "messageId", "wamid", "_id", "message_id", "messageid"]:
+                    if id_key in obj and isinstance(obj[id_key], str) and len(obj[id_key]) > 4:
+                        return obj[id_key]
+                
+                # Dig deeper
+                for v in obj.values():
+                    found = find_id_recursive(v, depth+1)
+                    if found: return found
+            elif isinstance(obj, list):
+                for item in obj:
+                    found = find_id_recursive(item, depth+1)
+                    if found: return found
+            return None
+
+        # 1. Try finding key/id in message_data
+        key = message_data.get("key", {})
+        if key and isinstance(key, dict):
+             external_id = key.get("id")
+        
+        # Check for 'messageid' (lowercase) which often contains the clean ID in FortaLabs/UazApi
+        if not external_id:
+             external_id = message_data.get("messageid")
+
+        if not external_id:
+             external_id = message_data.get("id") or message_data.get("messageId") or message_data.get("_id") or message_data.get("wamid")
+             
+        # 2. Try finding key/id in payload.data (common in Baileys/Evolution if message_data extracted inner message)
+        if not external_id:
+             data_obj = payload.get("data", {})
+             if isinstance(data_obj, dict):
+                 key_obj = data_obj.get("key", {})
+                 if isinstance(key_obj, dict):
+                     external_id = key_obj.get("id")
+                 if not external_id:
+                     external_id = data_obj.get("id") or data_obj.get("messageId")
+
+        # 3. Try finding key/id in root payload
+        if not external_id:
+             key_obj = payload.get("key", {})
+             if isinstance(key_obj, dict):
+                 external_id = key_obj.get("id")
+             if not external_id:
+                 external_id = payload.get("id") or payload.get("messageId") or payload.get("wamid")
+        
+        # 4. Recursive Fallback (Last Resort)
+        if not external_id:
+            logging.info("External ID not found in standard locations. Starting recursive search...")
+            external_id = find_id_recursive(payload)
+            if external_id:
+                logging.info(f"Found external_id via recursive search: {external_id}")
+            else:
+                logging.error(f"FAILED TO FIND EXTERNAL ID.")
+
+        # Log for debugging
+        logging.info(f"Processing message. External ID: {external_id}.")
+
+        # Check for duplicates before inserting
+        if external_id:
+            existing = await db.messages.find_one({"external_id": external_id})
+            if existing:
+                 logging.info(f"Duplicate message {external_id} ignored.")
+                 return {"status": "ignored", "reason": "duplicate"}
+
+        # Determine sender info
+        sender_type = "lead"
+        sender_id = lead["id"]
+        sender_name = lead["name"]
+        
+        # Robust check for is_from_me
+        is_from_me = False
+        
+        def is_truthy(val):
+            if isinstance(val, bool): return val
+            if isinstance(val, str): return val.lower() in ('true', '1', 'yes')
+            if isinstance(val, int): return val == 1
+            return False
+
+        # 1. Check message_data directly
+        key = message_data.get("key", {})
+        if is_truthy(key.get("fromMe")) or is_truthy(message_data.get("fromMe")):
+            is_from_me = True
+            
+        # 2. Check payload root (Evolution/Baileys standard)
+        if not is_from_me:
+             if is_truthy(payload.get("key", {}).get("fromMe")):
+                 is_from_me = True
+             elif is_truthy(payload.get("data", {}).get("key", {}).get("fromMe")):
+                 is_from_me = True
+             elif is_truthy(payload.get("data", {}).get("message", {}).get("key", {}).get("fromMe")):
+                 is_from_me = True
+        
+        # 3. Check UazApi/FortaLabs owner matching
+        if not is_from_me:
+             chat_info = payload.get("chat", {})
+             owner = chat_info.get("owner")
+             last_sender = chat_info.get("wa_lastMessageSender")
+             
+             if owner and last_sender and isinstance(last_sender, str):
+                 # wa_lastMessageSender is usually "NUMBER@s.whatsapp.net"
+                 # owner is usually "NUMBER"
+                 if last_sender.startswith(owner):
+                     is_from_me = True
+                     logging.info(f"Detected is_from_me=True via UazApi wa_lastMessageSender: {last_sender}")
+
+        if is_from_me:
+            sender_type = "consultant"
+            sender_id = None # Unknown consultant if sent from mobile
+            sender_name = message_data.get("pushName") or "Via WhatsApp"
+
         message = {
             "id": str(uuid.uuid4()),
             "conversation_id": conversation["id"],
-            "sender_type": "lead",
-            "sender_id": lead["id"],
-            "sender_name": lead["name"],
+            "sender_type": sender_type,
+            "sender_id": sender_id,
+            "sender_name": sender_name,
             "content": body,
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "external_id": external_id
         }
         await db.messages.insert_one(message)
         
@@ -3225,6 +4290,14 @@ async def uazapi_webhook(request: Request):
             {"id": conversation["id"]},
             {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}}
         )
+
+        # Emit socket event for frontend real-time update
+        if sio:
+            # Convert _id to string just in case, though message dict usually has 'id'
+            msg_to_emit = message.copy()
+            if "_id" in msg_to_emit:
+                msg_to_emit["_id"] = str(msg_to_emit["_id"])
+            await sio.emit('new_message', msg_to_emit)
 
         return {"status": "processed"}
 
@@ -3842,12 +4915,3 @@ async def disconnect(sid):
 
 # Include API router
 app.include_router(api_router)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)

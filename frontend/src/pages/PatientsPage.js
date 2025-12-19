@@ -198,13 +198,13 @@ export default function PatientsPage() {
           )}
         </div>
 
-        <div className="grid gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {loading ? (
-            <div className="flex justify-center items-center p-10">
+            <div className="flex justify-center items-center p-10 col-span-full">
               <p className="text-lg text-gray-600">Carregando pacientes...</p>
             </div>
           ) : error ? (
-            <div className="flex flex-col items-center justify-center p-10 bg-red-50 border border-red-200 rounded-2xl">
+            <div className="flex flex-col items-center justify-center p-10 bg-red-50 border border-red-200 rounded-2xl col-span-full">
               <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
               <p className="text-lg text-red-700 font-semibold mb-2">Erro ao Carregar Pacientes</p>
               <p className="text-gray-600 text-center mb-6">Não foi possível buscar a lista de pacientes. Verifique sua conexão ou tente novamente.</p>
