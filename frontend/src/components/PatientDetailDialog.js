@@ -4,7 +4,7 @@ import {
   FileText, Paperclip, Stethoscope, Activity, 
   X, Upload, Trash2, Plus, Minus, Edit, Save, AlertCircle,
   Download, CheckCircle, Clock, MessageSquare, DollarSign,
-  Folder, FolderOpen
+  Folder, FolderOpen, Calculator
 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -109,6 +109,21 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     template_used: ""
   });
 
+  // Budget state
+  const [budgets, setBudgets] = useState([]);
+  const [showBudgetDialog, setShowBudgetDialog] = useState(false);
+  const [budgetForm, setBudgetForm] = useState({
+    description: "",
+    date: new Date().toISOString().split('T')[0],
+    treatments: [],
+    total_value: "",
+    professional_id: "",
+    observations: ""
+  });
+  const [editingBudget, setEditingBudget] = useState(null);
+  const [showDeleteBudgetDialog, setShowDeleteBudgetDialog] = useState(false);
+  const [budgetToDelete, setBudgetToDelete] = useState(null);
+
   useEffect(() => {
     if (isOpen && patient) {
       setDetailedPatient(patient);
@@ -143,6 +158,20 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
           const allClinicProfessionals = profsRes.data || [];
           setProfessionals(allClinicProfessionals);
           setAllProfessionals(allClinicProfessionals);
+        }
+        if (activeTab === 'budgets') {
+          const res = await api.get(`/patients/${detailedPatient.id}/budgets`);
+          setBudgets(res.data || []);
+          
+          if (services.length === 0) {
+            const sRes = await api.get('/services');
+            setServices(sRes.data || []);
+          }
+          if (allProfessionals.length === 0) {
+            const profsRes = await api.get(`/professionals`);
+            setAllProfessionals(profsRes.data || []);
+            setProfessionals(profsRes.data || []);
+          }
         }
       } catch (e) {}
     };
@@ -547,6 +576,88 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }
   };
 
+  const handleCreateBudget = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingBudget) {
+        await api.put(`/budgets/${editingBudget.id}`, {
+          ...budgetForm,
+          patient_id: detailedPatient.id
+        });
+        toast.success("Orçamento atualizado com sucesso!");
+      } else {
+        await api.post('/budgets', {
+          ...budgetForm,
+          patient_id: detailedPatient.id
+        });
+        toast.success("Orçamento criado com sucesso!");
+      }
+      
+      setShowBudgetDialog(false);
+      setEditingBudget(null);
+      setBudgetForm({
+        description: "",
+        date: new Date().toISOString().split('T')[0],
+        treatments: [],
+        total_value: "",
+        professional_id: "",
+        observations: ""
+      });
+      // Refresh budgets
+      const res = await api.get(`/patients/${detailedPatient.id}/budgets`);
+      setBudgets(res.data || []);
+    } catch (error) {
+      toast.error(editingBudget ? "Erro ao atualizar orçamento" : "Erro ao criar orçamento");
+    }
+  };
+
+  const handleEditBudget = (budget) => {
+    setEditingBudget(budget);
+    setBudgetForm({
+      description: budget.description || "",
+      date: budget.date || new Date().toISOString().split('T')[0],
+      treatments: budget.treatments || [],
+      total_value: budget.total_value || "",
+      professional_id: budget.professional_id || "",
+      observations: budget.observations || ""
+    });
+    setShowBudgetDialog(true);
+  };
+
+  const handleDeleteBudget = (budget) => {
+    setBudgetToDelete(budget);
+    setShowDeleteBudgetDialog(true);
+  };
+
+  const confirmDeleteBudget = async () => {
+    if (!budgetToDelete) return;
+    try {
+      await api.delete(`/budgets/${budgetToDelete.id}`);
+      toast.success("Orçamento excluído com sucesso!");
+      setShowDeleteBudgetDialog(false);
+      setBudgetToDelete(null);
+      // Refresh budgets
+      const res = await api.get(`/patients/${detailedPatient.id}/budgets`);
+      setBudgets(res.data || []);
+    } catch (error) {
+      toast.error("Erro ao excluir orçamento");
+    }
+  };
+
+  const handleDownloadBudgetPDF = async (budget) => {
+    try {
+      const response = await api.get(`/budgets/${budget.id}/pdf`, { responseType: 'blob' });
+      const blobUrl = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `Orcamento_${detailedPatient.name}_${budget.date}.pdf`;
+      link.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      toast.error('Erro ao baixar PDF do orçamento.');
+    }
+  };
+
   const handleDateChange = (e) => {
     const { value } = e.target;
     setTreatmentForm({ ...treatmentForm, start_date: value });
@@ -780,6 +891,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     { id: "records", label: "Documentos", icon: Stethoscope },
     { id: "treatments", label: "Tratamentos", icon: Activity },
     { id: "anamnese", label: "Anamnese", icon: FileText },
+    { id: "budgets", label: "Orçamentos", icon: Calculator },
     { id: "revenue", label: "Faturamento", icon: DollarSign }
   ];
 
@@ -871,6 +983,94 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                           </div>
                         </div>
                       </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Budgets Tab */}
+              {activeTab === "budgets" && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold">Orçamentos</h3>
+                    <Button onClick={() => {
+                      setEditingBudget(null);
+                      setBudgetForm({
+                        description: "",
+                        date: new Date().toISOString().split('T')[0],
+                        treatments: [],
+                        total_value: "",
+                        professional_id: "",
+                        observations: ""
+                      });
+                      setShowBudgetDialog(true);
+                    }} className="btn-primary">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Novo Orçamento
+                    </Button>
+                  </div>
+
+                  {budgets.length > 0 ? (
+                    <div className="space-y-3">
+                      {budgets.map((budget) => (
+                        <div key={budget.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <h4 className="font-semibold text-gray-900">{budget.description}</h4>
+                                <span className="text-sm text-gray-500">{formatDate(budget.date)}</span>
+                              </div>
+                              <p className="text-sm text-gray-600">
+                                Valor Total: R$ {Number(budget.total_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </p>
+                              {budget.professional_id && (
+                                <p className="text-sm text-gray-600">
+                                  Profissional: {allProfessionals.find(p => p.id === budget.professional_id)?.name || "Não informado"}
+                                </p>
+                              )}
+                              {budget.treatments && budget.treatments.length > 0 && (
+                                <div className="mt-2">
+                                  <p className="text-xs font-semibold text-gray-500">Tratamentos:</p>
+                                  <ul className="list-disc list-inside text-sm text-gray-600">
+                                    {budget.treatments.map((t, i) => <li key={i}>{t}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                              {budget.observations && (
+                                <p className="text-sm text-gray-500 mt-2 italic">{budget.observations}</p>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleDownloadBudgetPDF(budget)}
+                                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+                              >
+                                <Download className="w-4 h-4" />
+                                PDF
+                              </button>
+                              <button
+                                onClick={() => handleEditBudget(budget)}
+                                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-amber-500 text-white rounded hover:bg-amber-600 transition"
+                              >
+                                <Edit className="w-4 h-4" />
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => handleDeleteBudget(budget)}
+                                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Excluir
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-gray-500">
+                      <Calculator className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                      <p>Nenhum orçamento registrado</p>
                     </div>
                   )}
                 </div>
@@ -1840,6 +2040,121 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       </DialogContent>
     </Dialog>
 
+    <Dialog open={showBudgetDialog} onOpenChange={setShowBudgetDialog}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{editingBudget ? "Editar Orçamento" : "Novo Orçamento"}</DialogTitle>
+          <DialogDescription>{editingBudget ? "Edite os dados do orçamento" : "Preencha os dados do orçamento"}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleCreateBudget} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Descrição</Label>
+              <Input
+                required
+                value={budgetForm.description}
+                onChange={(e) => setBudgetForm({...budgetForm, description: e.target.value})}
+                placeholder="Ex: Tratamento de Canal"
+              />
+            </div>
+            <div>
+              <Label>Data</Label>
+              <Input
+                type="date"
+                required
+                value={budgetForm.date}
+                onChange={(e) => setBudgetForm({...budgetForm, date: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label>Tratamentos</Label>
+            <div className="flex gap-2 mb-2">
+              <select
+                className="flex-1 input-field"
+                id="service-select"
+                onChange={(e) => {
+                  if (e.target.value) {
+                     setBudgetForm(prev => ({
+                        ...prev,
+                        treatments: [...prev.treatments, e.target.value]
+                     }));
+                     e.target.value = "";
+                  }
+                }}
+              >
+                <option value="">Selecione um serviço...</option>
+                {services.map((s) => (
+                  <option key={s.id} value={s.name}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {budgetForm.treatments.map((t, i) => (
+                    <div key={i} className="bg-blue-100 text-blue-800 px-2 py-1 rounded flex items-center gap-1">
+                        <span>{t}</span>
+                        <button
+                            type="button"
+                            onClick={() => setBudgetForm(prev => ({...prev, treatments: prev.treatments.filter((_, idx) => idx !== i)}))}
+                            className="hover:text-red-600"
+                        >
+                            <X className="w-3 h-3" />
+                        </button>
+                    </div>
+                ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+             <div>
+                <Label>Valor Total (R$)</Label>
+                <Input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={budgetForm.total_value}
+                    onChange={(e) => setBudgetForm({...budgetForm, total_value: e.target.value})}
+                    placeholder="0.00"
+                />
+             </div>
+             <div>
+                <Label>Profissional Responsável</Label>
+                <select
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    value={budgetForm.professional_id}
+                    onChange={(e) => setBudgetForm({...budgetForm, professional_id: e.target.value})}
+                >
+                    <option value="">Selecione...</option>
+                    {allProfessionals.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                </select>
+             </div>
+          </div>
+
+          <div>
+             <Label>Observações</Label>
+             <textarea
+                className="input-field min-h-[100px]"
+                value={budgetForm.observations}
+                onChange={(e) => setBudgetForm({...budgetForm, observations: e.target.value})}
+                placeholder="Observações adicionais..."
+             />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setShowBudgetDialog(false)}>
+                Cancelar
+            </Button>
+            <Button type="submit" className="btn-primary">
+                Salvar Orçamento
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+
     {/* Dialog de Confirmação de Exclusão */}
     <Dialog open={showDeleteRecordDialog} onOpenChange={setShowDeleteRecordDialog}>
       <DialogContent>
@@ -1948,6 +2263,43 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                 setShowDeleteAttachmentDialog(false);
                 setAttachmentToDelete(null);
               }}
+            >
+              Confirmar Exclusão
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    {/* Dialog de Confirmação de Exclusão de Orçamento */}
+    <Dialog open={showDeleteBudgetDialog} onOpenChange={setShowDeleteBudgetDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Confirmar Exclusão</DialogTitle>
+          <DialogDescription>Confirme a exclusão do orçamento</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            Tem certeza que deseja excluir este orçamento?
+          </p>
+          <p className="text-sm text-red-600">
+            <strong>Atenção:</strong> Esta ação não pode ser desfeita.
+          </p>
+          <div className="flex gap-3 justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowDeleteBudgetDialog(false);
+                setBudgetToDelete(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="bg-red-500 hover:bg-red-600 text-white"
+              onClick={confirmDeleteBudget}
             >
               Confirmar Exclusão
             </Button>

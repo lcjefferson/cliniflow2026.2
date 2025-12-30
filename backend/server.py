@@ -389,14 +389,37 @@ async def normalize_all_thumbnails():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global db, DEMO_MODE
-    if db is not None:
+    global db, DEMO_MODE, client
+    
+    # Tentativa de reconexão se db for None mas mongo_url existir
+    if db is None and mongo_url:
+        try:
+            print("Attempting to connect to MongoDB in lifespan...")
+            client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
+            await client.admin.command('ping')
+            db = client.get_database(db_name)
+            DEMO_MODE = False
+            print("MongoDB connection successful in lifespan")
+        except Exception as e:
+            print(f"MongoDB connection failed in lifespan: {e}. Switching to DEMO MODE.")
+            db = None
+            DEMO_MODE = True
+    elif db is not None:
+        # Se já estava "conectado" globalmente, valida a conexão
         try:
             await client.admin.command('ping')
         except Exception:
-            print("MongoDB connection failed in lifespan. Switching to DEMO MODE.")
-            db = None
-            DEMO_MODE = True
+            print("MongoDB connection check failed. Retrying...")
+            try:
+                # Retry once
+                client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
+                await client.admin.command('ping')
+                db = client.get_database(db_name)
+                print("MongoDB re-connected successfully.")
+            except Exception as e:
+                print(f"MongoDB connection failed finally: {e}. Switching to DEMO MODE.")
+                db = None
+                DEMO_MODE = True
 
     if scheduler and CronTrigger:
         try:
@@ -483,8 +506,7 @@ app.mount("/media", StaticFiles(directory="media"), name="media")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=r"https?://.*:3001",
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -815,6 +837,27 @@ class PatientCreate(BaseModel):
         if v == '' or v is None:
             return None
         return v
+
+class Budget(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    patient_id: str
+    description: str
+    date: str
+    treatments: List[str] = []
+    total_value: float = 0.0
+    professional_id: Optional[str] = None
+    observations: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class BudgetCreate(BaseModel):
+    patient_id: str
+    description: str
+    date: str
+    treatments: List[str] = []
+    total_value: float = 0.0
+    professional_id: Optional[str] = None
+    observations: Optional[str] = None
 
 class Appointment(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -2536,6 +2579,218 @@ async def get_transactions(
         if isinstance(t.get('created_at'), str):
             t['created_at'] = datetime.fromisoformat(t['created_at'])
     return transactions
+
+# Budget Routes
+@api_router.post("/budgets", response_model=Budget)
+async def create_budget(data: BudgetCreate, current_user: dict = Depends(get_current_user)):
+    budget = Budget(**data.model_dump())
+    doc = budget.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.budgets.insert_one(doc)
+    return budget
+
+@api_router.put("/budgets/{budget_id}")
+async def update_budget(budget_id: str, data: BudgetCreate, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    update_data = data.model_dump(exclude_unset=True)
+    
+    result = await db.budgets.update_one({"id": budget_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Budget not found")
+        
+    return {"message": "Budget updated successfully"}
+
+@api_router.delete("/budgets/{budget_id}")
+async def delete_budget(budget_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+        
+    result = await db.budgets.delete_one({"id": budget_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Budget not found")
+        
+    return {"message": "Budget deleted successfully"}
+
+@api_router.get("/patients/{patient_id}/budgets", response_model=List[dict])
+async def get_patient_budgets(patient_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    budgets = await db.budgets.find({"patient_id": patient_id}, {"_id": 0}).sort("date", -1).to_list(1000)
+    for b in budgets:
+        if isinstance(b.get('created_at'), str):
+            b['created_at'] = datetime.fromisoformat(b['created_at'])
+    return budgets
+
+@api_router.get("/budgets/{budget_id}/pdf")
+async def generate_budget_pdf(budget_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    budget = await db.budgets.find_one({"id": budget_id}, {"_id": 0})
+    if not budget:
+        raise HTTPException(status_code=404, detail="Budget not found")
+        
+    patient = await db.patients.find_one({"id": budget['patient_id']}, {"_id": 0})
+    professional_name = "Não informado"
+    if budget.get('professional_id'):
+        prof = await db.professionals.find_one({"id": budget['professional_id']}, {"_id": 0})
+        if prof:
+            professional_name = prof.get('name', 'Não informado')
+
+    # Fetch clinic settings for Logo and Footer
+    settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
+    if not settings:
+        settings = {}
+
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    # --- Header with Logo ---
+    top_offset = 50
+    logo_data = settings.get("logo")
+    
+    if logo_data and isinstance(logo_data, str):
+        try:
+            b64 = logo_data.split(",", 1)[1] if "," in logo_data else logo_data
+            img_bytes = base64.b64decode(b64)
+            img = ImageReader(io.BytesIO(img_bytes))
+            iw, ih = img.getSize()
+            target_w = 150 # Max width for logo
+            ratio = target_w / float(iw)
+            target_h = ih * ratio
+            
+            # Limit height if it's too tall
+            if target_h > 100:
+                target_h = 100
+                ratio = target_h / float(ih)
+                target_w = iw * ratio
+
+            x = (width - target_w) / 2
+            y_logo = height - 50 - target_h
+            p.drawImage(img, x, y_logo, width=target_w, height=target_h, preserveAspectRatio=True, mask='auto')
+            top_offset = 50 + target_h + 30
+        except Exception as e:
+            print(f"Error drawing logo: {e}")
+            pass
+
+    # Title
+    p.setFont("Helvetica-Bold", 20)
+    p.drawCentredString(width / 2, height - top_offset, "Orçamento")
+    
+    p.setFont("Helvetica", 12)
+    p.drawCentredString(width / 2, height - top_offset - 25, f"Data: {format_date_br(budget.get('date'))}")
+    
+    current_y = height - top_offset - 70
+
+    # --- Patient Info ---
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(50, current_y, "Dados do Paciente")
+    current_y -= 25
+    
+    p.setFont("Helvetica", 12)
+    p.drawString(50, current_y, f"Nome: {patient.get('name') if patient else 'N/A'}")
+    current_y -= 20
+    p.drawString(50, current_y, f"CPF: {patient.get('cpf') if patient else 'N/A'}")
+    current_y -= 40
+    
+    # --- Budget Info ---
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(50, current_y, "Detalhes do Orçamento")
+    current_y -= 25
+    
+    p.setFont("Helvetica", 12)
+    p.drawString(50, current_y, f"Descrição: {budget.get('description')}")
+    current_y -= 20
+    p.drawString(50, current_y, f"Profissional Responsável: {professional_name}")
+    current_y -= 40
+    
+    # --- Treatments ---
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(50, current_y, "Tratamentos/Serviços:")
+    current_y -= 25
+    
+    p.setFont("Helvetica", 12)
+    treatments = budget.get('treatments', [])
+    if treatments:
+        for treatment in treatments:
+            p.drawString(70, current_y, f"• {treatment}")
+            current_y -= 20
+    else:
+        p.drawString(70, current_y, "Nenhum tratamento listado.")
+        current_y -= 20
+        
+    # --- Total Value ---
+    current_y -= 20
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(50, current_y, f"Valor Total: R$ {budget.get('total_value', 0):.2f}")
+    
+    # --- Observations ---
+    if budget.get('observations'):
+        current_y -= 40
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(50, current_y, "Observações:")
+        current_y -= 25
+        p.setFont("Helvetica", 12)
+        
+        obs_text = budget.get('observations')
+        # Simple word wrap logic could be here, but for now we split by lines
+        lines = obs_text.split('\n')
+        for line in lines:
+            # Check for very long lines and truncate or wrap loosely
+            if len(line) > 85: 
+                 line = line[:85] + "..."
+            p.drawString(50, current_y, line)
+            current_y -= 20
+
+    # --- Footer ---
+    footer_y = 50
+    p.setLineWidth(0.5)
+    p.setStrokeColorRGB(0.7, 0.7, 0.7)
+    p.line(50, footer_y + 20, width - 50, footer_y + 20)
+    
+    p.setFont("Helvetica", 9)
+    p.setFillColorRGB(0.3, 0.3, 0.3)
+    
+    footer_lines = []
+    # Line 1: Clinic Name + Address
+    line1_parts = []
+    if settings.get("clinic_name"): line1_parts.append(settings.get("clinic_name"))
+    if settings.get("address"): line1_parts.append(settings.get("address"))
+    if line1_parts: footer_lines.append(" | ".join(line1_parts))
+    
+    # Line 2: Contacts
+    line2_parts = []
+    if settings.get("phone"): line2_parts.append(f"Tel: {settings.get('phone')}")
+    if settings.get("email"): line2_parts.append(settings.get("email"))
+    if settings.get("website"): line2_parts.append(settings.get("website"))
+    if line2_parts: footer_lines.append(" | ".join(line2_parts))
+    
+    current_footer_y = footer_y
+    for line in reversed(footer_lines):
+        p.drawCentredString(width / 2, current_footer_y, line)
+        current_footer_y += 12
+
+    p.showPage()
+    p.save()
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type='application/pdf',
+        headers={"Content-Disposition": f"attachment; filename=orcamento_{budget_id}.pdf"}
+    )
+
+def format_date_br(date_str):
+    if not date_str: return ""
+    try:
+        dt = datetime.fromisoformat(date_str) if 'T' in date_str else datetime.strptime(date_str, "%Y-%m-%d")
+        return dt.strftime("%d/%m/%Y")
+    except:
+        return date_str
 
 # Medical Record Routes
 @api_router.post("/medical-records", response_model=MedicalRecord)

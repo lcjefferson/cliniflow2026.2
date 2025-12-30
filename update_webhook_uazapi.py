@@ -11,7 +11,7 @@ load_dotenv(dotenv_path="backend/.env")
 mongo_url = os.getenv("MONGO_URL")
 db_name = os.getenv("DB_NAME")
 
-NEW_WEBHOOK_URL = "https://whole-colts-look.loca.lt/api/webhook/uazapi"
+NEW_WEBHOOK_URL = "https://eleven-horses-serve.loca.lt/api/webhook/uazapi"
 
 async def main():
     if not mongo_url:
