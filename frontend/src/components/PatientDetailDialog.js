@@ -1858,19 +1858,33 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="professional-select">Profissional Responsável</Label>
-              <select
-                id="professional-select"
-                className="input-field"
-                value={treatmentForm.professional_id}
-                onChange={(e) => setTreatmentForm({ ...treatmentForm, professional_id: e.target.value.trim() })}
-              >
-                <option value="">Selecionar profissional</option>
-                {allProfessionals.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="professional-select">Profissional Responsável</Label>
+                <select
+                  id="professional-select"
+                  className="input-field"
+                  value={treatmentForm.professional_id}
+                  onChange={(e) => setTreatmentForm({ ...treatmentForm, professional_id: e.target.value.trim() })}
+                >
+                  <option value="">Selecionar profissional</option>
+                  {allProfessionals.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="status-select">Status</Label>
+                <select
+                  id="status-select"
+                  className="input-field"
+                  value={treatmentForm.status}
+                  onChange={(e) => setTreatmentForm({ ...treatmentForm, status: e.target.value })}
+                >
+                  <option value="ongoing">Em andamento</option>
+                  <option value="completed">Concluído</option>
+                </select>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Descrição</Label>
