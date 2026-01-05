@@ -431,7 +431,7 @@ async def lifespan(app: FastAPI):
     if db is not None:
         try:
             # Create admin user if it doesn't exist
-            admin_email = os.environ.get("ADMIN_EMAIL", "admin@clinicflow.com")
+            admin_email = os.environ.get("ADMIN_EMAIL", "admin@cliniflow.com")
             admin_password = os.environ.get("ADMIN_PASSWORD", "admin@123")
             
             user = await db.users.find_one({"email": admin_email})
@@ -446,9 +446,16 @@ async def lifespan(app: FastAPI):
                     "created_at": datetime.now(timezone.utc)
                 })
                 print(f"Admin user {admin_email} created.")
+            else:
+                # Enforce admin password to ensure access (Self-healing)
+                await db.users.update_one(
+                    {"email": admin_email},
+                    {"$set": {"password_hash": hash_password(admin_password), "role.is_admin": True}}
+                )
+                print(f"Admin user {admin_email} password/role updated.")
 
             # Create superadmin user if it doesn't exist
-            super_email = "superadmin@clinicflow.com"
+            super_email = "superadmin@cliniflow.com"
             super_password = "qwe123"
             
             super_user = await db.users.find_one({"email": super_email})
@@ -463,6 +470,13 @@ async def lifespan(app: FastAPI):
                     "created_at": datetime.now(timezone.utc)
                 })
                 print(f"Superadmin user {super_email} created.")
+            else:
+                # Enforce superadmin password (Self-healing)
+                await db.users.update_one(
+                    {"email": super_email},
+                    {"$set": {"password_hash": hash_password(super_password), "user_type": "superuser"}}
+                )
+                print(f"Superadmin user {super_email} password/role updated.")
 
             await db.patients.create_index("id")
             await db.patients.create_index("phone")
@@ -499,7 +513,7 @@ async def lifespan(app: FastAPI):
             pass
     else:
         # DEMO MODE: Create default admin
-        admin_email = os.environ.get("ADMIN_EMAIL", "admin@clinicflow.com")
+        admin_email = os.environ.get("ADMIN_EMAIL", "admin@cliniflow.com")
         admin_password = os.environ.get("ADMIN_PASSWORD", "admin@123")
         if not any(u['email'] == admin_email for u in mem['users']):
             mem['users'].append({
@@ -514,7 +528,7 @@ async def lifespan(app: FastAPI):
             print(f"DEMO MODE: Admin user {admin_email} created.")
         
         # DEMO MODE: Create default superadmin
-        super_email = "superadmin@clinicflow.com"
+        super_email = "superadmin@cliniflow.com"
         super_password = "qwe123"
         if not any(u['email'] == super_email for u in mem['users']):
             mem['users'].append({
