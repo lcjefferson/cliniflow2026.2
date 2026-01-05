@@ -430,53 +430,59 @@ async def lifespan(app: FastAPI):
             pass
     if db is not None:
         try:
-            # Create admin user if it doesn't exist
-            admin_email = os.environ.get("ADMIN_EMAIL", "admin@cliniflow.com")
-            admin_password = os.environ.get("ADMIN_PASSWORD", "admin@123")
-            
-            user = await db.users.find_one({"email": admin_email})
-            if not user:
-                await db.users.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "name": "Admin",
-                    "email": admin_email,
-                    "password_hash": hash_password(admin_password),
-                    "role": {"is_admin": True, "is_attendant": False},
-                    "user_type": "admin",
-                    "created_at": datetime.now(timezone.utc)
-                })
-                print(f"Admin user {admin_email} created.")
-            else:
-                # Enforce admin password to ensure access (Self-healing)
-                await db.users.update_one(
-                    {"email": admin_email},
-                    {"$set": {"password_hash": hash_password(admin_password), "role.is_admin": True}}
-                )
-                print(f"Admin user {admin_email} password/role updated.")
+            # Ensure admin users exist (support both cliniflow.com and clinicflow.com)
+            admin_emails = [
+                (os.environ.get("ADMIN_EMAIL", "admin@cliniflow.com"), os.environ.get("ADMIN_PASSWORD", "admin@123")),
+                ("admin@clinicflow.com", "admin@123")
+            ]
 
-            # Create superadmin user if it doesn't exist
-            super_email = "superadmin@cliniflow.com"
-            super_password = "qwe123"
+            for adm_email, adm_pass in admin_emails:
+                user = await db.users.find_one({"email": adm_email})
+                if not user:
+                    await db.users.insert_one({
+                        "id": str(uuid.uuid4()),
+                        "name": "Admin",
+                        "email": adm_email,
+                        "password_hash": hash_password(adm_pass),
+                        "role": {"is_admin": True, "is_attendant": False},
+                        "user_type": "admin",
+                        "created_at": datetime.now(timezone.utc)
+                    })
+                    print(f"Admin user {adm_email} created.")
+                else:
+                    # Enforce admin password to ensure access (Self-healing)
+                    await db.users.update_one(
+                        {"email": adm_email},
+                        {"$set": {"password_hash": hash_password(adm_pass), "role.is_admin": True}}
+                    )
+                    print(f"Admin user {adm_email} password/role updated.")
+
+            # Ensure superadmin users exist
+            super_emails = [
+                ("superadmin@cliniflow.com", "qwe123"),
+                ("superadmin@clinicflow.com", "qwe123")
+            ]
             
-            super_user = await db.users.find_one({"email": super_email})
-            if not super_user:
-                await db.users.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "name": "Super Admin",
-                    "email": super_email,
-                    "password_hash": hash_password(super_password),
-                    "role": {"is_admin": True, "is_attendant": False},
-                    "user_type": "superuser",
-                    "created_at": datetime.now(timezone.utc)
-                })
-                print(f"Superadmin user {super_email} created.")
-            else:
-                # Enforce superadmin password (Self-healing)
-                await db.users.update_one(
-                    {"email": super_email},
-                    {"$set": {"password_hash": hash_password(super_password), "user_type": "superuser"}}
-                )
-                print(f"Superadmin user {super_email} password/role updated.")
+            for sup_email, sup_pass in super_emails:
+                super_user = await db.users.find_one({"email": sup_email})
+                if not super_user:
+                    await db.users.insert_one({
+                        "id": str(uuid.uuid4()),
+                        "name": "Super Admin",
+                        "email": sup_email,
+                        "password_hash": hash_password(sup_pass),
+                        "role": {"is_admin": True, "is_attendant": False},
+                        "user_type": "superuser",
+                        "created_at": datetime.now(timezone.utc)
+                    })
+                    print(f"Superadmin user {sup_email} created.")
+                else:
+                    # Enforce superadmin password (Self-healing)
+                    await db.users.update_one(
+                        {"email": sup_email},
+                        {"$set": {"password_hash": hash_password(sup_pass), "user_type": "superuser"}}
+                    )
+                    print(f"Superadmin user {sup_email} password/role updated.")
 
             await db.patients.create_index("id")
             await db.patients.create_index("phone")
