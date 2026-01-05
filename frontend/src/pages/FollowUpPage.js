@@ -13,7 +13,7 @@ import LeadCombobox from "../components/LeadCombobox";
 
 export default function FollowUpPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role?.is_admin;
+  const isAdmin = user?.role?.is_admin || user?.user_type === "admin" || user?.user_type === "superuser";
   
   const [followUps, setFollowUps] = useState([]);
   const [leads, setLeads] = useState([]);

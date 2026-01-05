@@ -29,19 +29,19 @@ export default function Layout({ children }) {
 
   // Define menus baseado no tipo de usuário
   const allMenuItems = [
-    { path: "/", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "consultor", "profissional"] },
-    { path: "/omnichannel", icon: MessageSquare, label: "Omnichannel", roles: ["admin", "consultor"] },
-    { path: "/calendar", icon: Calendar, label: "Calendário", roles: ["admin", "consultor", "profissional"] },
-    { path: "/leads", icon: Users, label: "Leads", roles: ["admin", "consultor"] },
-    { path: "/followup", icon: ClipboardList, label: "Follow-up", roles: ["admin", "consultor"] },
-    { path: "/patients", icon: UserPlus, label: "Pacientes", roles: ["admin", "consultor", "profissional"] },
-    { path: "/professionals", icon: Briefcase, label: "Profissionais", roles: ["admin", "consultor"] },
-    { path: "/services", icon: Activity, label: "Serviços", roles: ["admin", "consultor"] },
-    { path: "/rooms", icon: DoorOpen, label: "Salas", roles: ["admin", "consultor"] },
-    { path: "/reports", icon: FileBarChart, label: "Relatórios", roles: ["admin"] },
-    { path: "/revenue", icon: DollarSign, label: "Faturamento", roles: ["admin"] },
-    { path: "/users", icon: Users, label: "Usuários", roles: ["admin"] },
-    { path: "/settings", icon: Settings, label: "Configurações", roles: ["admin"] },
+    { path: "/", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "consultor", "profissional", "superuser", "profissional_admin"] },
+    { path: "/omnichannel", icon: MessageSquare, label: "Omnichannel", roles: ["admin", "consultor", "superuser"] },
+    { path: "/calendar", icon: Calendar, label: "Calendário", roles: ["admin", "consultor", "profissional", "superuser", "profissional_admin"] },
+    { path: "/leads", icon: Users, label: "Leads", roles: ["admin", "consultor", "superuser"] },
+    { path: "/followup", icon: ClipboardList, label: "Follow-up", roles: ["admin", "consultor", "superuser"] },
+    { path: "/patients", icon: UserPlus, label: "Pacientes", roles: ["admin", "consultor", "profissional", "superuser", "profissional_admin"] },
+    { path: "/professionals", icon: Briefcase, label: "Profissionais", roles: ["admin", "consultor", "superuser"] },
+    { path: "/services", icon: Activity, label: "Serviços", roles: ["admin", "consultor", "superuser"] },
+    { path: "/rooms", icon: DoorOpen, label: "Salas", roles: ["admin", "consultor", "superuser"] },
+    { path: "/reports", icon: FileBarChart, label: "Relatórios", roles: ["admin", "superuser"] },
+    { path: "/revenue", icon: DollarSign, label: "Faturamento", roles: ["admin", "superuser", "profissional_admin"] },
+    { path: "/users", icon: Users, label: "Usuários", roles: ["admin", "superuser"] },
+    { path: "/settings", icon: Settings, label: "Configurações", roles: ["admin", "superuser"] },
   ];
 
   // Filtra menus baseado no tipo de usuário
@@ -59,7 +59,7 @@ export default function Layout({ children }) {
               </h1>
               <p className="text-sm text-gray-500 mt-1 whitespace-nowrap overflow-hidden text-ellipsis">{user?.name}</p>
               <p className="text-xs text-gray-400 whitespace-nowrap">
-                {userType === "admin" ? "Super Usuário" : userType === "consultor" ? "Consultor" : "Profissional"}
+                {userType === "superuser" ? "Super Usuário" : userType === "admin" ? "Administrador" : userType === "consultor" ? "Consultor" : userType === "profissional_admin" ? "Profissional Admin" : "Profissional"}
               </p>
             </div>
             <button

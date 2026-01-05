@@ -62,7 +62,8 @@ export default function SettingsPage() {
   });
 
   useEffect(() => {
-    if (user?.role?.is_admin) {
+    const isAdmin = user?.role?.is_admin || user?.user_type === "admin" || user?.user_type === "superuser";
+    if (isAdmin) {
       loadUsers();
       loadClinicSettings();
     }

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import api from "../services/api";
+import OdontogramSelector from "./OdontogramSelector";
+import FaceHarmonizationSelector, { faceRegions } from "./FaceHarmonizationSelector";
 import { 
   FileText, Paperclip, Stethoscope, Activity, 
   X, Upload, Trash2, Plus, Minus, Edit, Save, AlertCircle,
@@ -67,8 +69,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     frequency: "",
     estimated_duration: "",
     professional_id: "",
-    status: "ongoing"
+    status: "ongoing",
+    selected_teeth: [],
+    face_regions: []
   });
+  const [treatmentView, setTreatmentView] = useState("teeth"); // teeth or face
   const [showDeleteTreatmentDialog, setShowDeleteTreatmentDialog] = useState(false);
   const [treatmentToDelete, setTreatmentToDelete] = useState(null);
   const [showDeleteAttachmentDialog, setShowDeleteAttachmentDialog] = useState(false);
@@ -218,8 +223,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         frequency: "",
         estimated_duration: "",
         professional_id: "",
-        status: "ongoing"
+        status: "ongoing",
+        selected_teeth: [],
+        face_regions: []
       });
+      setTreatmentView("teeth");
     }
     setShowTreatmentDialog(isOpen);
   };
@@ -300,8 +308,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       frequency: treatment.frequency || "",
       estimated_duration: treatment.estimated_duration || "",
       professional_id: treatment.professional_id || "",
-      status: treatment.status || "ongoing"
+      status: treatment.status || "ongoing",
+      selected_teeth: treatment.selected_teeth || [],
+      face_regions: treatment.face_regions || []
     });
+    setTreatmentView((treatment.face_regions && treatment.face_regions.length > 0) ? "face" : "teeth");
     setShowTreatmentDialog(true);
   };
 
@@ -613,10 +624,17 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
   const handleEditBudget = (budget) => {
     setEditingBudget(budget);
+    
+    // Convert string treatments to objects
+    const treatments = (budget.treatments || []).map(t => {
+      if (typeof t === 'string') return { name: t, value: 0, teeth: [] };
+      return { ...t, teeth: t.teeth || [] };
+    });
+
     setBudgetForm({
       description: budget.description || "",
       date: budget.date || new Date().toISOString().split('T')[0],
-      treatments: budget.treatments || [],
+      treatments: treatments,
       total_value: budget.total_value || "",
       professional_id: budget.professional_id || "",
       observations: budget.observations || ""
@@ -669,8 +687,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   };
 
   const handleAddTreatment = async () => {
-    if (!treatmentForm.name || !treatmentForm.start_date || !treatmentForm.description) {
-      toast.error("Preencha todos os campos obrigatórios: Nome, Data de Início e Descrição.");
+    if (!treatmentForm.name || !treatmentForm.start_date) {
+      toast.error("Preencha todos os campos obrigatórios: Nome e Data de Início.");
       return;
     }
 
@@ -690,8 +708,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         frequency: "",
         estimated_duration: "",
         professional_id: "",
-        status: "ongoing"
+        status: "ongoing",
+        selected_teeth: [],
+        face_regions: []
       });
+      setTreatmentView("teeth");
       setDetailedPatient(prev => ({
         ...prev,
         treatments: [...(prev?.treatments || []), newTreatment]
@@ -703,8 +724,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   };
 
   const handleUpdateTreatment = async () => {
-    if (!treatmentForm.name || !treatmentForm.start_date || !treatmentForm.description) {
-      toast.error("Preencha todos os campos obrigatórios: Nome, Data de Início e Descrição.");
+    if (!treatmentForm.name || !treatmentForm.start_date) {
+      toast.error("Preencha todos os campos obrigatórios: Nome e Data de Início.");
       return;
     }
 
@@ -898,7 +919,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   return (
     <>
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] w-[95vw] md:w-auto flex flex-col p-0 overflow-hidden rounded-2xl">
+      <DialogContent className="max-w-5xl h-[90vh] w-[95vw] md:w-full flex flex-col p-0 overflow-hidden rounded-2xl">
         <div className="flex-shrink-0 p-6 pb-0">
       <DialogHeader>
         <DialogTitle className="flex items-center justify-between">
@@ -938,7 +959,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         </div>
 
         {/* Tab Content */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-6 pt-4" style={{minHeight: 0}}>          {loading ? (
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-6 pt-4 w-full" style={{minHeight: 0}}>          {loading ? (
             <div className="text-center py-8 text-gray-500">Carregando...</div>
           ) : (
             <>
@@ -1032,7 +1053,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                                 <div className="mt-2">
                                   <p className="text-xs font-semibold text-gray-500">Tratamentos:</p>
                                   <ul className="list-disc list-inside text-sm text-gray-600">
-                                    {budget.treatments.map((t, i) => <li key={i}>{t}</li>)}
+                                    {budget.treatments.map((t, i) => (
+                                      <li key={i}>
+                                        {typeof t === 'string' ? t : `${t.name} - R$ ${Number(t.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+                                      </li>
+                                    ))}
                                   </ul>
                                 </div>
                               )}
@@ -1405,6 +1430,27 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                               </p>
                               {treatment.description && (
                                 <p className="text-sm text-gray-600 mt-2">{treatment.description}</p>
+                              )}
+
+                              {/* Selected Regions/Teeth Display */}
+                              {(treatment.selected_teeth?.length > 0 || treatment.face_regions?.length > 0) && (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {treatment.selected_teeth?.length > 0 && (
+                                    <div className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-100">
+                                      <span className="font-semibold">Dentes:</span> {treatment.selected_teeth.join(', ')}
+                                    </div>
+                                  )}
+                                  {treatment.face_regions?.length > 0 && (
+                                    <div className="text-xs bg-pink-50 text-pink-700 px-2 py-1 rounded border border-pink-100">
+                                      <span className="font-semibold">Harmonização:</span> {
+                                        treatment.face_regions.map(id => {
+                                          const region = faceRegions.find(r => r.id === id);
+                                          return region ? region.name : id;
+                                        }).join(', ')
+                                      }
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                           <div className="flex gap-2 mt-4 pt-3 border-t">
@@ -1784,58 +1830,126 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
     {/* Treatment Dialog - Moved outside main dialog */}
     <Dialog open={showTreatmentDialog} onOpenChange={handleTreatmentDialogOpenChange}>
-      <DialogContent className="max-w-xl w-[95vw] md:w-auto max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingTreatment ? "Editar Tratamento" : "Adicionar Tratamento"}</DialogTitle>
           <DialogDescription>Preencha os dados do tratamento</DialogDescription>
         </DialogHeader>
         <div className="p-6 space-y-4">
-          {/* Campos Obrigatórios */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="treatment-name">Nome do Tratamento <span className="text-red-500">*</span></Label>
-              <Input
-                id="treatment-name"
-                value={treatmentForm.name}
-                onChange={(e) => setTreatmentForm({ ...treatmentForm, name: e.target.value })}
-                placeholder="Ex: Clareamento Dental"
-              />
+          <div className="space-y-4">
+            {/* Campos Obrigatórios */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="treatment-name">Nome do Tratamento <span className="text-red-500">*</span></Label>
+                <Input
+                  id="treatment-name"
+                  value={treatmentForm.name}
+                  onChange={(e) => setTreatmentForm({ ...treatmentForm, name: e.target.value })}
+                  placeholder="Ex: Clareamento Dental"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="start-date">Data de Início <span className="text-red-500">*</span></Label>
+                <Input
+                  id="start-date"
+                  type="date"
+                  value={treatmentForm.start_date}
+                  onChange={handleDateChange}
+                />
+              </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="start-date">Data de Início <span className="text-red-500">*</span></Label>
-              <Input
-                id="start-date"
-                type="date"
-                value={treatmentForm.start_date}
-                onChange={handleDateChange}
-              />
+              <Label htmlFor="professional-select">Profissional Responsável</Label>
+              <select
+                id="professional-select"
+                className="input-field"
+                value={treatmentForm.professional_id}
+                onChange={(e) => setTreatmentForm({ ...treatmentForm, professional_id: e.target.value.trim() })}
+              >
+                <option value="">Selecionar profissional</option>
+                {allProfessionals.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Descrição</Label>
+              <textarea
+                id="description"
+                rows="4"
+                className="w-full p-2 border rounded"
+                value={treatmentForm.description}
+                onChange={(e) => setTreatmentForm({ ...treatmentForm, description: e.target.value })}
+                placeholder="Descreva o tratamento em detalhes"
+              ></textarea>
             </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="professional-select">Profissional Responsável</Label>
-            <select
-              id="professional-select"
-              className="input-field"
-              value={treatmentForm.professional_id}
-              onChange={(e) => setTreatmentForm({ ...treatmentForm, professional_id: e.target.value.trim() })}
-            >
-              <option value="">Selecionar profissional</option>
-              {allProfessionals.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="description">Descrição <span className="text-red-500">*</span></Label>
-            <textarea
-              id="description"
-              rows="4"
-              className="w-full p-2 border rounded"
-              value={treatmentForm.description}
-              onChange={(e) => setTreatmentForm({ ...treatmentForm, description: e.target.value })}
-              placeholder="Descreva o tratamento em detalhes"
-            ></textarea>
-          </div>
+
+          {/* Regiões do Tratamento */}
+          <div className="space-y-4 pt-4 border-t">
+              <h4 className="font-semibold text-md">Regiões do Tratamento</h4>
+              
+              <div className="flex justify-center gap-4 bg-gray-50 p-2 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setTreatmentView('teeth')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${treatmentView === 'teeth' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Odontograma
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTreatmentView('face')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${treatmentView === 'face' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Harmonização Facial
+                </button>
+              </div>
+
+              <div className="border rounded-lg p-4 bg-white min-h-[400px] flex items-center justify-center">
+                {treatmentView === 'teeth' ? (
+                  <div className="animate-in fade-in duration-300 w-full">
+                    <p className="text-sm text-gray-500 mb-4 text-center">Selecione os dentes envolvidos no tratamento</p>
+                    <OdontogramSelector
+                      selectedTeeth={treatmentForm.selected_teeth || []}
+                      onToggle={(toothNum) => {
+                        setTreatmentForm(prev => {
+                          const current = prev.selected_teeth || [];
+                          const exists = current.includes(toothNum);
+                          return {
+                            ...prev,
+                            selected_teeth: exists 
+                              ? current.filter(t => t !== toothNum)
+                              : [...current, toothNum]
+                          };
+                        });
+                      }}
+                      readOnly={false}
+                    />
+                  </div>
+                ) : (
+                  <div className="animate-in fade-in duration-300 w-full flex flex-col items-center">
+                    <p className="text-sm text-gray-500 mb-4 text-center">Selecione as regiões da face envolvidas</p>
+                    <FaceHarmonizationSelector
+                      selectedRegions={treatmentForm.face_regions || []}
+                      onToggle={(regionId) => {
+                        setTreatmentForm(prev => {
+                          const current = prev.face_regions || [];
+                          const exists = current.includes(regionId);
+                          return {
+                            ...prev,
+                            face_regions: exists 
+                              ? current.filter(r => r !== regionId)
+                              : [...current, regionId]
+                          };
+                        });
+                      }}
+                      readOnly={false}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
 
           {/* Campos Opcionais */}
           <div className="space-y-4 pt-4 border-t">
@@ -2041,7 +2155,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     </Dialog>
 
     <Dialog open={showBudgetDialog} onOpenChange={setShowBudgetDialog}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingBudget ? "Editar Orçamento" : "Novo Orçamento"}</DialogTitle>
           <DialogDescription>{editingBudget ? "Edite os dados do orçamento" : "Preencha os dados do orçamento"}</DialogDescription>
@@ -2075,32 +2189,178 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                 className="flex-1 input-field"
                 id="service-select"
                 onChange={(e) => {
-                  if (e.target.value) {
-                     setBudgetForm(prev => ({
-                        ...prev,
-                        treatments: [...prev.treatments, e.target.value]
-                     }));
+                  const serviceName = e.target.value;
+                  if (serviceName) {
+                     const service = services.find(s => s.name === serviceName);
+                     const price = service ? (service.price || 0) : 0;
+                     
+                     setBudgetForm(prev => {
+                        const newTreatments = [...prev.treatments, { name: serviceName, value: price, teeth: [] }];
+                        const newTotal = newTreatments.reduce((sum, t) => sum + Number(t.value || 0), 0);
+                        return {
+                           ...prev,
+                           treatments: newTreatments,
+                           total_value: newTotal
+                        };
+                     });
                      e.target.value = "";
                   }
                 }}
               >
                 <option value="">Selecione um serviço...</option>
                 {services.map((s) => (
-                  <option key={s.id} value={s.name}>{s.name}</option>
+                  <option key={s.id} value={s.name}>{s.name} - R$ {Number(s.price || 0).toFixed(2)}</option>
                 ))}
               </select>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="space-y-4">
                 {budgetForm.treatments.map((t, i) => (
-                    <div key={i} className="bg-blue-100 text-blue-800 px-2 py-1 rounded flex items-center gap-1">
-                        <span>{t}</span>
-                        <button
-                            type="button"
-                            onClick={() => setBudgetForm(prev => ({...prev, treatments: prev.treatments.filter((_, idx) => idx !== i)}))}
-                            className="hover:text-red-600"
-                        >
-                            <X className="w-3 h-3" />
-                        </button>
+                    <div key={i} className="bg-white p-3 rounded-lg border shadow-sm space-y-3">
+                        <div className="flex items-center gap-3">
+                            <span className="flex-1 font-medium text-gray-800">{t.name || t}</span>
+                            
+                            <div className="flex items-center gap-2">
+                               <span className="text-xs text-gray-500">R$</span>
+                               <Input 
+                                  type="number" 
+                                  className="w-24 h-8 text-right" 
+                                  value={t.value !== undefined ? t.value : 0}
+                                  onChange={(e) => {
+                                     const newVal = Number(e.target.value);
+                                     setBudgetForm(prev => {
+                                        const newTreatments = [...prev.treatments];
+                                        if (typeof newTreatments[i] === 'string') {
+                                           newTreatments[i] = { name: newTreatments[i], value: newVal, teeth: [] };
+                                        } else {
+                                           newTreatments[i] = { ...newTreatments[i], value: newVal };
+                                        }
+                                        const newTotal = newTreatments.reduce((sum, item) => sum + Number(item.value || 0), 0);
+                                        return { ...prev, treatments: newTreatments, total_value: newTotal };
+                                     });
+                                  }}
+                               />
+                            </div>
+                            
+                            <button
+                                type="button"
+                                onClick={() => setBudgetForm(prev => {
+                                   const newTreatments = prev.treatments.filter((_, idx) => idx !== i);
+                                   const newTotal = newTreatments.reduce((sum, item) => sum + Number(item.value || 0), 0);
+                                   return { ...prev, treatments: newTreatments, total_value: newTotal };
+                                })}
+                                className="text-gray-400 hover:text-red-600 p-1"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Odontogram Section */}
+                        <div className="border-t pt-2">
+                           <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                Dentes Selecionados: {t.teeth && t.teeth.length > 0 ? t.teeth.join(', ') : 'Nenhum'}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs h-6"
+                                onClick={() => {
+                                   // Toggle visibility of odontogram for this item? 
+                                   // Or just always show it? Let's use a collapsible details/summary approach or just show it if expanded.
+                                   // For simplicity, let's toggle a local state? 
+                                   // React state inside map is tricky without a child component.
+                                   // Let's use a simple state array for expanded items or just show it.
+                                   // Given the complexity, maybe just show it always or use a simple toggle class.
+                                   // Actually, let's use a details element for native toggle behavior without extra state!
+                                }}
+                              >
+                              </Button>
+                           </div>
+                           
+                           <details className="group">
+                              <summary className="flex items-center cursor-pointer text-sm text-blue-600 hover:text-blue-800 select-none mb-2">
+                                 <Stethoscope className="w-4 h-4 mr-1" />
+                                 { (t.teeth && t.teeth.length > 0) || (t.face_regions && t.face_regions.length > 0) ? 'Editar Regiões' : 'Selecionar Regiões' }
+                              </summary>
+                              
+                              <div className="mt-2 flex flex-col gap-4">
+                                {/* Toggle Type */}
+                                <div className="flex justify-center gap-4 bg-white p-2 rounded-lg shadow-sm border border-gray-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newTreatments = [...budgetForm.treatments];
+                                      newTreatments[i] = { ...newTreatments[i], _view: 'teeth' };
+                                      setBudgetForm(prev => ({ ...prev, treatments: newTreatments }));
+                                    }}
+                                    className={`px-3 py-1 rounded-md text-sm transition-colors ${(!t._view || t._view === 'teeth') ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}
+                                  >
+                                    Odontograma
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newTreatments = [...budgetForm.treatments];
+                                      newTreatments[i] = { ...newTreatments[i], _view: 'face' };
+                                      setBudgetForm(prev => ({ ...prev, treatments: newTreatments }));
+                                    }}
+                                    className={`px-3 py-1 rounded-md text-sm transition-colors ${(t._view === 'face') ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}
+                                  >
+                                    Harmonização Facial
+                                  </button>
+                                </div>
+
+                                {(!t._view || t._view === 'teeth') && (
+                                    <div className="animate-in fade-in duration-300">
+                                        <OdontogramSelector 
+                                            selectedTeeth={t.teeth || []} 
+                                            onToggle={(toothNum) => {
+                                                setBudgetForm(prev => {
+                                                    const newTreatments = [...prev.treatments];
+                                                    const currentTeeth = newTreatments[i].teeth || [];
+                                                    
+                                                    let newTeeth;
+                                                    if (currentTeeth.includes(toothNum)) {
+                                                        newTeeth = currentTeeth.filter(n => n !== toothNum);
+                                                    } else {
+                                                        newTeeth = [...currentTeeth, toothNum];
+                                                    }
+                                                    
+                                                    newTreatments[i] = { ...newTreatments[i], teeth: newTeeth };
+                                                    return { ...prev, treatments: newTreatments };
+                                                });
+                                            }} 
+                                        />
+                                    </div>
+                                )}
+
+                                {(t._view === 'face') && (
+                                    <div className="animate-in fade-in duration-300">
+                                        <FaceHarmonizationSelector 
+                                            selectedRegions={t.face_regions || []} 
+                                            onToggle={(regionId) => {
+                                                setBudgetForm(prev => {
+                                                    const newTreatments = [...prev.treatments];
+                                                    const currentRegions = newTreatments[i].face_regions || [];
+                                                    
+                                                    let newRegions;
+                                                    if (currentRegions.includes(regionId)) {
+                                                        newRegions = currentRegions.filter(n => n !== regionId);
+                                                    } else {
+                                                        newRegions = [...currentRegions, regionId];
+                                                    }
+                                                    
+                                                    newTreatments[i] = { ...newTreatments[i], face_regions: newRegions };
+                                                    return { ...prev, treatments: newTreatments };
+                                                });
+                                            }} 
+                                        />
+                                    </div>
+                                )}
+                              </div>
+                           </details>
+                        </div>
                     </div>
                 ))}
             </div>
@@ -2113,8 +2373,9 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                     type="number"
                     step="0.01"
                     required
+                    readOnly
+                    className="bg-gray-100 font-bold"
                     value={budgetForm.total_value}
-                    onChange={(e) => setBudgetForm({...budgetForm, total_value: e.target.value})}
                     placeholder="0.00"
                 />
              </div>
