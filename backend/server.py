@@ -431,21 +431,38 @@ async def lifespan(app: FastAPI):
     if db is not None:
         try:
             # Create admin user if it doesn't exist
-            admin_email = os.environ.get("ADMIN_EMAIL")
-            admin_password = os.environ.get("ADMIN_PASSWORD")
-            if admin_email and admin_password:
-                user = await db.users.find_one({"email": admin_email})
-                if not user:
-                    await db.users.insert_one({
-                        "id": str(uuid.uuid4()),
-                        "name": "Admin",
-                        "email": admin_email,
-                        "password_hash": hash_password(admin_password),
-                        "role": {"is_admin": True, "is_attendant": False},
-                        "user_type": "admin",
-                        "created_at": datetime.now(timezone.utc)
-                    })
-                    print(f"Admin user {admin_email} created.")
+            admin_email = os.environ.get("ADMIN_EMAIL", "admin@clinicflow.com")
+            admin_password = os.environ.get("ADMIN_PASSWORD", "admin@123")
+            
+            user = await db.users.find_one({"email": admin_email})
+            if not user:
+                await db.users.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "name": "Admin",
+                    "email": admin_email,
+                    "password_hash": hash_password(admin_password),
+                    "role": {"is_admin": True, "is_attendant": False},
+                    "user_type": "admin",
+                    "created_at": datetime.now(timezone.utc)
+                })
+                print(f"Admin user {admin_email} created.")
+
+            # Create superadmin user if it doesn't exist
+            super_email = "superadmin@clinicflow.com"
+            super_password = "qwe123"
+            
+            super_user = await db.users.find_one({"email": super_email})
+            if not super_user:
+                await db.users.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "name": "Super Admin",
+                    "email": super_email,
+                    "password_hash": hash_password(super_password),
+                    "role": {"is_admin": True, "is_attendant": False},
+                    "user_type": "superuser",
+                    "created_at": datetime.now(timezone.utc)
+                })
+                print(f"Superadmin user {super_email} created.")
 
             await db.patients.create_index("id")
             await db.patients.create_index("phone")
@@ -482,8 +499,8 @@ async def lifespan(app: FastAPI):
             pass
     else:
         # DEMO MODE: Create default admin
-        admin_email = os.environ.get("ADMIN_EMAIL", "admin@cliniflow.com")
-        admin_password = os.environ.get("ADMIN_PASSWORD", "Admin@2024")
+        admin_email = os.environ.get("ADMIN_EMAIL", "admin@clinicflow.com")
+        admin_password = os.environ.get("ADMIN_PASSWORD", "admin@123")
         if not any(u['email'] == admin_email for u in mem['users']):
             mem['users'].append({
                 "id": str(uuid.uuid4()),
@@ -495,6 +512,21 @@ async def lifespan(app: FastAPI):
                 "created_at": datetime.now(timezone.utc).isoformat()
             })
             print(f"DEMO MODE: Admin user {admin_email} created.")
+        
+        # DEMO MODE: Create default superadmin
+        super_email = "superadmin@clinicflow.com"
+        super_password = "qwe123"
+        if not any(u['email'] == super_email for u in mem['users']):
+            mem['users'].append({
+                "id": str(uuid.uuid4()),
+                "name": "Super Admin",
+                "email": super_email,
+                "password_hash": hash_password(super_password),
+                "role": {"is_admin": True, "is_attendant": False},
+                "user_type": "superuser",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            print(f"DEMO MODE: Superadmin user {super_email} created.")
     yield
     if scheduler:
         try:
