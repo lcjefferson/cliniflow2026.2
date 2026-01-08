@@ -2344,7 +2344,7 @@ async def update_patient(patient_id: str, data: PatientCreate, current_user: dic
 
 @api_router.delete("/patients/{patient_id}")
 async def delete_patient(patient_id: str, current_user: dict = Depends(get_current_user)):
-    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") in ["superuser", "consultor"]):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     result = await db.patients.delete_one({"id": patient_id})
