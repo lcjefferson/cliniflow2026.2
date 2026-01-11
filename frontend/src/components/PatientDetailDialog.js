@@ -6,10 +6,24 @@ import {
   FileText, Paperclip, Stethoscope, Activity, 
   X, Upload, Trash2, Plus, Minus, Edit, Save, AlertCircle,
   Download, CheckCircle, Clock, MessageSquare, DollarSign,
-  Folder, FolderOpen, Calculator
+  Folder, FolderOpen, Calculator, Check, ChevronsUpDown
 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { formatDate } from "../utils/dateUtils";
 
 import { Button } from "@/components/ui/button";
@@ -36,6 +50,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     status: "paid",
     appointment_id: ""
   });
+  const [openServiceCombobox, setOpenServiceCombobox] = useState(false);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef(null);
   const [scrollPosition, setScrollPosition] = useState(0);
@@ -158,11 +173,17 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
           const res = await api.get(`/medical-records`, { params: { patient_id: detailedPatient.id, sort_by: 'created_at', order: 'desc', limit: 100 } });
           setMedicalRecords(res.data || []);
         }
-        if (activeTab === 'treatments' && allProfessionals.length === 0) {
-          const profsRes = await api.get(`/professionals`);
-          const allClinicProfessionals = profsRes.data || [];
-          setProfessionals(allClinicProfessionals);
-          setAllProfessionals(allClinicProfessionals);
+        if (activeTab === 'treatments') {
+          if (allProfessionals.length === 0) {
+            const profsRes = await api.get(`/professionals`);
+            const allClinicProfessionals = profsRes.data || [];
+            setProfessionals(allClinicProfessionals);
+            setAllProfessionals(allClinicProfessionals);
+          }
+          if (services.length === 0) {
+            const sRes = await api.get('/services');
+            setServices(sRes.data || []);
+          }
         }
         if (activeTab === 'budgets') {
           const res = await api.get(`/patients/${detailedPatient.id}/budgets`);
@@ -309,6 +330,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       estimated_duration: treatment.estimated_duration || "",
       professional_id: treatment.professional_id || "",
       status: treatment.status || "ongoing",
+      service_id: treatment.service_id || "",
       selected_teeth: treatment.selected_teeth || [],
       face_regions: treatment.face_regions || []
     });
@@ -687,8 +709,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   };
 
   const handleAddTreatment = async () => {
-    if (!treatmentForm.name || !treatmentForm.start_date) {
-      toast.error("Preencha todos os campos obrigatórios: Nome e Data de Início.");
+    if (!treatmentForm.name || !treatmentForm.start_date || !treatmentForm.service_id) {
+      toast.error("Preencha todos os campos obrigatórios: Serviço, Nome e Data de Início.");
       return;
     }
 
@@ -709,6 +731,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         estimated_duration: "",
         professional_id: "",
         status: "ongoing",
+        service_id: "",
         selected_teeth: [],
         face_regions: []
       });
@@ -724,8 +747,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   };
 
   const handleUpdateTreatment = async () => {
-    if (!treatmentForm.name || !treatmentForm.start_date) {
-      toast.error("Preencha todos os campos obrigatórios: Nome e Data de Início.");
+    if (!treatmentForm.name || !treatmentForm.start_date || !treatmentForm.service_id) {
+      toast.error("Preencha todos os campos obrigatórios: Serviço, Nome e Data de Início.");
       return;
     }
 
@@ -1392,7 +1415,20 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                     <h3 className="text-lg font-semibold">Tratamentos Realizados</h3>
                     <Button 
                       onClick={() => {
-                        setEditingTreatment(null); // Garante que está em modo de adição
+                        setEditingTreatment(null);
+                        setTreatmentForm({
+                          name: "",
+                          start_date: new Date().toISOString().split('T')[0],
+                          description: "",
+                          prescribed_medications: "",
+                          frequency: "",
+                          estimated_duration: "",
+                          professional_id: "",
+                          status: "ongoing",
+                          service_id: "",
+                          selected_teeth: [],
+                          face_regions: []
+                        });
                         setShowTreatmentDialog(true);
                       }}
                       className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition-all duration-300 shadow-md hover:shadow-lg"
@@ -1838,24 +1874,78 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         <div className="p-6 space-y-4">
           <div className="space-y-4">
             {/* Campos Obrigatórios */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="treatment-name">Nome do Tratamento <span className="text-red-500">*</span></Label>
-                <Input
-                  id="treatment-name"
-                  value={treatmentForm.name}
-                  onChange={(e) => setTreatmentForm({ ...treatmentForm, name: e.target.value })}
-                  placeholder="Ex: Clareamento Dental"
-                />
+                <Label htmlFor="service-select">Serviço Realizado <span className="text-red-500">*</span></Label>
+                <Popover open={openServiceCombobox} onOpenChange={setOpenServiceCombobox}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openServiceCombobox}
+                      className="w-full justify-between font-normal"
+                    >
+                      {treatmentForm.service_id
+                        ? services.find((s) => s.id === treatmentForm.service_id)?.name
+                        : "Selecionar serviço..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-white z-[9999]" align="start">
+                    <Command className="bg-white">
+                      <CommandInput placeholder="Buscar serviço..." />
+                      <CommandList className="max-h-[300px] overflow-y-auto">
+                        <CommandEmpty>Nenhum serviço encontrado.</CommandEmpty>
+                        <CommandGroup>
+                          {services.map((service) => (
+                            <CommandItem
+                              key={service.id}
+                              value={service.name}
+                              onSelect={() => {
+                                setTreatmentForm(prev => ({
+                                  ...prev,
+                                  service_id: service.id,
+                                  name: service.name
+                                }));
+                                setOpenServiceCombobox(false);
+                              }}
+                              className="cursor-pointer hover:bg-gray-100"
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  treatmentForm.service_id === service.id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {service.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="start-date">Data de Início <span className="text-red-500">*</span></Label>
-                <Input
-                  id="start-date"
-                  type="date"
-                  value={treatmentForm.start_date}
-                  onChange={handleDateChange}
-                />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="treatment-name">Nome do Tratamento <span className="text-red-500">*</span></Label>
+                  <Input
+                    id="treatment-name"
+                    value={treatmentForm.name}
+                    onChange={(e) => setTreatmentForm({ ...treatmentForm, name: e.target.value })}
+                    placeholder="Ex: Clareamento Dental"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="start-date">Data de Início <span className="text-red-500">*</span></Label>
+                  <Input
+                    id="start-date"
+                    type="date"
+                    value={treatmentForm.start_date}
+                    onChange={handleDateChange}
+                  />
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

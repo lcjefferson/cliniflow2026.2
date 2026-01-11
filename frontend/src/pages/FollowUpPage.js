@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
-import { Plus, Edit, Trash2, Settings, ChevronLeft, ChevronRight, CheckCircle } from "lucide-react";
+import { Plus, Edit, Trash2, Settings, ChevronLeft, ChevronRight, CheckCircle, Users, History, MessageSquare, BarChart } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "../contexts/AuthContext";
 
 import LeadCombobox from "../components/LeadCombobox";
+import SearchableSelect from "../components/SearchableSelect";
 
 export default function FollowUpPage() {
   const { user } = useAuth();
@@ -49,14 +50,38 @@ export default function FollowUpPage() {
     active: true
   });
 
+  // Campaign State
+  const [showCampaignDialog, setShowCampaignDialog] = useState(false);
+  const [services, setServices] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
+  const [activeTab, setActiveTab] = useState("list"); // 'list' or 'history'
+  const [campaignFormData, setCampaignFormData] = useState({
+    title: "",
+    target_type: "patients",
+    service_id: "",
+    lead_status: "",
+    message: ""
+  });
+
   useEffect(() => {
     loadFollowUps();
     loadLeads();
     loadPatients();
+    loadServices();
+    loadCampaigns();
     if (isAdmin) {
       loadRules();
     }
   }, [isAdmin]);
+
+  const loadCampaigns = async () => {
+    try {
+      const response = await api.get("/campaigns");
+      setCampaigns(response.data);
+    } catch (error) {
+      console.error("Erro ao carregar histórico de campanhas");
+    }
+  };
 
   const loadFollowUps = async () => {
     try {
@@ -82,6 +107,39 @@ export default function FollowUpPage() {
       setPatients(response.data);
     } catch (error) {
       console.error("Erro ao carregar pacientes");
+    }
+  };
+
+  const loadServices = async () => {
+    try {
+      const response = await api.get("/services");
+      setServices(response.data);
+    } catch (error) {
+      console.error("Erro ao carregar serviços");
+    }
+  };
+
+  const handleCampaignSubmit = async (e) => {
+    e.preventDefault();
+    if (!campaignFormData.title) {
+        toast.error("Por favor, dê um título para a campanha");
+        return;
+    }
+    try {
+      const response = await api.post("/campaigns/send", campaignFormData);
+      toast.success(response.data.message);
+      setShowCampaignDialog(false);
+      setCampaignFormData({
+        title: "",
+        target_type: "patients",
+        service_id: "",
+        lead_status: "",
+        message: ""
+      });
+      loadFollowUps(); // Refresh to see new followups
+      loadCampaigns(); // Refresh history
+    } catch (error) {
+      toast.error("Erro ao enviar campanha");
     }
   };
 
@@ -254,9 +312,24 @@ export default function FollowUpPage() {
     </span>;
   };
 
-  // Paginação
-  const currentFollowUps = followUps.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-  const totalPages = Math.ceil(followUps.length / itemsPerPage);
+  // Paginação e Filtros
+  const getFilteredFollowUps = () => {
+    if (activeTab === 'list') {
+      return followUps.filter(f => f.status !== 'completed');
+    }
+    if (activeTab === 'completed') {
+      return followUps.filter(f => f.status === 'completed');
+    }
+    return [];
+  };
+
+  const filteredList = getFilteredFollowUps();
+  const currentFollowUps = filteredList.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const totalPages = Math.ceil(filteredList.length / itemsPerPage);
+
+  // Pagination for Campaigns
+  const currentCampaigns = campaigns.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const totalCampaignPages = Math.ceil(campaigns.length / itemsPerPage);
 
   return (
     <Layout>
@@ -270,6 +343,10 @@ export default function FollowUpPage() {
                 Gerenciar Regras
               </Button>
             )}
+            <Button onClick={() => setShowCampaignDialog(true)} variant="outline" className="btn-secondary border-green-200 text-green-700 bg-green-50 hover:bg-green-100">
+              <Users className="w-5 h-5 mr-2" />
+              Campanha em Massa
+            </Button>
             <Button onClick={() => setShowDialog(true)} className="btn-primary">
               <Plus className="w-5 h-5 mr-2" />
               Novo Follow-up
@@ -277,8 +354,30 @@ export default function FollowUpPage() {
           </div>
         </div>
 
-        {/* Regras Ativas (apenas para admin) */}
-        {isAdmin && rules.length > 0 && (
+        {/* Tabs */}
+        <div className="flex gap-4 mb-6 border-b border-gray-200">
+          <button
+            className={`pb-2 px-4 font-medium ${activeTab === 'list' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500 hover:text-gray-700'}`}
+            onClick={() => { setActiveTab('list'); setCurrentPage(1); }}
+          >
+            Pendentes
+          </button>
+          <button
+            className={`pb-2 px-4 font-medium ${activeTab === 'completed' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500 hover:text-gray-700'}`}
+            onClick={() => { setActiveTab('completed'); setCurrentPage(1); }}
+          >
+            Concluídos
+          </button>
+          <button
+            className={`pb-2 px-4 font-medium ${activeTab === 'history' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500 hover:text-gray-700'}`}
+            onClick={() => { setActiveTab('history'); setCurrentPage(1); }}
+          >
+            Histórico de Campanhas
+          </button>
+        </div>
+
+        {/* Regras Ativas (apenas para admin e aba lista) */}
+        {isAdmin && rules.length > 0 && activeTab === 'list' && (
           <div className="bg-blue-50 rounded-2xl p-6 mb-8 border border-blue-200">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Regras Automáticas Ativas</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -319,7 +418,8 @@ export default function FollowUpPage() {
           </div>
         )}
 
-        {/* Lista de Follow-ups */}
+        {/* Lista de Follow-ups (Pendentes e Concluídos) */}
+        {(activeTab === 'list' || activeTab === 'completed') && (
         <div className="grid gap-6">
           {currentFollowUps.map((followUp) => (
             <div key={followUp.id} className="bg-white rounded-2xl p-6 shadow-lg">
@@ -358,12 +458,17 @@ export default function FollowUpPage() {
                   <button
                     onClick={() => handleEdit(followUp)}
                     className="text-blue-500 hover:text-blue-700"
+                    title="Editar"
                   >
                     <Edit className="w-5 h-5" />
                   </button>
                   <button
-                    onClick={() => handleDelete(followUp)}
+                    onClick={() => {
+                      setFollowUpToDelete(followUp);
+                      setDeleteDialog(true);
+                    }}
                     className="text-red-500 hover:text-red-700"
+                    title="Excluir"
                   >
                     <Trash2 className="w-5 h-5" />
                   </button>
@@ -371,36 +476,113 @@ export default function FollowUpPage() {
               </div>
             </div>
           ))}
+          
+          {filteredList.length === 0 && (
+            <div className="text-center py-10 text-gray-500">
+              {activeTab === 'list' ? 'Nenhum follow-up pendente.' : 'Nenhum follow-up concluído.'}
+            </div>
+          )}
 
-          {followUps.length === 0 && (
-            <div className="text-center py-12 text-gray-500 bg-white rounded-2xl shadow-lg">
-              <p>Nenhum follow-up agendado</p>
+          {/* Paginação */}
+          {totalPages > 1 && (
+            <div className="flex justify-center items-center gap-4 mt-6">
+              <Button
+                variant="outline"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <span className="text-sm text-gray-600">
+                Página {currentPage} de {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
             </div>
           )}
         </div>
+        )}
 
-        {/* Paginação */}
-        {totalPages > 1 && (
-          <div className="flex justify-center items-center gap-4 mt-8">
-            <Button
-              onClick={() => setCurrentPage(currentPage - 1)}
-              disabled={currentPage === 1}
-              variant="outline"
-              className="btn-secondary"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </Button>
-            <span className="text-gray-700">
-              Página {currentPage} de {totalPages}
-            </span>
-            <Button
-              onClick={() => setCurrentPage(currentPage + 1)}
-              disabled={currentPage === totalPages}
-              variant="outline"
-              className="btn-secondary"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </Button>
+        {/* Histórico de Campanhas */}
+        {activeTab === 'history' && (
+          <div className="space-y-6">
+            {currentCampaigns.map(campaign => (
+              <div key={campaign.id} className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">{campaign.title || "Campanha sem título"}</h3>
+                    <p className="text-sm text-gray-500">
+                      Enviada em {new Date(campaign.created_at).toLocaleString('pt-BR')}
+                    </p>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                    campaign.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                  }`}>
+                    {campaign.status === 'completed' ? 'Concluída' : 'Processando'}
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <span className="text-gray-500 text-sm block">Público Alvo</span>
+                    <span className="font-medium">
+                      {campaign.target_type === 'patients' ? 'Pacientes' : 'Leads'} 
+                      {campaign.service_id && ` (Por Tratamento)`}
+                    </span>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <span className="text-gray-500 text-sm block">Total de Destinatários</span>
+                    <span className="font-medium">{campaign.total_targets}</span>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <span className="text-gray-500 text-sm block">Entrega</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-600 font-medium">{campaign.stats?.delivered || 0} enviadas</span>
+                      <span className="text-gray-300">|</span>
+                      <span className="text-red-500 font-medium">{campaign.stats?.failed || 0} falhas</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-500 mb-1">Mensagem Enviada:</p>
+                  <p className="text-gray-700 whitespace-pre-wrap">{campaign.message}</p>
+                </div>
+              </div>
+            ))}
+            {campaigns.length === 0 && (
+              <div className="text-center py-10 text-gray-500">
+                Nenhuma campanha enviada ainda.
+              </div>
+            )}
+
+            {/* Paginação de Campanhas */}
+            {totalCampaignPages > 1 && (
+              <div className="flex justify-center items-center gap-4 mt-6">
+                <Button
+                  variant="outline"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="text-sm text-gray-600">
+                  Página {currentPage} de {totalCampaignPages}
+                </span>
+                <Button
+                  variant="outline"
+                  onClick={() => setCurrentPage(p => Math.min(totalCampaignPages, p + 1))}
+                  disabled={currentPage === totalCampaignPages}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
@@ -553,6 +735,108 @@ export default function FollowUpPage() {
               <Button type="submit" className="w-full btn-primary">
                 {editingRuleId ? "Salvar Alterações" : "Criar Regra"}
               </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Campaign Dialog */}
+        <Dialog open={showCampaignDialog} onOpenChange={setShowCampaignDialog}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>Nova Campanha em Massa</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleCampaignSubmit} className="space-y-4 mt-4">
+              <div>
+                <Label>Título da Campanha</Label>
+                <Input
+                  value={campaignFormData.title}
+                  onChange={(e) => setCampaignFormData({...campaignFormData, title: e.target.value})}
+                  placeholder="Ex: Promoção Clareamento Janeiro"
+                  required
+                />
+              </div>
+
+              <div>
+                <Label>Público Alvo</Label>
+                <select
+                  className="input-field"
+                  value={campaignFormData.target_type}
+                  onChange={(e) => setCampaignFormData({...campaignFormData, target_type: e.target.value})}
+                >
+                  <option value="patients">Pacientes</option>
+                  <option value="leads">Leads</option>
+                </select>
+              </div>
+
+              {campaignFormData.target_type === "patients" && (
+                <div>
+                  <Label>Filtrar por Tratamento (Opcional)</Label>
+                  <SearchableSelect
+                    options={[
+                      { id: "", name: "Todos os pacientes com telefone" },
+                      ...services
+                    ]}
+                    value={campaignFormData.service_id}
+                    onChange={(value) => setCampaignFormData({...campaignFormData, service_id: value})}
+                    placeholder="Selecione um tratamento..."
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Se selecionado, enviará apenas para pacientes que realizaram este tratamento.
+                  </p>
+                </div>
+              )}
+
+              {campaignFormData.target_type === "leads" && (
+                <div>
+                  <Label>Status do Lead (Opcional)</Label>
+                  <select
+                    className="input-field"
+                    value={campaignFormData.lead_status}
+                    onChange={(e) => setCampaignFormData({...campaignFormData, lead_status: e.target.value})}
+                  >
+                    <option value="">Todos os leads com telefone</option>
+                    <option value="new">Novo</option>
+                    <option value="contacted">Contatado</option>
+                    <option value="scheduled">Agendado</option>
+                    <option value="qualified">Qualificado</option>
+                    <option value="converted">Convertido</option>
+                    <option value="lost">Perdido</option>
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <Label>Mensagem</Label>
+                <textarea
+                  className="input-field min-h-[120px]"
+                  value={campaignFormData.message}
+                  onChange={(e) => setCampaignFormData({...campaignFormData, message: e.target.value})}
+                  placeholder="Olá {name}, temos uma novidade especial para você..."
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Variável disponível: {"{name}"}
+                </p>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-md text-sm text-yellow-800">
+                <p className="font-semibold flex items-center gap-2">
+                  <span className="text-lg">⚠️</span> Atenção
+                </p>
+                <p>
+                  Esta ação enviará mensagens via WhatsApp para todos os contatos do filtro selecionado.
+                  Certifique-se de que a mensagem está correta antes de enviar.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <Button type="button" variant="outline" onClick={() => setShowCampaignDialog(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" className="bg-green-600 hover:bg-green-700 text-white">
+                  Enviar Campanha
+                </Button>
+              </div>
             </form>
           </DialogContent>
         </Dialog>

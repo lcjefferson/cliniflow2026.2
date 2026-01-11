@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, File, UploadFile, Form
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, File, UploadFile, Form, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import io
@@ -732,6 +732,7 @@ class Treatment(BaseModel):
     estimated_duration: Optional[str] = None
     professional_id: Optional[str] = None
     status: str = "ongoing"  # ongoing, completed
+    service_id: Optional[str] = None
     selected_teeth: Optional[List[str]] = None
     face_regions: Optional[List[str]] = None
 
@@ -744,6 +745,7 @@ class TreatmentUpdate(BaseModel):
     estimated_duration: Optional[str] = None
     professional_id: Optional[str] = None
     status: Optional[str] = None
+    service_id: Optional[str] = None
     selected_teeth: Optional[List[str]] = None
     face_regions: Optional[List[str]] = None
 
@@ -4100,6 +4102,173 @@ async def play_audio_proxy(message_id: str):
     except Exception as e:
         logging.error(f"Play Audio Proxy Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- Campaign Routes ---
+
+class CampaignRequest(BaseModel):
+    title: str
+    target_type: str  # 'patients' or 'leads'
+    service_id: Optional[str] = None
+    lead_status: Optional[str] = None
+    message: str
+    channel: str = "whatsapp"
+
+async def process_campaign_task(campaign_id: str, targets: List[dict], target_type: str, message_template: str, user: dict):
+    if db is None:
+        return
+        
+    for target in targets:
+        # Personalize message
+        msg = message_template.replace("{name}", target.get("name", "Cliente"))
+        
+        # Send Message
+        phone = target.get("phone")
+        sent = False
+        if phone:
+            try:
+                sent = await send_whatsapp_message(phone, msg)
+            except Exception as e:
+                logging.error(f"Error sending campaign message to {phone}: {e}")
+                sent = False
+            
+        # Create FollowUp
+        followup_id = str(uuid.uuid4())
+        followup = {
+            "id": followup_id,
+            "campaign_id": campaign_id,
+            "lead_id": target.get("id") if target_type == "leads" else None,
+            "patient_id": target.get("id") if target_type == "patients" else None,
+            "assigned_to": user.get("id"),
+            "status": "completed" if sent else "failed",
+            "scheduled_date": datetime.now().strftime("%Y-%m-%d"),
+            "notes": f"Campanha disparada: {msg}",
+            "contact_type": "whatsapp",
+            "contact_reason": "campaign",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        try:
+            await db.followups.insert_one(followup)
+        except Exception as e:
+            logging.error(f"Error creating campaign followup: {e}")
+    
+    # Update Campaign Status to Completed
+    await db.campaigns.update_one(
+        {"id": campaign_id},
+        {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+@api_router.get("/services", response_model=List[dict])
+async def get_services():
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    services = await db.services.find({}, {"_id": 0}).to_list(1000)
+    return services
+
+@api_router.get("/patients/by-treatment", response_model=List[dict])
+async def get_patients_by_treatment(service_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    # Find appointments for this service
+    cursor = db.appointments.find({"service_id": service_id}, {"patient_id": 1})
+    patient_ids = set()
+    async for doc in cursor:
+        patient_ids.add(doc["patient_id"])
+    
+    query = {
+        "$or": [
+            {"id": {"$in": list(patient_ids)}},
+            {"treatments": {"$elemMatch": {"service_id": service_id}}}
+        ]
+    }
+    patients = await db.patients.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1, "email": 1}).to_list(1000)
+    return patients
+
+@api_router.get("/campaigns", response_model=List[dict])
+async def get_campaigns(current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    # Fetch campaigns sorted by date desc
+    campaigns = await db.campaigns.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    # Enrich with delivery stats from followups
+    results = []
+    for camp in campaigns:
+        camp_id = camp.get("id")
+        
+        # Count stats from followups
+        total_sent = await db.followups.count_documents({"campaign_id": camp_id, "status": "completed"})
+        total_failed = await db.followups.count_documents({"campaign_id": camp_id, "status": "failed"})
+        
+        camp["stats"] = {
+            "delivered": total_sent,
+            "failed": total_failed,
+            "total": camp.get("total_targets", 0)
+        }
+        results.append(camp)
+        
+    return results
+
+@api_router.post("/campaigns/send")
+async def send_campaign(request: CampaignRequest, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+        
+    targets = []
+    if request.target_type == "patients":
+        if request.service_id:
+             # Find appointments for this service
+             cursor = db.appointments.find({"service_id": request.service_id}, {"patient_id": 1})
+             patient_ids = set()
+             async for doc in cursor:
+                 patient_ids.add(doc["patient_id"])
+             
+             # Match patients who have appointments OR have the treatment registered in their profile
+             query = {
+                 "$or": [
+                     {"id": {"$in": list(patient_ids)}},
+                     {"treatments": {"$elemMatch": {"service_id": request.service_id}}}
+                 ]
+             }
+        else:
+             query = {}
+        
+        # Only get patients with phone numbers
+        query["phone"] = {"$exists": True, "$ne": ""}
+        targets = await db.patients.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1}).to_list(1000)
+        
+    elif request.target_type == "leads":
+        query = {"phone": {"$exists": True, "$ne": ""}}
+        if request.lead_status:
+            query["status"] = request.lead_status
+        targets = await db.leads.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1}).to_list(1000)
+    
+    if not targets:
+        return {"message": "Nenhum destinatário encontrado para esta campanha", "count": 0}
+
+    # Create Campaign Record
+    campaign_id = str(uuid.uuid4())
+    campaign = {
+        "id": campaign_id,
+        "title": request.title,
+        "message": request.message,
+        "target_type": request.target_type,
+        "service_id": request.service_id,
+        "lead_status": request.lead_status,
+        "created_by": current_user.get("id"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "processing",
+        "total_targets": len(targets)
+    }
+    
+    await db.campaigns.insert_one(campaign)
+
+    # Add background task to process
+    background_tasks.add_task(process_campaign_task, campaign_id, targets, request.target_type, request.message, current_user)
+    
+    return {"message": "Campanha iniciada com sucesso", "count": len(targets), "campaign_id": campaign_id}
 
 @api_router.get("/messages/{message_id}/view-image")
 async def view_image_proxy(message_id: str):
