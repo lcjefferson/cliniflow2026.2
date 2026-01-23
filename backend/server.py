@@ -30,6 +30,7 @@ except Exception:
     AsyncScheduler = None
     CronTrigger = None
 from contextlib import asynccontextmanager
+import bcrypt
 try:
     from emergentintegrations.llm.chat import LlmChat, UserMessage
 except Exception:
@@ -1125,7 +1126,14 @@ async def get_patient_debts(patient_id: str, current_user: dict = Depends(get_cu
 
 # Helper functions
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    try:
+        # bcrypt limit 72 bytes
+        if len(password.encode('utf-8')) > 72:
+            password = password[:72]
+        return pwd_context.hash(password)
+    except Exception as e:
+        print(f"Passlib hash failed (using fallback): {e}")
+        return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
@@ -1133,6 +1141,12 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
             return False
         return pwd_context.verify(plain_password, hashed_password)
     except Exception:
+        # Fallback for bcrypt 4.0+ incompatibility with passlib 1.7.4
+        if hashed_password and (hashed_password.startswith('$2b$') or hashed_password.startswith('$2a$')):
+             try:
+                 return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+             except Exception:
+                 return False
         return False
 
 def create_access_token(data: dict) -> str:
