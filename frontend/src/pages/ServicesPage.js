@@ -17,7 +17,7 @@ export default function ServicesPage() {
   const [itemsPerPage] = useState(10);
   const [formData, setFormData] = useState({ name: "", description: "" });
   const { user } = useAuth();
-  const isAdmin = (user?.role?.is_admin) || (user?.user_type === "admin");
+  const isAdmin = (user?.role?.is_admin) || (user?.user_type === "admin") || (user?.user_type === "superuser");
   const canManage = isAdmin || (user?.user_type === "consultor");
 
   useEffect(() => {

@@ -1,13 +1,29 @@
 import React, { useState, useEffect, useRef } from "react";
 import api from "../services/api";
+import OdontogramSelector from "./OdontogramSelector";
+import FaceHarmonizationSelector, { faceRegions } from "./FaceHarmonizationSelector";
 import { 
   FileText, Paperclip, Stethoscope, Activity, 
   X, Upload, Trash2, Plus, Minus, Edit, Save, AlertCircle,
   Download, CheckCircle, Clock, MessageSquare, DollarSign,
-  Folder, FolderOpen
+  Folder, FolderOpen, Calculator, Check, ChevronsUpDown
 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { formatDate } from "../utils/dateUtils";
 
 import { Button } from "@/components/ui/button";
@@ -34,6 +50,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     status: "paid",
     appointment_id: ""
   });
+  const [openServiceCombobox, setOpenServiceCombobox] = useState(false);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef(null);
   const [scrollPosition, setScrollPosition] = useState(0);
@@ -67,8 +84,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     frequency: "",
     estimated_duration: "",
     professional_id: "",
-    status: "ongoing"
+    status: "ongoing",
+    selected_teeth: [],
+    face_regions: []
   });
+  const [treatmentView, setTreatmentView] = useState("teeth"); // teeth or face
   const [showDeleteTreatmentDialog, setShowDeleteTreatmentDialog] = useState(false);
   const [treatmentToDelete, setTreatmentToDelete] = useState(null);
   const [showDeleteAttachmentDialog, setShowDeleteAttachmentDialog] = useState(false);
@@ -109,6 +129,21 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     template_used: ""
   });
 
+  // Budget state
+  const [budgets, setBudgets] = useState([]);
+  const [showBudgetDialog, setShowBudgetDialog] = useState(false);
+  const [budgetForm, setBudgetForm] = useState({
+    description: "",
+    date: new Date().toISOString().split('T')[0],
+    treatments: [],
+    total_value: "",
+    professional_id: "",
+    observations: ""
+  });
+  const [editingBudget, setEditingBudget] = useState(null);
+  const [showDeleteBudgetDialog, setShowDeleteBudgetDialog] = useState(false);
+  const [budgetToDelete, setBudgetToDelete] = useState(null);
+
   useEffect(() => {
     if (isOpen && patient) {
       setDetailedPatient(patient);
@@ -138,11 +173,31 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
           const res = await api.get(`/medical-records`, { params: { patient_id: detailedPatient.id, sort_by: 'created_at', order: 'desc', limit: 100 } });
           setMedicalRecords(res.data || []);
         }
-        if (activeTab === 'treatments' && allProfessionals.length === 0) {
-          const profsRes = await api.get(`/professionals`);
-          const allClinicProfessionals = profsRes.data || [];
-          setProfessionals(allClinicProfessionals);
-          setAllProfessionals(allClinicProfessionals);
+        if (activeTab === 'treatments') {
+          if (allProfessionals.length === 0) {
+            const profsRes = await api.get(`/professionals`);
+            const allClinicProfessionals = profsRes.data || [];
+            setProfessionals(allClinicProfessionals);
+            setAllProfessionals(allClinicProfessionals);
+          }
+          if (services.length === 0) {
+            const sRes = await api.get('/services');
+            setServices(sRes.data || []);
+          }
+        }
+        if (activeTab === 'budgets') {
+          const res = await api.get(`/patients/${detailedPatient.id}/budgets`);
+          setBudgets(res.data || []);
+          
+          if (services.length === 0) {
+            const sRes = await api.get('/services');
+            setServices(sRes.data || []);
+          }
+          if (allProfessionals.length === 0) {
+            const profsRes = await api.get(`/professionals`);
+            setAllProfessionals(profsRes.data || []);
+            setProfessionals(profsRes.data || []);
+          }
         }
       } catch (e) {}
     };
@@ -189,8 +244,11 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         frequency: "",
         estimated_duration: "",
         professional_id: "",
-        status: "ongoing"
+        status: "ongoing",
+        selected_teeth: [],
+        face_regions: []
       });
+      setTreatmentView("teeth");
     }
     setShowTreatmentDialog(isOpen);
   };
@@ -271,8 +329,12 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       frequency: treatment.frequency || "",
       estimated_duration: treatment.estimated_duration || "",
       professional_id: treatment.professional_id || "",
-      status: treatment.status || "ongoing"
+      status: treatment.status || "ongoing",
+      service_id: treatment.service_id || "",
+      selected_teeth: treatment.selected_teeth || [],
+      face_regions: treatment.face_regions || []
     });
+    setTreatmentView((treatment.face_regions && treatment.face_regions.length > 0) ? "face" : "teeth");
     setShowTreatmentDialog(true);
   };
 
@@ -547,6 +609,95 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     }
   };
 
+  const handleCreateBudget = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingBudget) {
+        await api.put(`/budgets/${editingBudget.id}`, {
+          ...budgetForm,
+          patient_id: detailedPatient.id
+        });
+        toast.success("Orçamento atualizado com sucesso!");
+      } else {
+        await api.post('/budgets', {
+          ...budgetForm,
+          patient_id: detailedPatient.id
+        });
+        toast.success("Orçamento criado com sucesso!");
+      }
+      
+      setShowBudgetDialog(false);
+      setEditingBudget(null);
+      setBudgetForm({
+        description: "",
+        date: new Date().toISOString().split('T')[0],
+        treatments: [],
+        total_value: "",
+        professional_id: "",
+        observations: ""
+      });
+      // Refresh budgets
+      const res = await api.get(`/patients/${detailedPatient.id}/budgets`);
+      setBudgets(res.data || []);
+    } catch (error) {
+      toast.error(editingBudget ? "Erro ao atualizar orçamento" : "Erro ao criar orçamento");
+    }
+  };
+
+  const handleEditBudget = (budget) => {
+    setEditingBudget(budget);
+    
+    // Convert string treatments to objects
+    const treatments = (budget.treatments || []).map(t => {
+      if (typeof t === 'string') return { name: t, value: 0, teeth: [] };
+      return { ...t, teeth: t.teeth || [] };
+    });
+
+    setBudgetForm({
+      description: budget.description || "",
+      date: budget.date || new Date().toISOString().split('T')[0],
+      treatments: treatments,
+      total_value: budget.total_value || "",
+      professional_id: budget.professional_id || "",
+      observations: budget.observations || ""
+    });
+    setShowBudgetDialog(true);
+  };
+
+  const handleDeleteBudget = (budget) => {
+    setBudgetToDelete(budget);
+    setShowDeleteBudgetDialog(true);
+  };
+
+  const confirmDeleteBudget = async () => {
+    if (!budgetToDelete) return;
+    try {
+      await api.delete(`/budgets/${budgetToDelete.id}`);
+      toast.success("Orçamento excluído com sucesso!");
+      setShowDeleteBudgetDialog(false);
+      setBudgetToDelete(null);
+      // Refresh budgets
+      const res = await api.get(`/patients/${detailedPatient.id}/budgets`);
+      setBudgets(res.data || []);
+    } catch (error) {
+      toast.error("Erro ao excluir orçamento");
+    }
+  };
+
+  const handleDownloadBudgetPDF = async (budget) => {
+    try {
+      const response = await api.get(`/budgets/${budget.id}/pdf`, { responseType: 'blob' });
+      const blobUrl = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `Orcamento_${detailedPatient.name}_${budget.date}.pdf`;
+      link.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      toast.error('Erro ao baixar PDF do orçamento.');
+    }
+  };
+
   const handleDateChange = (e) => {
     const { value } = e.target;
     setTreatmentForm({ ...treatmentForm, start_date: value });
@@ -558,8 +709,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   };
 
   const handleAddTreatment = async () => {
-    if (!treatmentForm.name || !treatmentForm.start_date || !treatmentForm.description) {
-      toast.error("Preencha todos os campos obrigatórios: Nome, Data de Início e Descrição.");
+    if (!treatmentForm.name || !treatmentForm.start_date || !treatmentForm.service_id) {
+      toast.error("Preencha todos os campos obrigatórios: Serviço, Nome e Data de Início.");
       return;
     }
 
@@ -579,8 +730,12 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         frequency: "",
         estimated_duration: "",
         professional_id: "",
-        status: "ongoing"
+        status: "ongoing",
+        service_id: "",
+        selected_teeth: [],
+        face_regions: []
       });
+      setTreatmentView("teeth");
       setDetailedPatient(prev => ({
         ...prev,
         treatments: [...(prev?.treatments || []), newTreatment]
@@ -592,8 +747,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   };
 
   const handleUpdateTreatment = async () => {
-    if (!treatmentForm.name || !treatmentForm.start_date || !treatmentForm.description) {
-      toast.error("Preencha todos os campos obrigatórios: Nome, Data de Início e Descrição.");
+    if (!treatmentForm.name || !treatmentForm.start_date || !treatmentForm.service_id) {
+      toast.error("Preencha todos os campos obrigatórios: Serviço, Nome e Data de Início.");
       return;
     }
 
@@ -780,13 +935,14 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     { id: "records", label: "Documentos", icon: Stethoscope },
     { id: "treatments", label: "Tratamentos", icon: Activity },
     { id: "anamnese", label: "Anamnese", icon: FileText },
+    { id: "budgets", label: "Orçamentos", icon: Calculator },
     { id: "revenue", label: "Faturamento", icon: DollarSign }
   ];
 
   return (
     <>
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] w-[95vw] md:w-auto flex flex-col p-0 overflow-hidden rounded-2xl">
+      <DialogContent className="max-w-5xl h-[90vh] w-[95vw] md:w-full flex flex-col p-0 overflow-hidden rounded-2xl">
         <div className="flex-shrink-0 p-6 pb-0">
       <DialogHeader>
         <DialogTitle className="flex items-center justify-between">
@@ -826,7 +982,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         </div>
 
         {/* Tab Content */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-6 pt-4" style={{minHeight: 0}}>          {loading ? (
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-6 pt-4 w-full" style={{minHeight: 0}}>          {loading ? (
             <div className="text-center py-8 text-gray-500">Carregando...</div>
           ) : (
             <>
@@ -871,6 +1027,98 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                           </div>
                         </div>
                       </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Budgets Tab */}
+              {activeTab === "budgets" && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold">Orçamentos</h3>
+                    <Button onClick={() => {
+                      setEditingBudget(null);
+                      setBudgetForm({
+                        description: "",
+                        date: new Date().toISOString().split('T')[0],
+                        treatments: [],
+                        total_value: "",
+                        professional_id: "",
+                        observations: ""
+                      });
+                      setShowBudgetDialog(true);
+                    }} className="btn-primary">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Novo Orçamento
+                    </Button>
+                  </div>
+
+                  {budgets.length > 0 ? (
+                    <div className="space-y-3">
+                      {budgets.map((budget) => (
+                        <div key={budget.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <h4 className="font-semibold text-gray-900">{budget.description}</h4>
+                                <span className="text-sm text-gray-500">{formatDate(budget.date)}</span>
+                              </div>
+                              <p className="text-sm text-gray-600">
+                                Valor Total: R$ {Number(budget.total_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </p>
+                              {budget.professional_id && (
+                                <p className="text-sm text-gray-600">
+                                  Profissional: {allProfessionals.find(p => p.id === budget.professional_id)?.name || "Não informado"}
+                                </p>
+                              )}
+                              {budget.treatments && budget.treatments.length > 0 && (
+                                <div className="mt-2">
+                                  <p className="text-xs font-semibold text-gray-500">Tratamentos:</p>
+                                  <ul className="list-disc list-inside text-sm text-gray-600">
+                                    {budget.treatments.map((t, i) => (
+                                      <li key={i}>
+                                        {typeof t === 'string' ? t : `${t.name} - R$ ${Number(t.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {budget.observations && (
+                                <p className="text-sm text-gray-500 mt-2 italic">{budget.observations}</p>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleDownloadBudgetPDF(budget)}
+                                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+                              >
+                                <Download className="w-4 h-4" />
+                                PDF
+                              </button>
+                              <button
+                                onClick={() => handleEditBudget(budget)}
+                                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-amber-500 text-white rounded hover:bg-amber-600 transition"
+                              >
+                                <Edit className="w-4 h-4" />
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => handleDeleteBudget(budget)}
+                                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Excluir
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-gray-500">
+                      <Calculator className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                      <p>Nenhum orçamento registrado</p>
                     </div>
                   )}
                 </div>
@@ -1167,7 +1415,20 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                     <h3 className="text-lg font-semibold">Tratamentos Realizados</h3>
                     <Button 
                       onClick={() => {
-                        setEditingTreatment(null); // Garante que está em modo de adição
+                        setEditingTreatment(null);
+                        setTreatmentForm({
+                          name: "",
+                          start_date: new Date().toISOString().split('T')[0],
+                          description: "",
+                          prescribed_medications: "",
+                          frequency: "",
+                          estimated_duration: "",
+                          professional_id: "",
+                          status: "ongoing",
+                          service_id: "",
+                          selected_teeth: [],
+                          face_regions: []
+                        });
                         setShowTreatmentDialog(true);
                       }}
                       className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition-all duration-300 shadow-md hover:shadow-lg"
@@ -1205,6 +1466,27 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                               </p>
                               {treatment.description && (
                                 <p className="text-sm text-gray-600 mt-2">{treatment.description}</p>
+                              )}
+
+                              {/* Selected Regions/Teeth Display */}
+                              {(treatment.selected_teeth?.length > 0 || treatment.face_regions?.length > 0) && (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {treatment.selected_teeth?.length > 0 && (
+                                    <div className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-100">
+                                      <span className="font-semibold">Dentes:</span> {treatment.selected_teeth.join(', ')}
+                                    </div>
+                                  )}
+                                  {treatment.face_regions?.length > 0 && (
+                                    <div className="text-xs bg-pink-50 text-pink-700 px-2 py-1 rounded border border-pink-100">
+                                      <span className="font-semibold">Harmonização:</span> {
+                                        treatment.face_regions.map(id => {
+                                          const region = faceRegions.find(r => r.id === id);
+                                          return region ? region.name : id;
+                                        }).join(', ')
+                                      }
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                           <div className="flex gap-2 mt-4 pt-3 border-t">
@@ -1584,58 +1866,194 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
     {/* Treatment Dialog - Moved outside main dialog */}
     <Dialog open={showTreatmentDialog} onOpenChange={handleTreatmentDialogOpenChange}>
-      <DialogContent className="max-w-xl w-[95vw] md:w-auto max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingTreatment ? "Editar Tratamento" : "Adicionar Tratamento"}</DialogTitle>
           <DialogDescription>Preencha os dados do tratamento</DialogDescription>
         </DialogHeader>
         <div className="p-6 space-y-4">
-          {/* Campos Obrigatórios */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="treatment-name">Nome do Tratamento <span className="text-red-500">*</span></Label>
-              <Input
-                id="treatment-name"
-                value={treatmentForm.name}
-                onChange={(e) => setTreatmentForm({ ...treatmentForm, name: e.target.value })}
-                placeholder="Ex: Clareamento Dental"
-              />
+          <div className="space-y-4">
+            {/* Campos Obrigatórios */}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="service-select">Serviço Realizado <span className="text-red-500">*</span></Label>
+                <Popover open={openServiceCombobox} onOpenChange={setOpenServiceCombobox}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openServiceCombobox}
+                      className="w-full justify-between font-normal"
+                    >
+                      {treatmentForm.service_id
+                        ? services.find((s) => s.id === treatmentForm.service_id)?.name
+                        : "Selecionar serviço..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-white z-[9999]" align="start">
+                    <Command className="bg-white">
+                      <CommandInput placeholder="Buscar serviço..." />
+                      <CommandList className="max-h-[300px] overflow-y-auto">
+                        <CommandEmpty>Nenhum serviço encontrado.</CommandEmpty>
+                        <CommandGroup>
+                          {services.map((service) => (
+                            <CommandItem
+                              key={service.id}
+                              value={service.name}
+                              onSelect={() => {
+                                setTreatmentForm(prev => ({
+                                  ...prev,
+                                  service_id: service.id,
+                                  name: service.name
+                                }));
+                                setOpenServiceCombobox(false);
+                              }}
+                              className="cursor-pointer hover:bg-gray-100"
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  treatmentForm.service_id === service.id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {service.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="treatment-name">Nome do Tratamento <span className="text-red-500">*</span></Label>
+                  <Input
+                    id="treatment-name"
+                    value={treatmentForm.name}
+                    onChange={(e) => setTreatmentForm({ ...treatmentForm, name: e.target.value })}
+                    placeholder="Ex: Clareamento Dental"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="start-date">Data de Início <span className="text-red-500">*</span></Label>
+                  <Input
+                    id="start-date"
+                    type="date"
+                    value={treatmentForm.start_date}
+                    onChange={handleDateChange}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="professional-select">Profissional Responsável</Label>
+                <select
+                  id="professional-select"
+                  className="input-field"
+                  value={treatmentForm.professional_id}
+                  onChange={(e) => setTreatmentForm({ ...treatmentForm, professional_id: e.target.value.trim() })}
+                >
+                  <option value="">Selecionar profissional</option>
+                  {allProfessionals.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="status-select">Status</Label>
+                <select
+                  id="status-select"
+                  className="input-field"
+                  value={treatmentForm.status}
+                  onChange={(e) => setTreatmentForm({ ...treatmentForm, status: e.target.value })}
+                >
+                  <option value="ongoing">Em andamento</option>
+                  <option value="completed">Concluído</option>
+                </select>
+              </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="start-date">Data de Início <span className="text-red-500">*</span></Label>
-              <Input
-                id="start-date"
-                type="date"
-                value={treatmentForm.start_date}
-                onChange={handleDateChange}
-              />
+              <Label htmlFor="description">Descrição</Label>
+              <textarea
+                id="description"
+                rows="4"
+                className="w-full p-2 border rounded"
+                value={treatmentForm.description}
+                onChange={(e) => setTreatmentForm({ ...treatmentForm, description: e.target.value })}
+                placeholder="Descreva o tratamento em detalhes"
+              ></textarea>
             </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="professional-select">Profissional Responsável</Label>
-            <select
-              id="professional-select"
-              className="input-field"
-              value={treatmentForm.professional_id}
-              onChange={(e) => setTreatmentForm({ ...treatmentForm, professional_id: e.target.value.trim() })}
-            >
-              <option value="">Selecionar profissional</option>
-              {allProfessionals.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="description">Descrição <span className="text-red-500">*</span></Label>
-            <textarea
-              id="description"
-              rows="4"
-              className="w-full p-2 border rounded"
-              value={treatmentForm.description}
-              onChange={(e) => setTreatmentForm({ ...treatmentForm, description: e.target.value })}
-              placeholder="Descreva o tratamento em detalhes"
-            ></textarea>
-          </div>
+
+          {/* Regiões do Tratamento */}
+          <div className="space-y-4 pt-4 border-t">
+              <h4 className="font-semibold text-md">Regiões do Tratamento</h4>
+              
+              <div className="flex justify-center gap-4 bg-gray-50 p-2 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setTreatmentView('teeth')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${treatmentView === 'teeth' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Odontograma
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTreatmentView('face')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${treatmentView === 'face' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Harmonização Facial
+                </button>
+              </div>
+
+              <div className="border rounded-lg p-4 bg-white min-h-[400px] flex items-center justify-center">
+                {treatmentView === 'teeth' ? (
+                  <div className="animate-in fade-in duration-300 w-full">
+                    <p className="text-sm text-gray-500 mb-4 text-center">Selecione os dentes envolvidos no tratamento</p>
+                    <OdontogramSelector
+                      selectedTeeth={treatmentForm.selected_teeth || []}
+                      onToggle={(toothNum) => {
+                        setTreatmentForm(prev => {
+                          const current = prev.selected_teeth || [];
+                          const exists = current.includes(toothNum);
+                          return {
+                            ...prev,
+                            selected_teeth: exists 
+                              ? current.filter(t => t !== toothNum)
+                              : [...current, toothNum]
+                          };
+                        });
+                      }}
+                      readOnly={false}
+                    />
+                  </div>
+                ) : (
+                  <div className="animate-in fade-in duration-300 w-full flex flex-col items-center">
+                    <p className="text-sm text-gray-500 mb-4 text-center">Selecione as regiões da face envolvidas</p>
+                    <FaceHarmonizationSelector
+                      selectedRegions={treatmentForm.face_regions || []}
+                      onToggle={(regionId) => {
+                        setTreatmentForm(prev => {
+                          const current = prev.face_regions || [];
+                          const exists = current.includes(regionId);
+                          return {
+                            ...prev,
+                            face_regions: exists 
+                              ? current.filter(r => r !== regionId)
+                              : [...current, regionId]
+                          };
+                        });
+                      }}
+                      readOnly={false}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
 
           {/* Campos Opcionais */}
           <div className="space-y-4 pt-4 border-t">
@@ -1840,6 +2258,268 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       </DialogContent>
     </Dialog>
 
+    <Dialog open={showBudgetDialog} onOpenChange={setShowBudgetDialog}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{editingBudget ? "Editar Orçamento" : "Novo Orçamento"}</DialogTitle>
+          <DialogDescription>{editingBudget ? "Edite os dados do orçamento" : "Preencha os dados do orçamento"}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleCreateBudget} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Descrição</Label>
+              <Input
+                required
+                value={budgetForm.description}
+                onChange={(e) => setBudgetForm({...budgetForm, description: e.target.value})}
+                placeholder="Ex: Tratamento de Canal"
+              />
+            </div>
+            <div>
+              <Label>Data</Label>
+              <Input
+                type="date"
+                required
+                value={budgetForm.date}
+                onChange={(e) => setBudgetForm({...budgetForm, date: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label>Tratamentos</Label>
+            <div className="flex gap-2 mb-2">
+              <select
+                className="flex-1 input-field"
+                id="service-select"
+                onChange={(e) => {
+                  const serviceName = e.target.value;
+                  if (serviceName) {
+                     const service = services.find(s => s.name === serviceName);
+                     const price = service ? (service.price || 0) : 0;
+                     
+                     setBudgetForm(prev => {
+                        const newTreatments = [...prev.treatments, { name: serviceName, value: price, teeth: [] }];
+                        const newTotal = newTreatments.reduce((sum, t) => sum + Number(t.value || 0), 0);
+                        return {
+                           ...prev,
+                           treatments: newTreatments,
+                           total_value: newTotal
+                        };
+                     });
+                     e.target.value = "";
+                  }
+                }}
+              >
+                <option value="">Selecione um serviço...</option>
+                {services.map((s) => (
+                  <option key={s.id} value={s.name}>{s.name} - R$ {Number(s.price || 0).toFixed(2)}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-4">
+                {budgetForm.treatments.map((t, i) => (
+                    <div key={i} className="bg-white p-3 rounded-lg border shadow-sm space-y-3">
+                        <div className="flex items-center gap-3">
+                            <span className="flex-1 font-medium text-gray-800">{t.name || t}</span>
+                            
+                            <div className="flex items-center gap-2">
+                               <span className="text-xs text-gray-500">R$</span>
+                               <Input 
+                                  type="number" 
+                                  className="w-24 h-8 text-right" 
+                                  value={t.value !== undefined ? t.value : 0}
+                                  onChange={(e) => {
+                                     const newVal = Number(e.target.value);
+                                     setBudgetForm(prev => {
+                                        const newTreatments = [...prev.treatments];
+                                        if (typeof newTreatments[i] === 'string') {
+                                           newTreatments[i] = { name: newTreatments[i], value: newVal, teeth: [] };
+                                        } else {
+                                           newTreatments[i] = { ...newTreatments[i], value: newVal };
+                                        }
+                                        const newTotal = newTreatments.reduce((sum, item) => sum + Number(item.value || 0), 0);
+                                        return { ...prev, treatments: newTreatments, total_value: newTotal };
+                                     });
+                                  }}
+                               />
+                            </div>
+                            
+                            <button
+                                type="button"
+                                onClick={() => setBudgetForm(prev => {
+                                   const newTreatments = prev.treatments.filter((_, idx) => idx !== i);
+                                   const newTotal = newTreatments.reduce((sum, item) => sum + Number(item.value || 0), 0);
+                                   return { ...prev, treatments: newTreatments, total_value: newTotal };
+                                })}
+                                className="text-gray-400 hover:text-red-600 p-1"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Odontogram Section */}
+                        <div className="border-t pt-2">
+                           <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                Dentes Selecionados: {t.teeth && t.teeth.length > 0 ? t.teeth.join(', ') : 'Nenhum'}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs h-6"
+                                onClick={() => {
+                                   // Toggle visibility of odontogram for this item? 
+                                   // Or just always show it? Let's use a collapsible details/summary approach or just show it if expanded.
+                                   // For simplicity, let's toggle a local state? 
+                                   // React state inside map is tricky without a child component.
+                                   // Let's use a simple state array for expanded items or just show it.
+                                   // Given the complexity, maybe just show it always or use a simple toggle class.
+                                   // Actually, let's use a details element for native toggle behavior without extra state!
+                                }}
+                              >
+                              </Button>
+                           </div>
+                           
+                           <details className="group">
+                              <summary className="flex items-center cursor-pointer text-sm text-blue-600 hover:text-blue-800 select-none mb-2">
+                                 <Stethoscope className="w-4 h-4 mr-1" />
+                                 { (t.teeth && t.teeth.length > 0) || (t.face_regions && t.face_regions.length > 0) ? 'Editar Regiões' : 'Selecionar Regiões' }
+                              </summary>
+                              
+                              <div className="mt-2 flex flex-col gap-4">
+                                {/* Toggle Type */}
+                                <div className="flex justify-center gap-4 bg-white p-2 rounded-lg shadow-sm border border-gray-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newTreatments = [...budgetForm.treatments];
+                                      newTreatments[i] = { ...newTreatments[i], _view: 'teeth' };
+                                      setBudgetForm(prev => ({ ...prev, treatments: newTreatments }));
+                                    }}
+                                    className={`px-3 py-1 rounded-md text-sm transition-colors ${(!t._view || t._view === 'teeth') ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}
+                                  >
+                                    Odontograma
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newTreatments = [...budgetForm.treatments];
+                                      newTreatments[i] = { ...newTreatments[i], _view: 'face' };
+                                      setBudgetForm(prev => ({ ...prev, treatments: newTreatments }));
+                                    }}
+                                    className={`px-3 py-1 rounded-md text-sm transition-colors ${(t._view === 'face') ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}
+                                  >
+                                    Harmonização Facial
+                                  </button>
+                                </div>
+
+                                {(!t._view || t._view === 'teeth') && (
+                                    <div className="animate-in fade-in duration-300">
+                                        <OdontogramSelector 
+                                            selectedTeeth={t.teeth || []} 
+                                            onToggle={(toothNum) => {
+                                                setBudgetForm(prev => {
+                                                    const newTreatments = [...prev.treatments];
+                                                    const currentTeeth = newTreatments[i].teeth || [];
+                                                    
+                                                    let newTeeth;
+                                                    if (currentTeeth.includes(toothNum)) {
+                                                        newTeeth = currentTeeth.filter(n => n !== toothNum);
+                                                    } else {
+                                                        newTeeth = [...currentTeeth, toothNum];
+                                                    }
+                                                    
+                                                    newTreatments[i] = { ...newTreatments[i], teeth: newTeeth };
+                                                    return { ...prev, treatments: newTreatments };
+                                                });
+                                            }} 
+                                        />
+                                    </div>
+                                )}
+
+                                {(t._view === 'face') && (
+                                    <div className="animate-in fade-in duration-300">
+                                        <FaceHarmonizationSelector 
+                                            selectedRegions={t.face_regions || []} 
+                                            onToggle={(regionId) => {
+                                                setBudgetForm(prev => {
+                                                    const newTreatments = [...prev.treatments];
+                                                    const currentRegions = newTreatments[i].face_regions || [];
+                                                    
+                                                    let newRegions;
+                                                    if (currentRegions.includes(regionId)) {
+                                                        newRegions = currentRegions.filter(n => n !== regionId);
+                                                    } else {
+                                                        newRegions = [...currentRegions, regionId];
+                                                    }
+                                                    
+                                                    newTreatments[i] = { ...newTreatments[i], face_regions: newRegions };
+                                                    return { ...prev, treatments: newTreatments };
+                                                });
+                                            }} 
+                                        />
+                                    </div>
+                                )}
+                              </div>
+                           </details>
+                        </div>
+                    </div>
+                ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+             <div>
+                <Label>Valor Total (R$)</Label>
+                <Input
+                    type="number"
+                    step="0.01"
+                    required
+                    readOnly
+                    className="bg-gray-100 font-bold"
+                    value={budgetForm.total_value}
+                    placeholder="0.00"
+                />
+             </div>
+             <div>
+                <Label>Profissional Responsável</Label>
+                <select
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    value={budgetForm.professional_id}
+                    onChange={(e) => setBudgetForm({...budgetForm, professional_id: e.target.value})}
+                >
+                    <option value="">Selecione...</option>
+                    {allProfessionals.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                </select>
+             </div>
+          </div>
+
+          <div>
+             <Label>Observações</Label>
+             <textarea
+                className="input-field min-h-[100px]"
+                value={budgetForm.observations}
+                onChange={(e) => setBudgetForm({...budgetForm, observations: e.target.value})}
+                placeholder="Observações adicionais..."
+             />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setShowBudgetDialog(false)}>
+                Cancelar
+            </Button>
+            <Button type="submit" className="btn-primary">
+                Salvar Orçamento
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+
     {/* Dialog de Confirmação de Exclusão */}
     <Dialog open={showDeleteRecordDialog} onOpenChange={setShowDeleteRecordDialog}>
       <DialogContent>
@@ -1948,6 +2628,43 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                 setShowDeleteAttachmentDialog(false);
                 setAttachmentToDelete(null);
               }}
+            >
+              Confirmar Exclusão
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    {/* Dialog de Confirmação de Exclusão de Orçamento */}
+    <Dialog open={showDeleteBudgetDialog} onOpenChange={setShowDeleteBudgetDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Confirmar Exclusão</DialogTitle>
+          <DialogDescription>Confirme a exclusão do orçamento</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            Tem certeza que deseja excluir este orçamento?
+          </p>
+          <p className="text-sm text-red-600">
+            <strong>Atenção:</strong> Esta ação não pode ser desfeita.
+          </p>
+          <div className="flex gap-3 justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowDeleteBudgetDialog(false);
+                setBudgetToDelete(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="bg-red-500 hover:bg-red-600 text-white"
+              onClick={confirmDeleteBudget}
             >
               Confirmar Exclusão
             </Button>

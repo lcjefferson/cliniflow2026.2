@@ -3,7 +3,7 @@ import Layout from "../components/Layout";
 import api from "../services/api";
 import { Plus, Edit, Trash2, Eye, ChevronLeft, ChevronRight, X, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +24,8 @@ export default function PatientsPage() {
   const [sortBy, setSortBy] = useState("created_at");
   const [order, setOrder] = useState("desc");
   const [filterDebt, setFilterDebt] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [patientToDelete, setPatientToDelete] = useState(null);
 
   useEffect(() => {
     loadPatients();
@@ -81,13 +83,27 @@ export default function PatientsPage() {
     setShowDialog(true);
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = (patient) => {
+    console.log("handleDelete patient:", patient);
+    setPatientToDelete(patient);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDelete = async () => {
+    console.log("confirmDelete patientToDelete:", patientToDelete);
+    if (!patientToDelete) return;
+    
     try {
-      await api.delete(`/patients/${id}`);
+      console.log("Deleting patient id:", patientToDelete.id);
+      await api.delete(`/patients/${patientToDelete.id}`);
       toast.success("Paciente removido!");
       loadPatients();
     } catch (error) {
+      console.error("Error deleting patient:", error);
       toast.error("Erro ao remover paciente");
+    } finally {
+      setShowDeleteDialog(false);
+      setPatientToDelete(null);
     }
   };
 
@@ -260,7 +276,7 @@ export default function PatientsPage() {
                     <Edit className="w-5 h-5" />
                   </button>
                   <button
-                    onClick={() => handleDelete(patient.id)}
+                    onClick={() => handleDelete(patient)}
                     className="text-red-500 hover:text-red-700"
                   >
                     <Trash2 className="w-5 h-5" />
@@ -340,6 +356,38 @@ export default function PatientsPage() {
           onClose={handleCloseDetailDialog}
           onUpdate={handleUpdatePatient}
         />
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirmar Exclusão</DialogTitle>
+              <DialogDescription>
+                Tem certeza que deseja excluir o paciente <strong>{patientToDelete?.name}</strong>?
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-red-600">
+                <strong>Atenção:</strong> Esta ação não pode ser desfeita e removerá todos os dados associados.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowDeleteDialog(false);
+                    setPatientToDelete(null);
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  className="bg-red-500 hover:bg-red-600 text-white"
+                  onClick={confirmDelete}
+                >
+                  Confirmar Exclusão
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );

@@ -86,6 +86,9 @@ export default function UsersPage() {
           professional_id: formData.professional_id,
           is_admin: formData.is_admin
         };
+        if (formData.password) {
+          updateData.password = formData.password;
+        }
         await api.put(`/users/${editingUser.id}`, updateData);
         toast.success("Usuário atualizado!");
       } else {
@@ -152,12 +155,14 @@ export default function UsersPage() {
     const styles = {
       admin: "bg-purple-100 text-purple-700",
       consultor: "bg-blue-100 text-blue-700",
-      profissional: "bg-green-100 text-green-700"
+      profissional: "bg-green-100 text-green-700",
+      profissional_admin: "bg-orange-100 text-orange-700"
     };
     const labels = {
       admin: "Super Usuário",
       consultor: "Consultor",
-      profissional: "Profissional"
+      profissional: "Profissional",
+      profissional_admin: "Profissional Admin"
     };
     return <span className={`px-3 py-1 rounded-full text-sm font-semibold ${styles[userType] || styles.consultor}`}>
       {labels[userType] || "Consultor"}
@@ -277,19 +282,17 @@ export default function UsersPage() {
                   placeholder="email@exemplo.com"
                 />
               </div>
-              {!editingUser && (
-                <div>
-                  <Label>Senha *</Label>
-                  <Input 
-                    type="password" 
-                    value={formData.password} 
-                    onChange={(e) => setFormData({...formData, password: e.target.value})} 
-                    required 
-                    placeholder="Mínimo 6 caracteres"
-                    minLength={6}
-                  />
-                </div>
-              )}
+              <div>
+                <Label>Senha {editingUser && "(Deixe em branco para manter)"}</Label>
+                <Input 
+                  type="password" 
+                  value={formData.password} 
+                  onChange={(e) => setFormData({...formData, password: e.target.value})} 
+                  required={!editingUser}
+                  placeholder={editingUser ? "Nova senha (opcional)" : "Mínimo 6 caracteres"}
+                  minLength={6}
+                />
+              </div>
               <div>
                 <Label>Tipo de Usuário</Label>
                 <select
@@ -297,12 +300,14 @@ export default function UsersPage() {
                   value={formData.user_type}
                   onChange={(e) => setFormData({...formData, user_type: e.target.value})}
                 >
-                  <option value="admin">Super Usuário</option>
+                  <option value="superuser">Super Usuário</option>
+                  <option value="admin">Administrador</option>
                   <option value="consultor">Consultor</option>
                   <option value="profissional">Profissional</option>
+                  <option value="profissional_admin">Profissional Admin</option>
                 </select>
               </div>
-              {formData.user_type === "profissional" && (
+              {(formData.user_type === "profissional" || formData.user_type === "profissional_admin") && (
                 <div>
                   <Label>Profissional Vinculado</Label>
                   <select

@@ -41,7 +41,7 @@ export default function LoginPage() {
         const { data } = await api.get("/version");
         setAppVersion(data);
       } catch (err) {
-        setAppVersion({ version: "dev" });
+        setAppVersion({ version: "2.0" });
       }
     };
     loadVersion();

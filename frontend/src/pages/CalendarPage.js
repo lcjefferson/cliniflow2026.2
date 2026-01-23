@@ -10,8 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import PatientCombobox from "../components/PatientCombobox";
 import PatientDetailDialog from "../components/PatientDetailDialog";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function CalendarPage() {
+  const { user } = useAuth();
   const [appointments, setAppointments] = useState([]);
   const [professionals, setProfessionals] = useState([]);
   const [patients, setPatients] = useState([]);
@@ -489,6 +491,7 @@ export default function CalendarPage() {
                 className="input-field"
                 value={filterProfessional}
                 onChange={(e) => setFilterProfessional(e.target.value)}
+                disabled={user?.user_type === 'profissional_admin' || user?.user_type === 'profissional'}
               >
                 <option value="">Todos</option>
                 {professionals.map(p => (

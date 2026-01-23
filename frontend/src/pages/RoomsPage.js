@@ -17,7 +17,7 @@ export default function RoomsPage() {
   const [itemsPerPage] = useState(12);
   const [formData, setFormData] = useState({ name: "", capacity: "" });
   const { user } = useAuth();
-  const isAdmin = (user?.role?.is_admin) || (user?.user_type === "admin");
+  const isAdmin = (user?.role?.is_admin) || (user?.user_type === "admin") || (user?.user_type === "superuser");
   const canManage = isAdmin || (user?.user_type === "consultor");
 
   useEffect(() => {

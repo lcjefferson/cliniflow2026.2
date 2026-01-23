@@ -47,15 +47,7 @@ async def create_admin(email: str, password: str, name: str):
         print("⚠️  Usuário administrador já existe!")
         print(f"   Email: {email}")
         print(f"   Nome atual: {existing_admin.get('name')}")
-        
-        hashed = pwd_context.hash(password)
-        await db.users.update_one(
-            {'email': email},
-            {'$set': {'password_hash': hashed, 'name': name, 'role.is_admin': True, 'user_type': 'admin'}}
-        )
-        print(f"✅ Senha redefinida e perfil atualizado!")
-        print(f"   Email: {email}")
-        print(f"   Senha: {password}")
+        print("   ⏭️  Pulando redefinição de senha (segurança).")
     else:
         # Create new admin
         hashed = pwd_context.hash(password)

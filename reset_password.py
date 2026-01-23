@@ -16,7 +16,7 @@ async def reset_password():
     db = client[DB_NAME]
     
     email = "admin@clinicflow.com"
-    new_password = "password123"
+    new_password = "admin@123"
     hashed_password = pwd_context.hash(new_password)
     
     print(f"Resetting password for {email}...")

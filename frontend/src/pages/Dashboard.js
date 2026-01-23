@@ -18,6 +18,7 @@ export default function Dashboard() {
   // Pegar usuário atual do localStorage
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const isAdmin = user?.role?.is_admin || false;
+  const isSuperUser = user?.user_type === 'superuser';
 
   useEffect(() => {
     loadStats();
@@ -25,12 +26,20 @@ export default function Dashboard() {
 
   const loadStats = async () => {
     try {
-      const [appointments, leads, patients, transactions] = await Promise.all([
+      const promises = [
         api.get("/appointments"),
         api.get("/leads"),
         api.get("/patients"),
         api.get("/transactions")
-      ]);
+      ];
+
+      if (isSuperUser) {
+        promises.push(api.get("/expenses"));
+      }
+
+      const results = await Promise.all(promises);
+      const [appointments, leads, patients, transactions] = results;
+      const expenses = isSuperUser ? results[4] : { data: [] };
 
       // Calcular agendamentos de hoje
       const today = new Date().toISOString().split('T')[0];
@@ -48,6 +57,10 @@ export default function Dashboard() {
         .filter(t => t.status === "pending")
         .reduce((sum, t) => sum + t.amount, 0);
 
+      // Calcular despesas (apenas para superusuário)
+      const expensesTotal = expenses.data.reduce((sum, e) => sum + e.amount, 0);
+      const netRevenue = revenuePaid - expensesTotal;
+
       setStats({
         appointmentsToday,
         appointmentsTotal: appointments.data.length,
@@ -56,7 +69,9 @@ export default function Dashboard() {
         patientsTotal: patients.data.length,
         revenueTotal: revenuePaid + revenuePending,
         revenuePaid,
-        revenuePending
+        revenuePending,
+        expensesTotal,
+        netRevenue
       });
     } catch (error) {
       console.error("Erro ao carregar estatísticas", error);
@@ -97,7 +112,7 @@ export default function Dashboard() {
           </div>
 
           {/* Card de Faturamento - Apenas para Admins */}
-          {isAdmin && (
+          {(isAdmin || user?.user_type === 'profissional_admin') && (
             <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-6 shadow-lg card-hover text-white" data-testid="revenue-card">
               <div className="flex items-center justify-between mb-4">
                 <DollarSign className="w-10 h-10 opacity-80" />
@@ -105,6 +120,18 @@ export default function Dashboard() {
               </div>
               <h3 className="font-medium opacity-90">Receita Recebida</h3>
               <p className="text-xs opacity-75 mt-1">Pendente: R$ {stats.revenuePending.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+            </div>
+          )}
+
+          {/* Card de Lucro Líquido - Apenas para Super Usuários */}
+          {isSuperUser && (
+            <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-2xl p-6 shadow-lg card-hover text-white" data-testid="net-revenue-card">
+              <div className="flex items-center justify-between mb-4">
+                <Activity className="w-10 h-10 opacity-80" />
+                <span className="text-2xl font-bold">R$ {stats.netRevenue?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}</span>
+              </div>
+              <h3 className="font-medium opacity-90">Lucro Líquido</h3>
+              <p className="text-xs opacity-75 mt-1">Receita - Despesas</p>
             </div>
           )}
         </div>

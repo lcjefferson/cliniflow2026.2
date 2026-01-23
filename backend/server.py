@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, File, UploadFile, Form
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, File, UploadFile, Form, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import io
@@ -131,6 +131,7 @@ mem = {
     "medical_records": [],
     "leads": [],
     "follow_ups": [],
+    "expenses": [],
     "settings": {}
 }
 
@@ -390,14 +391,37 @@ async def normalize_all_thumbnails():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global db, DEMO_MODE
-    if db is not None:
+    global db, DEMO_MODE, client
+    
+    # Tentativa de reconexão se db for None mas mongo_url existir
+    if db is None and mongo_url:
+        try:
+            print("Attempting to connect to MongoDB in lifespan...")
+            client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
+            await client.admin.command('ping')
+            db = client.get_database(db_name)
+            DEMO_MODE = False
+            print("MongoDB connection successful in lifespan")
+        except Exception as e:
+            print(f"MongoDB connection failed in lifespan: {e}. Switching to DEMO MODE.")
+            db = None
+            DEMO_MODE = True
+    elif db is not None:
+        # Se já estava "conectado" globalmente, valida a conexão
         try:
             await client.admin.command('ping')
         except Exception:
-            print("MongoDB connection failed in lifespan. Switching to DEMO MODE.")
-            db = None
-            DEMO_MODE = True
+            print("MongoDB connection check failed. Retrying...")
+            try:
+                # Retry once
+                client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
+                await client.admin.command('ping')
+                db = client.get_database(db_name)
+                print("MongoDB re-connected successfully.")
+            except Exception as e:
+                print(f"MongoDB connection failed finally: {e}. Switching to DEMO MODE.")
+                db = None
+                DEMO_MODE = True
 
     if scheduler and CronTrigger:
         try:
@@ -407,22 +431,59 @@ async def lifespan(app: FastAPI):
             pass
     if db is not None:
         try:
-            # Create admin user if it doesn't exist
-            admin_email = os.environ.get("ADMIN_EMAIL")
-            admin_password = os.environ.get("ADMIN_PASSWORD")
-            if admin_email and admin_password:
-                user = await db.users.find_one({"email": admin_email})
+            # Ensure admin users exist (support both cliniflow.com and clinicflow.com)
+            admin_emails = [
+                (os.environ.get("ADMIN_EMAIL", "admin@cliniflow.com"), os.environ.get("ADMIN_PASSWORD", "admin@123")),
+                ("admin@clinicflow.com", "admin@123")
+            ]
+
+            for adm_email, adm_pass in admin_emails:
+                user = await db.users.find_one({"email": adm_email})
                 if not user:
                     await db.users.insert_one({
                         "id": str(uuid.uuid4()),
                         "name": "Admin",
-                        "email": admin_email,
-                        "password_hash": hash_password(admin_password),
+                        "email": adm_email,
+                        "password_hash": hash_password(adm_pass),
                         "role": {"is_admin": True, "is_attendant": False},
                         "user_type": "admin",
                         "created_at": datetime.now(timezone.utc)
                     })
-                    print(f"Admin user {admin_email} created.")
+                    print(f"Admin user {adm_email} created.")
+                else:
+                    # Enforce admin password to ensure access (Self-healing)
+                    await db.users.update_one(
+                        {"email": adm_email},
+                        {"$set": {"password_hash": hash_password(adm_pass), "role.is_admin": True}}
+                    )
+                    print(f"Admin user {adm_email} password/role updated.")
+
+            # Ensure superadmin users exist
+            super_emails = [
+                ("superadmin@cliniflow.com", "qwe123"),
+                ("superadmin@clinicflow.com", "qwe123")
+            ]
+            
+            for sup_email, sup_pass in super_emails:
+                super_user = await db.users.find_one({"email": sup_email})
+                if not super_user:
+                    await db.users.insert_one({
+                        "id": str(uuid.uuid4()),
+                        "name": "Super Admin",
+                        "email": sup_email,
+                        "password_hash": hash_password(sup_pass),
+                        "role": {"is_admin": True, "is_attendant": False},
+                        "user_type": "superuser",
+                        "created_at": datetime.now(timezone.utc)
+                    })
+                    print(f"Superadmin user {sup_email} created.")
+                else:
+                    # Enforce superadmin password (Self-healing)
+                    await db.users.update_one(
+                        {"email": sup_email},
+                        {"$set": {"password_hash": hash_password(sup_pass), "user_type": "superuser"}}
+                    )
+                    print(f"Superadmin user {sup_email} password/role updated.")
 
             await db.patients.create_index("id")
             await db.patients.create_index("phone")
@@ -460,7 +521,7 @@ async def lifespan(app: FastAPI):
     else:
         # DEMO MODE: Create default admin
         admin_email = os.environ.get("ADMIN_EMAIL", "admin@cliniflow.com")
-        admin_password = os.environ.get("ADMIN_PASSWORD", "Admin@2024")
+        admin_password = os.environ.get("ADMIN_PASSWORD", "admin@123")
         if not any(u['email'] == admin_email for u in mem['users']):
             mem['users'].append({
                 "id": str(uuid.uuid4()),
@@ -472,6 +533,21 @@ async def lifespan(app: FastAPI):
                 "created_at": datetime.now(timezone.utc).isoformat()
             })
             print(f"DEMO MODE: Admin user {admin_email} created.")
+        
+        # DEMO MODE: Create default superadmin
+        super_email = "superadmin@cliniflow.com"
+        super_password = "qwe123"
+        if not any(u['email'] == super_email for u in mem['users']):
+            mem['users'].append({
+                "id": str(uuid.uuid4()),
+                "name": "Super Admin",
+                "email": super_email,
+                "password_hash": hash_password(super_password),
+                "role": {"is_admin": True, "is_attendant": False},
+                "user_type": "superuser",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            print(f"DEMO MODE: Superadmin user {super_email} created.")
     yield
     if scheduler:
         try:
@@ -484,8 +560,7 @@ app.mount("/media", StaticFiles(directory="media"), name="media")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=r"https?://.*:3001",
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -658,6 +733,9 @@ class Treatment(BaseModel):
     estimated_duration: Optional[str] = None
     professional_id: Optional[str] = None
     status: str = "ongoing"  # ongoing, completed
+    service_id: Optional[str] = None
+    selected_teeth: Optional[List[str]] = None
+    face_regions: Optional[List[str]] = None
 
 class TreatmentUpdate(BaseModel):
     name: Optional[str] = None
@@ -668,6 +746,29 @@ class TreatmentUpdate(BaseModel):
     estimated_duration: Optional[str] = None
     professional_id: Optional[str] = None
     status: Optional[str] = None
+    service_id: Optional[str] = None
+    selected_teeth: Optional[List[str]] = None
+    face_regions: Optional[List[str]] = None
+
+class Expense(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    description: str
+    amount: float
+    date: str  # YYYY-MM-DD
+    category: str  # colaboradores, fornecedores, suprimentos, outros
+    recipient: Optional[str] = None
+    notes: Optional[str] = None
+    attachments: List[Attachment] = []
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class ExpenseCreate(BaseModel):
+    description: str
+    amount: float
+    date: str
+    category: str
+    recipient: Optional[str] = None
+    notes: Optional[str] = None
+
 
 class Anamnese(BaseModel):
     # Histórico Médico
@@ -816,6 +917,33 @@ class PatientCreate(BaseModel):
         if v == '' or v is None:
             return None
         return v
+
+class BudgetTreatment(BaseModel):
+    name: str
+    value: float = 0.0
+    teeth: List[str] = []
+    face_regions: List[str] = []
+
+class Budget(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    patient_id: str
+    description: str
+    date: str
+    treatments: List[Union[str, BudgetTreatment]] = []
+    total_value: float = 0.0
+    professional_id: Optional[str] = None
+    observations: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class BudgetCreate(BaseModel):
+    patient_id: str
+    description: str
+    date: str
+    treatments: List[Union[str, BudgetTreatment]] = []
+    total_value: float = 0.0
+    professional_id: Optional[str] = None
+    observations: Optional[str] = None
 
 class Appointment(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1093,6 +1221,7 @@ async def get_total_revenue(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=503, detail="Database unavailable")
     
     pipeline = [
+        {"$match": {"status": "paid"}},
         {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
     ]
     
@@ -1264,6 +1393,7 @@ async def login(credentials: UserLogin):
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
+    password: Optional[str] = None
     user_type: Optional[str] = None
     professional_id: Optional[str] = None
     is_admin: Optional[bool] = None
@@ -1284,7 +1414,7 @@ async def get_users(current_user: dict = Depends(get_current_user)):
 @api_router.put("/users/{user_id}")
 async def update_user(user_id: str, data: UserUpdate, current_user: dict = Depends(get_current_user)):
     # Only admins can update users
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
@@ -1296,6 +1426,8 @@ async def update_user(user_id: str, data: UserUpdate, current_user: dict = Depen
         update_data["name"] = data.name
     if data.email:
         update_data["email"] = data.email
+    if data.password:
+        update_data["password_hash"] = hash_password(data.password)
     if data.user_type:
         update_data["user_type"] = data.user_type
     if data.professional_id is not None:
@@ -1312,7 +1444,7 @@ async def update_user(user_id: str, data: UserUpdate, current_user: dict = Depen
 @api_router.delete("/users/{user_id}")
 async def delete_user(user_id: str, current_user: dict = Depends(get_current_user)):
     # Only admins can delete users
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     result = await db.users.delete_one({"id": user_id})
@@ -1367,7 +1499,7 @@ async def get_professional(professional_id: str, current_user: dict = Depends(ge
 async def update_professional(professional_id: str, data: ProfessionalCreate, current_user: dict = Depends(get_current_user)):
     user_type = current_user.get("user_type", "consultor")
     is_admin = current_user.get("role", {}).get("is_admin", False)
-    if not (is_admin or user_type == "consultor"):
+    if not (is_admin or user_type == "consultor" or user_type == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
@@ -1386,7 +1518,7 @@ async def update_professional(professional_id: str, data: ProfessionalCreate, cu
 async def delete_professional(professional_id: str, current_user: dict = Depends(get_current_user)):
     user_type = current_user.get("user_type", "consultor")
     is_admin = current_user.get("role", {}).get("is_admin", False)
-    if not (is_admin or user_type == "consultor"):
+    if not (is_admin or user_type == "consultor" or user_type == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     if DEMO_MODE:
         result = _delete_one("professionals", {"id": professional_id})
@@ -1433,7 +1565,7 @@ async def get_services(ids: Optional[str] = None, current_user: dict = Depends(g
 async def update_service(service_id: str, data: ServiceCreate, current_user: dict = Depends(get_current_user)):
     user_type = current_user.get("user_type", "consultor")
     is_admin = current_user.get("role", {}).get("is_admin", False)
-    if not (is_admin or user_type == "consultor"):
+    if not (is_admin or user_type == "consultor" or user_type == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     update_data = data.model_dump(exclude_unset=True)
@@ -1449,7 +1581,7 @@ async def update_service(service_id: str, data: ServiceCreate, current_user: dic
 async def delete_service(service_id: str, current_user: dict = Depends(get_current_user)):
     user_type = current_user.get("user_type", "consultor")
     is_admin = current_user.get("role", {}).get("is_admin", False)
-    if not (is_admin or user_type == "consultor"):
+    if not (is_admin or user_type == "consultor" or user_type == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     result = await db.services.delete_one({"id": service_id})
@@ -1478,7 +1610,7 @@ async def get_rooms(current_user: dict = Depends(get_current_user)):
 async def update_room(room_id: str, data: RoomCreate, current_user: dict = Depends(get_current_user)):
     user_type = current_user.get("user_type", "consultor")
     is_admin = current_user.get("role", {}).get("is_admin", False)
-    if not (is_admin or user_type == "consultor"):
+    if not (is_admin or user_type == "consultor" or user_type == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     update_data = data.model_dump(exclude_unset=True)
@@ -1494,7 +1626,7 @@ async def update_room(room_id: str, data: RoomCreate, current_user: dict = Depen
 async def delete_room(room_id: str, current_user: dict = Depends(get_current_user)):
     user_type = current_user.get("user_type", "consultor")
     is_admin = current_user.get("role", {}).get("is_admin", False)
-    if not (is_admin or user_type == "consultor"):
+    if not (is_admin or user_type == "consultor" or user_type == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     result = await db.rooms.delete_one({"id": room_id})
@@ -2228,7 +2360,7 @@ async def update_patient(patient_id: str, data: PatientCreate, current_user: dic
 
 @api_router.delete("/patients/{patient_id}")
 async def delete_patient(patient_id: str, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") in ["superuser", "consultor"]):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     result = await db.patients.delete_one({"id": patient_id})
@@ -2324,6 +2456,14 @@ async def get_appointments(
     query = {}
     if patient_id:
         query["patient_id"] = patient_id
+
+    # Filter for professional users to only see their own appointments
+    if current_user.get("user_type") in ["profissional", "profissional_admin"]:
+        if current_user.get("professional_id"):
+            query["professional_id"] = current_user.get("professional_id")
+        else:
+            return []
+
     sort_order = 1 if order == "asc" else -1
 
     cursor = db.appointments.find(query, {"_id": 0})
@@ -2550,6 +2690,413 @@ async def get_transactions(
         if isinstance(t.get('created_at'), str):
             t['created_at'] = datetime.fromisoformat(t['created_at'])
     return transactions
+
+# Budget Routes
+@api_router.post("/budgets", response_model=Budget)
+async def create_budget(data: BudgetCreate, current_user: dict = Depends(get_current_user)):
+    budget = Budget(**data.model_dump())
+    doc = budget.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.budgets.insert_one(doc)
+    return budget
+
+@api_router.put("/budgets/{budget_id}")
+async def update_budget(budget_id: str, data: BudgetCreate, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    update_data = data.model_dump(exclude_unset=True)
+    
+    result = await db.budgets.update_one({"id": budget_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Budget not found")
+        
+    return {"message": "Budget updated successfully"}
+
+@api_router.delete("/budgets/{budget_id}")
+async def delete_budget(budget_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+        
+    result = await db.budgets.delete_one({"id": budget_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Budget not found")
+        
+    return {"message": "Budget deleted successfully"}
+
+@api_router.get("/patients/{patient_id}/budgets", response_model=List[dict])
+async def get_patient_budgets(patient_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    budgets = await db.budgets.find({"patient_id": patient_id}, {"_id": 0}).sort("date", -1).to_list(1000)
+    for b in budgets:
+        if isinstance(b.get('created_at'), str):
+            b['created_at'] = datetime.fromisoformat(b['created_at'])
+    return budgets
+
+@api_router.get("/budgets/{budget_id}/pdf")
+async def generate_budget_pdf(budget_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    budget = await db.budgets.find_one({"id": budget_id}, {"_id": 0})
+    if not budget:
+        raise HTTPException(status_code=404, detail="Budget not found")
+        
+    patient = await db.patients.find_one({"id": budget['patient_id']}, {"_id": 0})
+    professional_name = "Não informado"
+    if budget.get('professional_id'):
+        prof = await db.professionals.find_one({"id": budget['professional_id']}, {"_id": 0})
+        if prof:
+            professional_name = prof.get('name', 'Não informado')
+
+    # Fetch clinic settings for Logo and Footer
+    settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
+    if not settings:
+        settings = {}
+
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    # --- Header with Logo ---
+    top_offset = 50
+    logo_data = settings.get("logo")
+    
+    if logo_data and isinstance(logo_data, str):
+        try:
+            b64 = logo_data.split(",", 1)[1] if "," in logo_data else logo_data
+            img_bytes = base64.b64decode(b64)
+            img = ImageReader(io.BytesIO(img_bytes))
+            iw, ih = img.getSize()
+            target_w = 150 # Max width for logo
+            ratio = target_w / float(iw)
+            target_h = ih * ratio
+            
+            # Limit height if it's too tall
+            if target_h > 100:
+                target_h = 100
+                ratio = target_h / float(ih)
+                target_w = iw * ratio
+
+            x = (width - target_w) / 2
+            y_logo = height - 50 - target_h
+            p.drawImage(img, x, y_logo, width=target_w, height=target_h, preserveAspectRatio=True, mask='auto')
+            top_offset = 50 + target_h + 30
+        except Exception as e:
+            print(f"Error drawing logo: {e}")
+            pass
+
+    # Title
+    p.setFont("Helvetica-Bold", 20)
+    p.drawCentredString(width / 2, height - top_offset, "Orçamento")
+    
+    p.setFont("Helvetica", 12)
+    p.drawCentredString(width / 2, height - top_offset - 25, f"Data: {format_date_br(budget.get('date'))}")
+    
+    current_y = height - top_offset - 70
+
+    # --- Patient Info ---
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(50, current_y, "Dados do Paciente")
+    current_y -= 25
+    
+    p.setFont("Helvetica", 12)
+    p.drawString(50, current_y, f"Nome: {patient.get('name') if patient else 'N/A'}")
+    current_y -= 20
+    p.drawString(50, current_y, f"CPF: {patient.get('cpf') if patient else 'N/A'}")
+    current_y -= 40
+    
+    # --- Budget Info ---
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(50, current_y, "Detalhes do Orçamento")
+    current_y -= 25
+    
+    p.setFont("Helvetica", 12)
+    p.drawString(50, current_y, f"Descrição: {budget.get('description')}")
+    current_y -= 20
+    p.drawString(50, current_y, f"Profissional Responsável: {professional_name}")
+    current_y -= 40
+    
+    # --- Treatments ---
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(50, current_y, "Tratamentos/Serviços:")
+    current_y -= 25
+    
+    p.setFont("Helvetica", 12)
+    treatments = budget.get('treatments', [])
+    if treatments:
+        for treatment in treatments:
+            if isinstance(treatment, dict):
+                name = treatment.get('name', 'Tratamento')
+                value = treatment.get('value', 0)
+                display_text = f"• {name} - {format_currency_br(value)}"
+            else:
+                display_text = f"• {treatment}"
+            
+            p.drawString(70, current_y, display_text)
+            current_y -= 20
+    else:
+        p.drawString(70, current_y, "Nenhum tratamento listado.")
+        current_y -= 20
+        
+    # --- Total Value ---
+    current_y -= 20
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(50, current_y, f"Valor Total: {format_currency_br(budget.get('total_value', 0))}")
+    
+    # --- Observations ---
+    if budget.get('observations'):
+        current_y -= 40
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(50, current_y, "Observações:")
+        current_y -= 25
+        p.setFont("Helvetica", 12)
+        
+        obs_text = budget.get('observations')
+        # Simple word wrap logic could be here, but for now we split by lines
+        lines = obs_text.split('\n')
+        for line in lines:
+            # Check for very long lines and truncate or wrap loosely
+            if len(line) > 85: 
+                 line = line[:85] + "..."
+            p.drawString(50, current_y, line)
+            current_y -= 20
+
+    # --- Footer ---
+    footer_y = 50
+    p.setLineWidth(0.5)
+    p.setStrokeColorRGB(0.7, 0.7, 0.7)
+    p.line(50, footer_y + 20, width - 50, footer_y + 20)
+    
+    p.setFont("Helvetica", 9)
+    p.setFillColorRGB(0.3, 0.3, 0.3)
+    
+    footer_lines = []
+    # Line 1: Clinic Name + Address
+    line1_parts = []
+    if settings.get("clinic_name"): line1_parts.append(settings.get("clinic_name"))
+    if settings.get("address"): line1_parts.append(settings.get("address"))
+    if line1_parts: footer_lines.append(" | ".join(line1_parts))
+    
+    # Line 2: Contacts
+    line2_parts = []
+    if settings.get("phone"): line2_parts.append(f"Tel: {settings.get('phone')}")
+    if settings.get("email"): line2_parts.append(settings.get("email"))
+    if settings.get("website"): line2_parts.append(settings.get("website"))
+    if line2_parts: footer_lines.append(" | ".join(line2_parts))
+    
+    current_footer_y = footer_y
+    for line in reversed(footer_lines):
+        p.drawCentredString(width / 2, current_footer_y, line)
+        current_footer_y += 12
+
+    p.showPage()
+    p.save()
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type='application/pdf',
+        headers={"Content-Disposition": f"attachment; filename=orcamento_{budget_id}.pdf"}
+    )
+
+def check_superuser(current_user: dict):
+    if current_user.get("user_type") != "superuser":
+        raise HTTPException(status_code=403, detail="Acesso restrito a Super Usuários")
+
+@api_router.post("/expenses", response_model=Expense)
+async def create_expense(
+    description: str = Form(...),
+    amount: float = Form(...),
+    date: str = Form(...),
+    category: str = Form(...),
+    recipient: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    current_user: dict = Depends(get_current_user)
+):
+    check_superuser(current_user)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    expense = Expense(
+        description=description,
+        amount=amount,
+        date=date,
+        category=category,
+        recipient=recipient,
+        notes=notes
+    )
+
+    if file:
+        fs = AsyncIOMotorGridFSBucket(db)
+        file_data = await file.read()
+        gridfs_id = await fs.upload_from_stream(file.filename, file_data, metadata={"content_type": file.content_type})
+        
+        attachment = Attachment(
+            filename=file.filename,
+            file_type=file.content_type,
+            size_bytes=len(file_data),
+            gridfs_id=str(gridfs_id)
+        )
+        expense.attachments.append(attachment)
+    
+    doc = expense.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    
+    # Ensure attachments are serialized correctly
+    serialized_attachments = []
+    for att in expense.attachments:
+        att_dict = att.model_dump()
+        att_dict['upload_date'] = att_dict['upload_date'].isoformat()
+        serialized_attachments.append(att_dict)
+    doc['attachments'] = serialized_attachments
+
+    await db.expenses.insert_one(doc)
+    return expense
+
+@api_router.get("/expenses", response_model=List[dict])
+async def get_expenses(current_user: dict = Depends(get_current_user)):
+    check_superuser(current_user)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    expenses = await db.expenses.find({}, {"_id": 0}).sort("date", -1).to_list(1000)
+    for e in expenses:
+        if isinstance(e.get('created_at'), str):
+            e['created_at'] = datetime.fromisoformat(e['created_at'])
+    return expenses
+
+@api_router.put("/expenses/{expense_id}")
+async def update_expense(expense_id: str, data: ExpenseCreate, current_user: dict = Depends(get_current_user)):
+    check_superuser(current_user)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    update_data = data.model_dump(exclude_unset=True)
+    result = await db.expenses.update_one({"id": expense_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    return {"message": "Expense updated successfully"}
+
+@api_router.delete("/expenses/{expense_id}")
+async def delete_expense(expense_id: str, current_user: dict = Depends(get_current_user)):
+    check_superuser(current_user)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    result = await db.expenses.delete_one({"id": expense_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    return {"message": "Expense deleted successfully"}
+
+@api_router.post("/expenses/{expense_id}/attachments")
+async def upload_expense_attachment(expense_id: str, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    check_superuser(current_user)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    expense = await db.expenses.find_one({"id": expense_id})
+    if not expense:
+        raise HTTPException(status_code=404, detail="Expense not found")
+
+    fs = AsyncIOMotorGridFSBucket(db)
+    file_data = await file.read()
+    gridfs_id = await fs.upload_from_stream(file.filename, file_data, metadata={"content_type": file.content_type})
+    
+    attachment = Attachment(
+        filename=file.filename,
+        file_type=file.content_type,
+        size_bytes=len(file_data),
+        gridfs_id=str(gridfs_id)
+    )
+    
+    att_doc = attachment.model_dump()
+    att_doc['upload_date'] = att_doc['upload_date'].isoformat()
+    
+    await db.expenses.update_one(
+        {"id": expense_id},
+        {"$push": {"attachments": att_doc}}
+    )
+    
+    return attachment
+
+@api_router.delete("/expenses/{expense_id}/attachments/{attachment_id}")
+async def delete_expense_attachment(expense_id: str, attachment_id: str, current_user: dict = Depends(get_current_user)):
+    check_superuser(current_user)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    expense = await db.expenses.find_one({"id": expense_id})
+    if not expense:
+        raise HTTPException(status_code=404, detail="Expense not found")
+
+    attachments = expense.get("attachments", [])
+    target_att = next((a for a in attachments if a.get("id") == attachment_id), None)
+    
+    if not target_att:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+        
+    if target_att.get("gridfs_id"):
+        try:
+            fs = AsyncIOMotorGridFSBucket(db)
+            await fs.delete(ObjectId(target_att["gridfs_id"]))
+        except Exception:
+            pass
+
+    await db.expenses.update_one(
+        {"id": expense_id},
+        {"$pull": {"attachments": {"id": attachment_id}}}
+    )
+    
+    return {"message": "Attachment deleted"}
+
+@api_router.get("/expenses/attachment/{attachment_id}")
+async def get_expense_attachment(attachment_id: str, current_user: dict = Depends(get_current_user)):
+    check_superuser(current_user)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    expense = await db.expenses.find_one({"attachments.id": attachment_id})
+    if not expense:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+
+    attachments = expense.get("attachments", [])
+    target_att = next((a for a in attachments if a.get("id") == attachment_id), None)
+    
+    if not target_att:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+
+    if not target_att.get("gridfs_id"):
+        raise HTTPException(status_code=404, detail="File content not found")
+
+    fs = AsyncIOMotorGridFSBucket(db)
+    try:
+        grid_out = await fs.open_download_stream(ObjectId(target_att["gridfs_id"]))
+        return StreamingResponse(
+            grid_out,
+            media_type=target_att.get("file_type", "application/octet-stream"),
+            headers={"Content-Disposition": f"attachment; filename={target_att.get('filename', 'download')}"}
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="File not found in GridFS")
+
+def format_date_br(date_str):
+    if not date_str: return ""
+    try:
+        dt = datetime.fromisoformat(date_str) if 'T' in date_str else datetime.strptime(date_str, "%Y-%m-%d")
+        return dt.strftime("%d/%m/%Y")
+    except:
+        return date_str
+
+def format_currency_br(value):
+    try:
+        val = float(value)
+        return f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except:
+        return f"R$ {value}"
 
 # Medical Record Routes
 @api_router.post("/medical-records", response_model=MedicalRecord)
@@ -3570,6 +4117,173 @@ async def play_audio_proxy(message_id: str):
         logging.error(f"Play Audio Proxy Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- Campaign Routes ---
+
+class CampaignRequest(BaseModel):
+    title: str
+    target_type: str  # 'patients' or 'leads'
+    service_id: Optional[str] = None
+    lead_status: Optional[str] = None
+    message: str
+    channel: str = "whatsapp"
+
+async def process_campaign_task(campaign_id: str, targets: List[dict], target_type: str, message_template: str, user: dict):
+    if db is None:
+        return
+        
+    for target in targets:
+        # Personalize message
+        msg = message_template.replace("{name}", target.get("name", "Cliente"))
+        
+        # Send Message
+        phone = target.get("phone")
+        sent = False
+        if phone:
+            try:
+                sent = await send_whatsapp_message(phone, msg)
+            except Exception as e:
+                logging.error(f"Error sending campaign message to {phone}: {e}")
+                sent = False
+            
+        # Create FollowUp
+        followup_id = str(uuid.uuid4())
+        followup = {
+            "id": followup_id,
+            "campaign_id": campaign_id,
+            "lead_id": target.get("id") if target_type == "leads" else None,
+            "patient_id": target.get("id") if target_type == "patients" else None,
+            "assigned_to": user.get("id"),
+            "status": "completed" if sent else "failed",
+            "scheduled_date": datetime.now().strftime("%Y-%m-%d"),
+            "notes": f"Campanha disparada: {msg}",
+            "contact_type": "whatsapp",
+            "contact_reason": "campaign",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        try:
+            await db.followups.insert_one(followup)
+        except Exception as e:
+            logging.error(f"Error creating campaign followup: {e}")
+    
+    # Update Campaign Status to Completed
+    await db.campaigns.update_one(
+        {"id": campaign_id},
+        {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+@api_router.get("/services", response_model=List[dict])
+async def get_services():
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    services = await db.services.find({}, {"_id": 0}).to_list(1000)
+    return services
+
+@api_router.get("/patients/by-treatment", response_model=List[dict])
+async def get_patients_by_treatment(service_id: str, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    # Find appointments for this service
+    cursor = db.appointments.find({"service_id": service_id}, {"patient_id": 1})
+    patient_ids = set()
+    async for doc in cursor:
+        patient_ids.add(doc["patient_id"])
+    
+    query = {
+        "$or": [
+            {"id": {"$in": list(patient_ids)}},
+            {"treatments": {"$elemMatch": {"service_id": service_id}}}
+        ]
+    }
+    patients = await db.patients.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1, "email": 1}).to_list(1000)
+    return patients
+
+@api_router.get("/campaigns", response_model=List[dict])
+async def get_campaigns(current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
+    # Fetch campaigns sorted by date desc
+    campaigns = await db.campaigns.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    # Enrich with delivery stats from followups
+    results = []
+    for camp in campaigns:
+        camp_id = camp.get("id")
+        
+        # Count stats from followups
+        total_sent = await db.followups.count_documents({"campaign_id": camp_id, "status": "completed"})
+        total_failed = await db.followups.count_documents({"campaign_id": camp_id, "status": "failed"})
+        
+        camp["stats"] = {
+            "delivered": total_sent,
+            "failed": total_failed,
+            "total": camp.get("total_targets", 0)
+        }
+        results.append(camp)
+        
+    return results
+
+@api_router.post("/campaigns/send")
+async def send_campaign(request: CampaignRequest, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+        
+    targets = []
+    if request.target_type == "patients":
+        if request.service_id:
+             # Find appointments for this service
+             cursor = db.appointments.find({"service_id": request.service_id}, {"patient_id": 1})
+             patient_ids = set()
+             async for doc in cursor:
+                 patient_ids.add(doc["patient_id"])
+             
+             # Match patients who have appointments OR have the treatment registered in their profile
+             query = {
+                 "$or": [
+                     {"id": {"$in": list(patient_ids)}},
+                     {"treatments": {"$elemMatch": {"service_id": request.service_id}}}
+                 ]
+             }
+        else:
+             query = {}
+        
+        # Only get patients with phone numbers
+        query["phone"] = {"$exists": True, "$ne": ""}
+        targets = await db.patients.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1}).to_list(1000)
+        
+    elif request.target_type == "leads":
+        query = {"phone": {"$exists": True, "$ne": ""}}
+        if request.lead_status:
+            query["status"] = request.lead_status
+        targets = await db.leads.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1}).to_list(1000)
+    
+    if not targets:
+        return {"message": "Nenhum destinatário encontrado para esta campanha", "count": 0}
+
+    # Create Campaign Record
+    campaign_id = str(uuid.uuid4())
+    campaign = {
+        "id": campaign_id,
+        "title": request.title,
+        "message": request.message,
+        "target_type": request.target_type,
+        "service_id": request.service_id,
+        "lead_status": request.lead_status,
+        "created_by": current_user.get("id"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "processing",
+        "total_targets": len(targets)
+    }
+    
+    await db.campaigns.insert_one(campaign)
+
+    # Add background task to process
+    background_tasks.add_task(process_campaign_task, campaign_id, targets, request.target_type, request.message, current_user)
+    
+    return {"message": "Campanha iniciada com sucesso", "count": len(targets), "campaign_id": campaign_id}
+
 @api_router.get("/messages/{message_id}/view-image")
 async def view_image_proxy(message_id: str):
     """
@@ -4356,7 +5070,7 @@ async def delete_follow_up(follow_up_id: str, current_user: dict = Depends(get_c
 # Follow-up Rule Routes
 @api_router.post("/follow-up-rules", response_model=FollowUpRule)
 async def create_follow_up_rule(data: FollowUpRuleCreate, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     rule = FollowUpRule(**data.model_dump())
@@ -4375,7 +5089,7 @@ async def get_follow_up_rules(current_user: dict = Depends(get_current_user)):
 
 @api_router.put("/follow-up-rules/{rule_id}")
 async def update_follow_up_rule(rule_id: str, data: FollowUpRuleCreate, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     update_data = data.model_dump(exclude_unset=True)
@@ -4389,7 +5103,7 @@ async def update_follow_up_rule(rule_id: str, data: FollowUpRuleCreate, current_
 
 @api_router.delete("/follow-up-rules/{rule_id}")
 async def delete_follow_up_rule(rule_id: str, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     result = await db.follow_up_rules.delete_one({"id": rule_id})
@@ -4553,14 +5267,14 @@ class ClinicSettings(BaseModel):
 
 @api_router.get("/settings/omnichannel")
 async def get_omnichannel_settings(current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
     return settings or {}
 
 @api_router.post("/settings/omnichannel")
 async def save_omnichannel_settings(data: OmnichannelSettings, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     update_data = {}
@@ -4581,7 +5295,7 @@ async def save_omnichannel_settings(data: OmnichannelSettings, current_user: dic
 
 @api_router.post("/settings/omnichannel/whatsapp")
 async def save_whatsapp_settings(data: WhatsAppSettings, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     await db.settings.update_one(
@@ -4630,7 +5344,7 @@ async def save_whatsapp_settings(data: WhatsAppSettings, current_user: dict = De
 
 @api_router.post("/settings/omnichannel/instagram")
 async def save_instagram_settings(data: InstagramSettings, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     await db.settings.update_one(
@@ -4642,7 +5356,7 @@ async def save_instagram_settings(data: InstagramSettings, current_user: dict = 
 
 @api_router.post("/settings/omnichannel/messenger")
 async def save_messenger_settings(data: MessengerSettings, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     
     await db.settings.update_one(
@@ -4654,7 +5368,7 @@ async def save_messenger_settings(data: MessengerSettings, current_user: dict = 
 
 @api_router.post("/settings/omnichannel/whatsapp/test")
 async def test_whatsapp_connection(settings: WhatsAppSettings, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
         
     provider = settings.provider
@@ -4724,14 +5438,14 @@ async def test_whatsapp_connection(settings: WhatsAppSettings, current_user: dic
 
 @api_router.get("/settings/clinic")
 async def get_clinic_settings(current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
     return settings or {}
 
 @api_router.post("/settings/clinic")
 async def save_clinic_settings(data: ClinicSettings, current_user: dict = Depends(get_current_user)):
-    if not current_user.get("role", {}).get("is_admin", False):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
     await db.settings.update_one(
         {"type": "clinic"},
