@@ -16,7 +16,7 @@ export default function PatientsPage() {
   const [editingId, setEditingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 50;
+  const [itemsPerPage] = useState(10);
   const [formData, setFormData] = useState({ name: "", email: "", phone: "", birthdate: "", address: "", cpf: "" });
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
@@ -29,21 +29,24 @@ export default function PatientsPage() {
 
   useEffect(() => {
     loadPatients();
-  }, [sortBy, order, filterDebt, currentPage]);
+  }, [sortBy, order, filterDebt]);
 
   const loadPatients = async () => {
     setLoading(true);
     setError(null);
+    console.log("Iniciando carregamento de pacientes...");
     try {
-      const response = await api.get("/patients", {
-        params: { page: currentPage, page_size: pageSize, sort_by: sortBy, order, has_debt: filterDebt },
-      });
+      console.log("Realizando requisição para /patients");
+      const response = await api.get("/patients", { params: { sort_by: sortBy, order, has_debt: filterDebt } });
+      console.log("Resposta da API /patients:", response);
       setPatients(response.data);
     } catch (error) {
+      console.error("Erro detalhado ao carregar pacientes:", error.response || error.message);
       setError(error);
       toast.error("Erro ao carregar pacientes");
     } finally {
       setLoading(false);
+      console.log("Finalizado o carregamento de pacientes.");
     }
   };
 
@@ -81,13 +84,17 @@ export default function PatientsPage() {
   };
 
   const handleDelete = (patient) => {
+    console.log("handleDelete patient:", patient);
     setPatientToDelete(patient);
     setShowDeleteDialog(true);
   };
 
   const confirmDelete = async () => {
+    console.log("confirmDelete patientToDelete:", patientToDelete);
     if (!patientToDelete) return;
+    
     try {
+      console.log("Deleting patient id:", patientToDelete.id);
       await api.delete(`/patients/${patientToDelete.id}`);
       toast.success("Paciente removido!");
       loadPatients();
@@ -232,6 +239,7 @@ export default function PatientsPage() {
                      patientPhone.includes(searchTerm) ||
                      patientEmail.toLowerCase().includes(searchTerm.toLowerCase());
             })
+            .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
             .map((patient) => (
             <div key={patient.id} className="bg-white rounded-2xl p-6 shadow-lg">
               <div className="flex justify-between items-start">
@@ -316,11 +324,11 @@ export default function PatientsPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Paginação (server-side: uma página por vez) */}
-        {patients.length > 0 && (
+        {/* Paginação */}
+        {Math.ceil(patients.length / itemsPerPage) > 1 && (
           <div className="flex justify-center items-center gap-4 mt-8">
             <Button
-              onClick={() => setCurrentPage((p) => p - 1)}
+              onClick={() => setCurrentPage(currentPage - 1)}
               disabled={currentPage === 1}
               variant="outline"
               className="btn-secondary"
@@ -328,12 +336,11 @@ export default function PatientsPage() {
               <ChevronLeft className="w-5 h-5" />
             </Button>
             <span className="text-gray-700">
-              Página {currentPage}
-              {patients.length >= pageSize && " (há mais)"}
+              Página {currentPage} de {Math.ceil(patients.length / itemsPerPage)}
             </span>
             <Button
-              onClick={() => setCurrentPage((p) => p + 1)}
-              disabled={patients.length < pageSize}
+              onClick={() => setCurrentPage(currentPage + 1)}
+              disabled={currentPage === Math.ceil(patients.length / itemsPerPage)}
               variant="outline"
               className="btn-secondary"
             >

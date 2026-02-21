@@ -68,29 +68,36 @@ export default function RevenuePage() {
   const loadData = async () => {
     try {
       const promises = [
-        api.get("/transactions", { params: { limit: 500 } }),
+        api.get("/transactions"),
         api.get("/appointments"),
-        api.get("/patients", { params: { page: 1, page_size: 500, need_debt: true } }),
-        api.get("/revenue/total"),
+        api.get("/patients"),
+        api.get("/revenue/total")
       ];
+      
       if (isSuperUser) {
         promises.push(api.get("/expenses"));
       }
+
       const results = await Promise.all(promises);
+      
       setTransactions(results[0].data);
       setAppointments(results[1].data);
       setPatients(results[2].data);
       setTotalRevenue(results[3].data.total_revenue);
+
       if (isSuperUser && results[4]) {
         setExpenses(results[4].data);
-        setTotalExpenses(results[4].data.reduce((acc, curr) => acc + curr.amount, 0));
+        const totalExp = results[4].data.reduce((acc, curr) => acc + curr.amount, 0);
+        setTotalExpenses(totalExp);
       }
+
       const debtsMap = {};
       results[2].data.forEach((p) => {
-        debtsMap[p.id] = p.total_debt ?? 0;
+        debtsMap[p.id] = p.total_debt || 0;
       });
       setPatientDebts(debtsMap);
     } catch (error) {
+      console.error(error);
       toast.error("Erro ao carregar dados de faturamento");
     }
   };
