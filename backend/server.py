@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, File, UploadFile, Form, BackgroundTasks
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import io
 import json
@@ -1231,6 +1231,42 @@ async def get_total_revenue(current_user: dict = Depends(get_current_user)):
     
     return {"total_revenue": total_revenue}
 
+
+@api_router.get("/dashboard/stats")
+async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
+    """Estatísticas leves para o dashboard (evita carregar listas completas)."""
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    today = datetime.now(timezone.utc).date().isoformat()
+    query_prof = {}
+    if current_user.get("user_type") in ["profissional", "profissional_admin"] and current_user.get("professional_id"):
+        query_prof["professional_id"] = current_user.get("professional_id")
+    # Contagens em paralelo (apenas contagem, sem trazer documentos)
+    patients_count = await db.patients.count_documents({})
+    leads_count = await db.leads.count_documents({})
+    appointments_total = await db.appointments.count_documents(query_prof)
+    appointments_today = await db.appointments.count_documents({**query_prof, "appointment_date": today})
+    leads_hot = await db.leads.count_documents({"status": "quente"})
+    rev_paid = await db.transactions.aggregate([{"$match": {"status": "paid"}}, {"$group": {"_id": None, "total": {"$sum": "$amount"}}}]).to_list(1)
+    rev_pending = await db.transactions.aggregate([{"$match": {"status": "pending"}}, {"$group": {"_id": None, "total": {"$sum": "$amount"}}}]).to_list(1)
+    revenue_paid = rev_paid[0]["total"] if rev_paid else 0
+    revenue_pending = rev_pending[0]["total"] if rev_pending else 0
+    expenses_total = 0
+    if current_user.get("user_type") == "superuser":
+        exp_agg = await db.expenses.aggregate([{"$group": {"_id": None, "total": {"$sum": "$amount"}}}]).to_list(1)
+        expenses_total = exp_agg[0]["total"] if exp_agg else 0
+    return {
+        "patientsTotal": patients_count,
+        "leadsTotal": leads_count,
+        "appointmentsTotal": appointments_total,
+        "appointmentsToday": appointments_today,
+        "leadsHot": leads_hot,
+        "revenuePaid": revenue_paid,
+        "revenuePending": revenue_pending,
+        "expensesTotal": expenses_total,
+        "netRevenue": revenue_paid - expenses_total,
+    }
+
 @api_router.get("/patients/{patient_id}/debts")
 async def get_patient_debts(patient_id: str, current_user: dict = Depends(get_current_user)):
     if db is None:
@@ -1469,19 +1505,19 @@ async def get_professionals(ids: Optional[str] = None, current_user: dict = Depe
     if DEMO_MODE:
         professionals = _find("professionals", {})
         for p in professionals:
-            if isinstance(p.get('created_at'), str):
-                p['created_at'] = datetime.fromisoformat(p['created_at'])
+            if isinstance(p.get("created_at"), str):
+                p["created_at"] = datetime.fromisoformat(p["created_at"])
         return professionals
     query = {}
     if ids:
-        id_list = [i.strip() for i in ids.split(',') if i.strip()]
+        id_list = [i.strip() for i in ids.split(",") if i.strip()]
         if id_list:
             query = {"id": {"$in": id_list}}
     professionals = await db.professionals.find(query, {"_id": 0}).to_list(1000)
     for p in professionals:
-        if isinstance(p.get('created_at'), str):
-            p['created_at'] = datetime.fromisoformat(p['created_at'])
-    return professionals
+        if isinstance(p.get("created_at"), str):
+            p["created_at"] = datetime.fromisoformat(p["created_at"])
+    return JSONResponse(content=professionals, headers={"Cache-Control": "private, max-age=60"})
 
 @api_router.get("/professionals/{professional_id}", response_model=dict)
 async def get_professional(professional_id: str, current_user: dict = Depends(get_current_user)):
@@ -1547,19 +1583,19 @@ async def get_services(ids: Optional[str] = None, current_user: dict = Depends(g
     if DEMO_MODE:
         services = _find("services", {})
         for s in services:
-            if isinstance(s.get('created_at'), str):
-                s['created_at'] = datetime.fromisoformat(s['created_at'])
+            if isinstance(s.get("created_at"), str):
+                s["created_at"] = datetime.fromisoformat(s["created_at"])
         return services
     query = {}
     if ids:
-        id_list = [i.strip() for i in ids.split(',') if i.strip()]
+        id_list = [i.strip() for i in ids.split(",") if i.strip()]
         if id_list:
             query = {"id": {"$in": id_list}}
     services = await db.services.find(query, {"_id": 0}).to_list(1000)
     for s in services:
-        if isinstance(s.get('created_at'), str):
-            s['created_at'] = datetime.fromisoformat(s['created_at'])
-    return services
+        if isinstance(s.get("created_at"), str):
+            s["created_at"] = datetime.fromisoformat(s["created_at"])
+    return JSONResponse(content=services, headers={"Cache-Control": "private, max-age=60"})
 
 @api_router.put("/services/{service_id}")
 async def update_service(service_id: str, data: ServiceCreate, current_user: dict = Depends(get_current_user)):
@@ -2213,86 +2249,58 @@ async def download_attachment(
 @api_router.get("/patients", response_model=List[dict])
 async def get_patients(
     page: int = 1,
-    page_size: int = 10000,
+    page_size: int = 100,
     sort_by: Optional[str] = None,
     order: Optional[str] = "desc",
     has_debt: Optional[bool] = None,
+    need_debt: Optional[bool] = None,
     current_user: dict = Depends(get_current_user)
 ):
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
 
-    pipeline = [
-        {
-            "$lookup": {
-                "from": "appointments",
-                "let": {"pid": "$id"},
-                "pipeline": [
-                    {"$match": {"$expr": {"$and": [
-                        {"$eq": ["$patient_id", "$$pid"]},
-                        {"$eq": ["$paid", False]}
-                    ]}}},
-                    {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}}
-                ],
-                "as": "unpaid_appts"
-            }
-        },
-        {
-            "$lookup": {
-                "from": "transactions",
-                "let": {"pid": "$id"},
-                "pipeline": [
-                    {"$match": {"$expr": {"$eq": ["$patient_id", "$$pid"]}, "status": "pending"}},
-                    {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}}
-                ],
-                "as": "pending_trans"
-            }
-        },
-        {
-            "$addFields": {
-                "total_debt": {"$add": [{"$sum": "$unpaid_appts.total"}, {"$sum": "$pending_trans.total"}]}
-            }
-        },
-    ]
-
-    if has_debt is True:
-        pipeline += [{"$match": {"total_debt": {"$gt": 0}}}]
-
-    pipeline += [
-        {
-            "$project": {
-                "_id": 0,
-                "id": 1,
-                "name": 1,
-                "email": 1,
-                "phone": 1,
-                "birthdate": 1,
-                "address": 1,
-                "cpf": 1,
-                "created_at": 1,
-                "total_debt": 1
-            }
-        }
-    ]
-
+    page_size = max(1, min(page_size, 500))
     skip = max(0, (page - 1) * page_size)
     sort_field = sort_by if sort_by in {"name", "created_at"} else "created_at"
     sort_order = 1 if order == "asc" else -1
-    pipeline += [
-        {"$sort": {sort_field: sort_order}},
-        {"$skip": skip},
-        {"$limit": page_size}
-    ]
-    patients = await db.patients.aggregate(pipeline).to_list(page_size)
+    use_aggregation = has_debt is True or need_debt is True
+
+    if not use_aggregation:
+        cursor = db.patients.find(
+            {}, {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "birthdate": 1, "address": 1, "cpf": 1, "created_at": 1}
+        ).sort(sort_field, sort_order).skip(skip).limit(page_size)
+        patients = await cursor.to_list(page_size)
+        for p in patients:
+            p["total_debt"] = 0
+    else:
+        pipeline = [
+            {"$lookup": {"from": "appointments", "let": {"pid": "$id"}, "pipeline": [
+                {"$match": {"$expr": {"$and": [{"$eq": ["$patient_id", "$$pid"]}, {"$eq": ["$paid", False]}]}}},
+                {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}}
+            ], "as": "unpaid_appts"}},
+            {"$lookup": {"from": "transactions", "let": {"pid": "$id"}, "pipeline": [
+                {"$match": {"$expr": {"$eq": ["$patient_id", "$$pid"]}, "status": "pending"}},
+                {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}}
+            ], "as": "pending_trans"}},
+            {"$addFields": {"total_debt": {"$add": [{"$sum": "$unpaid_appts.total"}, {"$sum": "$pending_trans.total"}]}}},
+        ]
+        if has_debt is True:
+            pipeline.append({"$match": {"total_debt": {"$gt": 0}}})
+        pipeline += [
+            {"$project": {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "birthdate": 1, "address": 1, "cpf": 1, "created_at": 1, "total_debt": 1}},
+            {"$sort": {sort_field: sort_order}},
+            {"$skip": skip},
+            {"$limit": page_size},
+        ]
+        patients = await db.patients.aggregate(pipeline).to_list(page_size)
 
     for p in patients:
         try:
-            if isinstance(p.get('created_at'), datetime):
-                p['created_at'] = p['created_at'].isoformat()
+            if isinstance(p.get("created_at"), datetime):
+                p["created_at"] = p["created_at"].isoformat()
         except Exception as e:
-            logging.error(f"Error converting created_at for patient {p.get('id')}: {e}")
-            p['created_at'] = None
-
+            logging.error("Error converting created_at for patient %s: %s", p.get("id"), e)
+            p["created_at"] = None
     return patients
 
 @api_router.get("/patients/{patient_id}/medical-records", response_model=List[dict])
@@ -2682,13 +2690,12 @@ async def get_transactions(
         query["patient_id"] = patient_id
     sort_field = sort_by if sort_by in {"created_at", "transaction_date", "amount", "status"} else "created_at"
     sort_order = -1 if order == "desc" else 1
-    cursor = db.transactions.find(query, {"_id": 0}).sort(sort_field, sort_order)
-    if limit and isinstance(limit, int):
-        cursor = cursor.limit(max(1, min(limit, 1000)))
-    transactions = await cursor.to_list(length=1000)
+    effective_limit = max(1, min(limit or 200, 1000))
+    cursor = db.transactions.find(query, {"_id": 0}).sort(sort_field, sort_order).limit(effective_limit)
+    transactions = await cursor.to_list(length=effective_limit)
     for t in transactions:
-        if isinstance(t.get('created_at'), str):
-            t['created_at'] = datetime.fromisoformat(t['created_at'])
+        if isinstance(t.get("created_at"), str):
+            t["created_at"] = datetime.fromisoformat(t["created_at"])
     return transactions
 
 # Budget Routes

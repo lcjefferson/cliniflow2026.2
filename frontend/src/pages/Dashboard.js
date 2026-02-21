@@ -26,52 +26,18 @@ export default function Dashboard() {
 
   const loadStats = async () => {
     try {
-      const promises = [
-        api.get("/appointments"),
-        api.get("/leads"),
-        api.get("/patients"),
-        api.get("/transactions")
-      ];
-
-      if (isSuperUser) {
-        promises.push(api.get("/expenses"));
-      }
-
-      const results = await Promise.all(promises);
-      const [appointments, leads, patients, transactions] = results;
-      const expenses = isSuperUser ? results[4] : { data: [] };
-
-      // Calcular agendamentos de hoje
-      const today = new Date().toISOString().split('T')[0];
-      const appointmentsToday = appointments.data.filter(a => a.appointment_date === today).length;
-
-      // Calcular leads quentes
-      const leadsHot = leads.data.filter(l => l.status === "quente").length;
-
-      // Calcular receita paga e pendente
-      const revenuePaid = transactions.data
-        .filter(t => t.status === "paid")
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const revenuePending = transactions.data
-        .filter(t => t.status === "pending")
-        .reduce((sum, t) => sum + t.amount, 0);
-
-      // Calcular despesas (apenas para superusuário)
-      const expensesTotal = expenses.data.reduce((sum, e) => sum + e.amount, 0);
-      const netRevenue = revenuePaid - expensesTotal;
-
+      const { data } = await api.get("/dashboard/stats");
       setStats({
-        appointmentsToday,
-        appointmentsTotal: appointments.data.length,
-        leadsTotal: leads.data.length,
-        leadsHot,
-        patientsTotal: patients.data.length,
-        revenueTotal: revenuePaid + revenuePending,
-        revenuePaid,
-        revenuePending,
-        expensesTotal,
-        netRevenue
+        appointmentsToday: data.appointmentsToday ?? 0,
+        appointmentsTotal: data.appointmentsTotal ?? 0,
+        leadsTotal: data.leadsTotal ?? 0,
+        leadsHot: data.leadsHot ?? 0,
+        patientsTotal: data.patientsTotal ?? 0,
+        revenueTotal: (data.revenuePaid ?? 0) + (data.revenuePending ?? 0),
+        revenuePaid: data.revenuePaid ?? 0,
+        revenuePending: data.revenuePending ?? 0,
+        expensesTotal: data.expensesTotal ?? 0,
+        netRevenue: data.netRevenue ?? 0,
       });
     } catch (error) {
       console.error("Erro ao carregar estatísticas", error);
