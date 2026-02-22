@@ -65,7 +65,7 @@ export default function CalendarPage() {
       setPatients(pat.data);
       setServices(serv.data);
       setRooms(room.data);
-      setLeads(leadResp.data);
+      setLeads(leadResp.data?.items ?? (Array.isArray(leadResp.data) ? leadResp.data : []));
     } catch (error) {
       console.error("Erro ao carregar dados");
     }

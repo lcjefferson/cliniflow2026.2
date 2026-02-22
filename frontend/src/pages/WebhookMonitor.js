@@ -29,7 +29,7 @@ export default function WebhookMonitor() {
       ]);
       
       setConversations(convRes.data);
-      setLeads(leadsRes.data);
+      setLeads(leadsRes.data?.items ?? (Array.isArray(leadsRes.data) ? leadsRes.data : []));
       setLastUpdate(new Date());
 
       // Carregar mensagens de todas as conversas

@@ -368,6 +368,7 @@ export default function OmnichannelPageV2() {
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [filter, setFilter] = useState("all"); // all, mine, unassigned
   const [searchTerm, setSearchTerm] = useState("");
   const messagesEndRef = useRef(null);
@@ -453,19 +454,36 @@ export default function OmnichannelPageV2() {
 
   useEffect(() => {
     loadData();
-    // Auto-refresh a cada 10 segundos
-    const interval = setInterval(loadData, 10000);
+    const REFRESH_MS = 15000;
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") loadData();
+    }, REFRESH_MS);
     return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
     let interval;
     if (selectedConversation) {
-      loadMessages(selectedConversation.id);
-      // Poll messages every 3 seconds to keep chat live
+      setMessages([]);
+      setLoadingMessages(true);
+      const convId = selectedConversation.id;
+      api
+        .get(`/conversations/${convId}/messages`)
+        .then((res) => {
+          setMessages(Array.isArray(res.data) ? res.data : []);
+          setShouldScrollToBottom(true);
+        })
+        .catch(() => toast.error("Erro ao carregar mensagens"))
+        .finally(() => setLoadingMessages(false));
       interval = setInterval(() => {
-        loadMessages(selectedConversation.id);
-      }, 3000);
+        if (document.visibilityState === "visible") {
+          api.get(`/conversations/${convId}/messages`).then((res) => {
+            setMessages(Array.isArray(res.data) ? res.data : []);
+          }).catch(() => {});
+        }
+      }, 6000);
+    } else {
+      setMessages([]);
     }
     return () => {
       if (interval) clearInterval(interval);
@@ -473,10 +491,18 @@ export default function OmnichannelPageV2() {
   }, [selectedConversation]);
 
   useEffect(() => {
-    if (shouldScrollToBottom) {
-      scrollToBottom();
+    if (shouldScrollToBottom && messages.length > 0) {
+      requestAnimationFrame(() => scrollToBottom());
     }
-  }, [messages]);
+  }, [messages, shouldScrollToBottom]);
+
+  useEffect(() => {
+    if (selectedConversation && messages.length > 0) {
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      });
+    }
+  }, [selectedConversation?.id, messages.length]);
 
   useEffect(() => {
     const socket = io(API_BASE);
@@ -518,21 +544,29 @@ export default function OmnichannelPageV2() {
 
   const loadData = async () => {
     try {
-      const [convRes, leadsRes] = await Promise.all([
-        api.get("/conversations"),
-        api.get("/leads")
-      ]);
-      setConversations(convRes.data);
-      setLeads(leadsRes.data);
+      setLoading(true);
+      const convRes = await api.get("/conversations");
+      const list = Array.isArray(convRes.data) ? convRes.data : [];
+      setConversations(list);
+      // Leads em segundo plano (para conversão/edição); lista usa lead_name da conversa
+      api.get("/leads", { params: { page_size: 300 } }).then((leadsRes) => {
+        const data = leadsRes.data?.items ?? (Array.isArray(leadsRes.data) ? leadsRes.data : []);
+        setLeads(data);
+      }).catch(() => {});
     } catch (error) {
       console.error("Erro ao carregar conversas:", error);
+      toast.error("Erro ao carregar conversas");
+    } finally {
+      setLoading(false);
     }
   };
 
   const loadMessages = async (conversationId) => {
+    if (!conversationId) return;
     try {
       const response = await api.get(`/conversations/${conversationId}/messages`);
-      setMessages(response.data);
+      setMessages(Array.isArray(response.data) ? response.data : []);
+      setShouldScrollToBottom(true);
     } catch (error) {
       toast.error("Erro ao carregar mensagens");
     }
@@ -610,8 +644,15 @@ export default function OmnichannelPageV2() {
     }
   };
 
-  const getLeadInfo = (leadId) => {
-    return leads.find(l => l.id === leadId) || { name: "Lead Desconhecido", phone: "", email: "" };
+  const getLeadInfo = (leadId, conversation = null) => {
+    const id = leadId != null ? String(leadId) : "";
+    const fromConv = conversation && (conversation.lead_name != null || conversation.lead_phone != null)
+      ? { name: conversation.lead_name || conversation.lead_phone || "Contato", phone: conversation.lead_phone || "", email: conversation.lead_email || "" }
+      : null;
+    const fromList = leads.find(l => String(l.id) === id);
+    if (fromList) return { name: fromList.name || "Contato", phone: fromList.phone || "", email: fromList.email || "" };
+    if (fromConv) return fromConv;
+    return { name: "Contato", phone: id ? String(leadId) : "", email: "" };
   };
 
   const getChannelIcon = (channel) => {
@@ -715,9 +756,9 @@ export default function OmnichannelPageV2() {
   };
 
   const filteredConversations = conversations.filter(conv => {
-    const lead = getLeadInfo(conv.lead_id);
-    const matchesSearch = !searchTerm || 
-        lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    const lead = getLeadInfo(conv.lead_id, conv);
+    const matchesSearch = !searchTerm ||
+        lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         lead.phone?.includes(searchTerm) ||
         lead.email?.toLowerCase().includes(searchTerm.toLowerCase());
         
@@ -801,14 +842,17 @@ export default function OmnichannelPageV2() {
               </div>
             ) : (
               filteredConversations.map((conv) => {
-                const lead = getLeadInfo(conv.lead_id);
+                const lead = getLeadInfo(conv.lead_id, conv);
                 const isSelected = selectedConversation?.id === conv.id;
                 const isAssignedToMe = conv.assigned_to === user?.id;
                 
                 return (
                   <div
                     key={conv.id}
-                    onClick={() => setSelectedConversation(conv)}
+                    onClick={() => {
+                      if (conv.id === selectedConversation?.id) return;
+                      setSelectedConversation(conv);
+                    }}
                     className={`p-4 border-b border-gray-100 cursor-pointer transition-all hover:bg-gray-50 ${
                       isSelected ? "bg-blue-50 border-l-4 border-l-blue-500" : ""
                     }`}
@@ -874,19 +918,19 @@ export default function OmnichannelPageV2() {
                     </div>
                     <div>
                       <h2 className="font-semibold text-gray-900">
-                        {getLeadInfo(selectedConversation.lead_id).name}
+                        {getLeadInfo(selectedConversation.lead_id, selectedConversation).name}
                       </h2>
                       <div className="flex items-center gap-3 text-sm text-gray-600">
-                        {getLeadInfo(selectedConversation.lead_id).phone && (
+                        {getLeadInfo(selectedConversation.lead_id, selectedConversation).phone && (
                           <span className="flex items-center gap-1">
                             <Phone className="w-3 h-3" />
-                            {getLeadInfo(selectedConversation.lead_id).phone}
+                            {getLeadInfo(selectedConversation.lead_id, selectedConversation).phone}
                           </span>
                         )}
-                        {getLeadInfo(selectedConversation.lead_id).email && (
+                        {getLeadInfo(selectedConversation.lead_id, selectedConversation).email && (
                           <span className="flex items-center gap-1">
                             <Mail className="w-3 h-3" />
-                            {getLeadInfo(selectedConversation.lead_id).email}
+                            {getLeadInfo(selectedConversation.lead_id, selectedConversation).email}
                           </span>
                         )}
                       </div>
@@ -933,7 +977,12 @@ export default function OmnichannelPageV2() {
                 onScroll={handleScroll}
                 className="flex-1 overflow-y-auto p-4 space-y-4"
               >
-                {messages.map((msg) => {
+                {loadingMessages ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-500 border-t-transparent" />
+                  </div>
+                ) : (
+                messages.map((msg) => {
                   const isFromConsultant = msg.sender_type === "consultant";
                   const isFromMe = msg.sender_id === user?.id;
                   
@@ -952,7 +1001,7 @@ export default function OmnichannelPageV2() {
                         }`}>
                           {!isFromMe && (
                             <p className="text-xs opacity-75 mb-1">
-                              {isFromConsultant ? msg.sender_name : getLeadInfo(selectedConversation.lead_id).name}
+                              {isFromConsultant ? msg.sender_name : getLeadInfo(selectedConversation.lead_id, selectedConversation).name}
                             </p>
                           )}
                           <div className="break-all">{renderMessageContent(msg.content, msg.id)}</div>
@@ -968,10 +1017,10 @@ export default function OmnichannelPageV2() {
                             )}
                           </p>
                         </div>
-                      </div>
                     </div>
-                  );
-                })}
+                  </div>
+                );
+                }) ) }
                 <div ref={messagesEndRef} />
               </div>
 

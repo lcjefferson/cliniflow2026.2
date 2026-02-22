@@ -94,8 +94,9 @@ export default function FollowUpPage() {
 
   const loadLeads = async () => {
     try {
-      const response = await api.get("/leads");
-      setLeads(response.data);
+      const response = await api.get("/leads", { params: { page_size: 500 } });
+      const data = response.data?.items ?? (Array.isArray(response.data) ? response.data : []);
+      setLeads(data);
     } catch (error) {
       console.error("Erro ao carregar leads");
     }

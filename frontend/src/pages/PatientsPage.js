@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
 import { Plus, Edit, Trash2, Eye, ChevronLeft, ChevronRight, X, AlertCircle } from "lucide-react";
@@ -16,7 +16,7 @@ export default function PatientsPage() {
   const [editingId, setEditingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  const pageSize = 50;
   const [formData, setFormData] = useState({ name: "", email: "", phone: "", birthdate: "", address: "", cpf: "" });
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
@@ -26,27 +26,54 @@ export default function PatientsPage() {
   const [filterDebt, setFilterDebt] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [patientToDelete, setPatientToDelete] = useState(null);
+  const prevSearchTermRef = useRef(searchTerm);
 
   useEffect(() => {
-    loadPatients();
-  }, [sortBy, order, filterDebt]);
+    const searchChanged = prevSearchTermRef.current !== searchTerm;
+    if (searchChanged) {
+      prevSearchTermRef.current = searchTerm;
+      setCurrentPage(1);
+    }
+    const pageToFetch = searchChanged ? 1 : currentPage;
+    setLoading(true);
+    setError(null);
+    const params = {
+      page: pageToFetch,
+      page_size: pageSize,
+      sort_by: sortBy,
+      order,
+      has_debt: filterDebt,
+    };
+    if (searchTerm && searchTerm.trim()) params.search = searchTerm.trim();
+    api
+      .get("/patients", { params })
+      .then((response) => setPatients(response.data))
+      .catch((err) => {
+        setError(err);
+        toast.error("Erro ao carregar pacientes");
+      })
+      .finally(() => setLoading(false));
+  }, [sortBy, order, filterDebt, currentPage, searchTerm]);
 
   const loadPatients = async () => {
     setLoading(true);
     setError(null);
-    console.log("Iniciando carregamento de pacientes...");
     try {
-      console.log("Realizando requisição para /patients");
-      const response = await api.get("/patients", { params: { sort_by: sortBy, order, has_debt: filterDebt } });
-      console.log("Resposta da API /patients:", response);
+      const params = {
+        page: currentPage,
+        page_size: pageSize,
+        sort_by: sortBy,
+        order,
+        has_debt: filterDebt,
+      };
+      if (searchTerm && searchTerm.trim()) params.search = searchTerm.trim();
+      const response = await api.get("/patients", { params });
       setPatients(response.data);
     } catch (error) {
-      console.error("Erro detalhado ao carregar pacientes:", error.response || error.message);
       setError(error);
       toast.error("Erro ao carregar pacientes");
     } finally {
       setLoading(false);
-      console.log("Finalizado o carregamento de pacientes.");
     }
   };
 
@@ -199,17 +226,10 @@ export default function PatientsPage() {
               </Button>
             )}
           </div>
-          {searchTerm && (
+          {searchTerm && searchTerm.trim() && (
             <p className="mt-3 text-sm text-gray-600">
-              {patients.filter(p => {
-                if (!searchTerm) return true;
-                const patientName = p.name || "";
-                const patientEmail = p.email || "";
-                const patientPhone = p.phone || "";
-                return patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                       patientPhone.includes(searchTerm) ||
-                       patientEmail.toLowerCase().includes(searchTerm.toLowerCase());
-              }).length} resultado(s) encontrado(s)
+              {patients.length} resultado(s) nesta página
+              {patients.length >= pageSize && " (há mais páginas)"}
             </p>
           )}
         </div>
@@ -229,18 +249,7 @@ export default function PatientsPage() {
                 Tentar Novamente
               </Button>
             </div>
-          ) : patients
-            .filter(p => {
-              if (!searchTerm) return true;
-              const patientName = p.name || "";
-              const patientEmail = p.email || "";
-              const patientPhone = p.phone || "";
-              return patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                     patientPhone.includes(searchTerm) ||
-                     patientEmail.toLowerCase().includes(searchTerm.toLowerCase());
-            })
-            .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-            .map((patient) => (
+          ) : patients.map((patient) => (
             <div key={patient.id} className="bg-white rounded-2xl p-6 shadow-lg">
               <div className="flex justify-between items-start">
                 <div className="flex-1">
@@ -324,11 +333,11 @@ export default function PatientsPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Paginação */}
-        {Math.ceil(patients.length / itemsPerPage) > 1 && (
+        {/* Paginação (server-side) */}
+        {patients.length > 0 && (
           <div className="flex justify-center items-center gap-4 mt-8">
             <Button
-              onClick={() => setCurrentPage(currentPage - 1)}
+              onClick={() => setCurrentPage((p) => p - 1)}
               disabled={currentPage === 1}
               variant="outline"
               className="btn-secondary"
@@ -336,11 +345,12 @@ export default function PatientsPage() {
               <ChevronLeft className="w-5 h-5" />
             </Button>
             <span className="text-gray-700">
-              Página {currentPage} de {Math.ceil(patients.length / itemsPerPage)}
+              Página {currentPage}
+              {patients.length >= pageSize && " (há mais)"}
             </span>
             <Button
-              onClick={() => setCurrentPage(currentPage + 1)}
-              disabled={currentPage === Math.ceil(patients.length / itemsPerPage)}
+              onClick={() => setCurrentPage((p) => p + 1)}
+              disabled={patients.length < pageSize}
               variant="outline"
               className="btn-secondary"
             >

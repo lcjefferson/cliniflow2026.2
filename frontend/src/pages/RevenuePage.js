@@ -61,44 +61,42 @@ export default function RevenuePage() {
   const [showDeleteTransactionDialog, setShowDeleteTransactionDialog] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState(null);
 
+  const [loadingData, setLoadingData] = useState(true);
+
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
+    setLoadingData(true);
     try {
       const promises = [
-        api.get("/transactions"),
-        api.get("/appointments"),
-        api.get("/patients"),
-        api.get("/revenue/total")
+        api.get("/transactions", { params: { limit: 500 } }),
+        api.get("/appointments", { params: { limit: 500 } }),
+        api.get("/patients", { params: { page: 1, page_size: 300, need_debt: true } }),
+        api.get("/revenue/total"),
       ];
-      
       if (isSuperUser) {
         promises.push(api.get("/expenses"));
       }
-
       const results = await Promise.all(promises);
-      
       setTransactions(results[0].data);
       setAppointments(results[1].data);
       setPatients(results[2].data);
       setTotalRevenue(results[3].data.total_revenue);
-
       if (isSuperUser && results[4]) {
         setExpenses(results[4].data);
-        const totalExp = results[4].data.reduce((acc, curr) => acc + curr.amount, 0);
-        setTotalExpenses(totalExp);
+        setTotalExpenses(results[4].data.reduce((acc, curr) => acc + curr.amount, 0));
       }
-
       const debtsMap = {};
       results[2].data.forEach((p) => {
-        debtsMap[p.id] = p.total_debt || 0;
+        debtsMap[p.id] = p.total_debt ?? 0;
       });
       setPatientDebts(debtsMap);
     } catch (error) {
-      console.error(error);
       toast.error("Erro ao carregar dados de faturamento");
+    } finally {
+      setLoadingData(false);
     }
   };
 
@@ -592,6 +590,12 @@ export default function RevenuePage() {
 
   return (
     <Layout>
+      {loadingData ? (
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="animate-spin rounded-full h-12 w-12 border-2 border-blue-500 border-t-transparent" />
+        </div>
+      ) : (
+      <>
       <div className="p-6">
         {isSuperUser ? (
           <Tabs defaultValue="revenues" className="w-full space-y-6">
@@ -1031,6 +1035,8 @@ export default function RevenuePage() {
           </div>
         </DialogContent>
       </Dialog>
+      </>
+      )}
     </Layout>
   );
 }

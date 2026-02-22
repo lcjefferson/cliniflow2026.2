@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, File, UploadFile, Form, BackgroundTasks
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import io
 import json
@@ -15,6 +15,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from bson import ObjectId
 import os
+import re
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
@@ -493,6 +494,7 @@ async def lifespan(app: FastAPI):
             await db.patients.create_index("attachments.id")
             await db.patients.create_index("treatments.id")
             await db.transactions.create_index("patient_id")
+            await db.transactions.create_index("status")
             await db.transactions.create_index([("patient_id", 1), ("status", 1)])
             await db.transactions.create_index([("created_at", -1)])
             await db.medical_records.create_index("patient_id")
@@ -510,10 +512,14 @@ async def lifespan(app: FastAPI):
             await db.professionals.create_index("id")
             await db.professionals.create_index("name")
             await db.professionals.create_index([("created_at", -1)])
+            await db.leads.create_index("id")
             await db.leads.create_index("status")
             await db.leads.create_index("phone")
             await db.leads.create_index("email")
             await db.leads.create_index([("created_at", -1)])
+            await db.conversations.create_index([("last_message_at", -1)])
+            await db.conversations.create_index("lead_id")
+            await db.messages.create_index([("conversation_id", 1), ("created_at", 1)])
         except Exception:
             pass
         except Exception:
@@ -1231,6 +1237,52 @@ async def get_total_revenue(current_user: dict = Depends(get_current_user)):
     
     return {"total_revenue": total_revenue}
 
+
+@api_router.get("/dashboard/stats")
+async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
+    """Estatísticas leves para o dashboard. Todas as consultas em paralelo."""
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    today = datetime.now(timezone.utc).date().isoformat()
+    query_prof = {}
+    if current_user.get("user_type") in ["profissional", "profissional_admin"] and current_user.get("professional_id"):
+        query_prof["professional_id"] = current_user.get("professional_id")
+
+    async def _rev_agg(status: str):
+        r = await db.transactions.aggregate([{"$match": {"status": status}}, {"$group": {"_id": None, "total": {"$sum": "$amount"}}}]).to_list(1)
+        return r[0]["total"] if r else 0
+
+    async def _expenses_total():
+        if current_user.get("user_type") != "superuser":
+            return 0
+        r = await db.expenses.aggregate([{"$group": {"_id": None, "total": {"$sum": "$amount"}}}]).to_list(1)
+        return r[0]["total"] if r else 0
+
+    results = await asyncio.gather(
+        db.patients.count_documents({}),
+        db.leads.count_documents({}),
+        db.appointments.count_documents(query_prof),
+        db.appointments.count_documents({**query_prof, "appointment_date": today}),
+        db.leads.count_documents({"status": "quente"}),
+        _rev_agg("paid"),
+        _rev_agg("pending"),
+        _expenses_total(),
+    )
+    patients_count, leads_count, appointments_total, appointments_today, leads_hot, revenue_paid, revenue_pending, expenses_total = results
+
+    return {
+        "patientsTotal": patients_count,
+        "leadsTotal": leads_count,
+        "appointmentsTotal": appointments_total,
+        "appointmentsToday": appointments_today,
+        "leadsHot": leads_hot,
+        "revenuePaid": revenue_paid,
+        "revenuePending": revenue_pending,
+        "expensesTotal": expenses_total,
+        "netRevenue": revenue_paid - expenses_total,
+    }
+
+
 @api_router.get("/patients/{patient_id}/debts")
 async def get_patient_debts(patient_id: str, current_user: dict = Depends(get_current_user)):
     if db is None:
@@ -1479,8 +1531,8 @@ async def get_professionals(ids: Optional[str] = None, current_user: dict = Depe
             query = {"id": {"$in": id_list}}
     professionals = await db.professionals.find(query, {"_id": 0}).to_list(1000)
     for p in professionals:
-        if isinstance(p.get('created_at'), str):
-            p['created_at'] = datetime.fromisoformat(p['created_at'])
+        if isinstance(p.get("created_at"), str):
+            p["created_at"] = datetime.fromisoformat(p["created_at"])
     return professionals
 
 @api_router.get("/professionals/{professional_id}", response_model=dict)
@@ -1557,8 +1609,8 @@ async def get_services(ids: Optional[str] = None, current_user: dict = Depends(g
             query = {"id": {"$in": id_list}}
     services = await db.services.find(query, {"_id": 0}).to_list(1000)
     for s in services:
-        if isinstance(s.get('created_at'), str):
-            s['created_at'] = datetime.fromisoformat(s['created_at'])
+        if isinstance(s.get("created_at"), str):
+            s["created_at"] = datetime.fromisoformat(s["created_at"])
     return services
 
 @api_router.put("/services/{service_id}")
@@ -2213,86 +2265,78 @@ async def download_attachment(
 @api_router.get("/patients", response_model=List[dict])
 async def get_patients(
     page: int = 1,
-    page_size: int = 10000,
+    page_size: int = 100,
     sort_by: Optional[str] = None,
     order: Optional[str] = "desc",
     has_debt: Optional[bool] = None,
+    need_debt: Optional[bool] = None,
+    search: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
 
-    pipeline = [
-        {
-            "$lookup": {
-                "from": "appointments",
-                "let": {"pid": "$id"},
-                "pipeline": [
-                    {"$match": {"$expr": {"$and": [
-                        {"$eq": ["$patient_id", "$$pid"]},
-                        {"$eq": ["$paid", False]}
-                    ]}}},
-                    {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}}
-                ],
-                "as": "unpaid_appts"
-            }
-        },
-        {
-            "$lookup": {
-                "from": "transactions",
-                "let": {"pid": "$id"},
-                "pipeline": [
-                    {"$match": {"$expr": {"$eq": ["$patient_id", "$$pid"]}, "status": "pending"}},
-                    {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}}
-                ],
-                "as": "pending_trans"
-            }
-        },
-        {
-            "$addFields": {
-                "total_debt": {"$add": [{"$sum": "$unpaid_appts.total"}, {"$sum": "$pending_trans.total"}]}
-            }
-        },
-    ]
-
-    if has_debt is True:
-        pipeline += [{"$match": {"total_debt": {"$gt": 0}}}]
-
-    pipeline += [
-        {
-            "$project": {
-                "_id": 0,
-                "id": 1,
-                "name": 1,
-                "email": 1,
-                "phone": 1,
-                "birthdate": 1,
-                "address": 1,
-                "cpf": 1,
-                "created_at": 1,
-                "total_debt": 1
-            }
-        }
-    ]
-
+    page_size = max(1, min(page_size, 500))
     skip = max(0, (page - 1) * page_size)
     sort_field = sort_by if sort_by in {"name", "created_at"} else "created_at"
     sort_order = 1 if order == "asc" else -1
-    pipeline += [
-        {"$sort": {sort_field: sort_order}},
-        {"$skip": skip},
-        {"$limit": page_size}
-    ]
-    patients = await db.patients.aggregate(pipeline).to_list(page_size)
+    use_aggregation = has_debt is True or need_debt is True
+
+    search_query = {}
+    if search and search.strip():
+        term = search.strip()
+        re_option = "i"
+        pattern = re.escape(term)
+        phone_digits = "".join(c for c in term if c.isdigit())
+        phone_pattern = re.escape(phone_digits) if phone_digits else pattern
+        search_query = {
+            "$or": [
+                {"name": {"$regex": pattern, "$options": re_option}},
+                {"email": {"$regex": pattern, "$options": re_option}},
+                {"phone": {"$regex": phone_pattern, "$options": re_option}},
+            ]
+        }
+
+    if not use_aggregation:
+        cursor = db.patients.find(
+            search_query,
+            {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "birthdate": 1, "address": 1, "cpf": 1, "created_at": 1},
+        ).sort(sort_field, sort_order).skip(skip).limit(page_size)
+        patients = await cursor.to_list(page_size)
+        for p in patients:
+            p["total_debt"] = 0
+    else:
+        pipeline = []
+        if search_query:
+            pipeline.append({"$match": search_query})
+        pipeline += [
+            {"$lookup": {"from": "appointments", "let": {"pid": "$id"}, "pipeline": [
+                {"$match": {"$expr": {"$and": [{"$eq": ["$patient_id", "$$pid"]}, {"$eq": ["$paid", False]}]}}},
+                {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}}
+            ], "as": "unpaid_appts"}},
+            {"$lookup": {"from": "transactions", "let": {"pid": "$id"}, "pipeline": [
+                {"$match": {"$expr": {"$eq": ["$patient_id", "$$pid"]}, "status": "pending"}},
+                {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}}
+            ], "as": "pending_trans"}},
+            {"$addFields": {"total_debt": {"$add": [{"$sum": "$unpaid_appts.total"}, {"$sum": "$pending_trans.total"}]}}},
+        ]
+        if has_debt is True:
+            pipeline.append({"$match": {"total_debt": {"$gt": 0}}})
+        pipeline += [
+            {"$project": {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "birthdate": 1, "address": 1, "cpf": 1, "created_at": 1, "total_debt": 1}},
+            {"$sort": {sort_field: sort_order}},
+            {"$skip": skip},
+            {"$limit": page_size},
+        ]
+        patients = await db.patients.aggregate(pipeline).to_list(page_size)
 
     for p in patients:
         try:
-            if isinstance(p.get('created_at'), datetime):
-                p['created_at'] = p['created_at'].isoformat()
+            if isinstance(p.get("created_at"), datetime):
+                p["created_at"] = p["created_at"].isoformat()
         except Exception as e:
-            logging.error(f"Error converting created_at for patient {p.get('id')}: {e}")
-            p['created_at'] = None
-
+            logging.error("Error converting created_at for patient %s: %s", p.get("id"), e)
+            p["created_at"] = None
     return patients
 
 @api_router.get("/patients/{patient_id}/medical-records", response_model=List[dict])
@@ -2451,6 +2495,7 @@ async def get_appointments(
     sort_by: Optional[str] = None,
     order: Optional[str] = "asc",
     patient_id: Optional[str] = None,
+    limit: Optional[int] = None,
     current_user: dict = Depends(get_current_user)
 ):
     query = {}
@@ -2465,13 +2510,14 @@ async def get_appointments(
             return []
 
     sort_order = 1 if order == "asc" else -1
+    cap = max(1, min(limit or 1000, 2000))
 
     cursor = db.appointments.find(query, {"_id": 0})
 
     if sort_by:
         cursor = cursor.sort(sort_by, sort_order)
 
-    appointments = await cursor.to_list(1000)
+    appointments = await cursor.to_list(cap)
     
     for a in appointments:
         if isinstance(a.get('created_at'), str):
@@ -2682,13 +2728,12 @@ async def get_transactions(
         query["patient_id"] = patient_id
     sort_field = sort_by if sort_by in {"created_at", "transaction_date", "amount", "status"} else "created_at"
     sort_order = -1 if order == "desc" else 1
-    cursor = db.transactions.find(query, {"_id": 0}).sort(sort_field, sort_order)
-    if limit and isinstance(limit, int):
-        cursor = cursor.limit(max(1, min(limit, 1000)))
-    transactions = await cursor.to_list(length=1000)
+    effective_limit = max(1, min(limit or 200, 1000))
+    cursor = db.transactions.find(query, {"_id": 0}).sort(sort_field, sort_order).limit(effective_limit)
+    transactions = await cursor.to_list(length=effective_limit)
     for t in transactions:
-        if isinstance(t.get('created_at'), str):
-            t['created_at'] = datetime.fromisoformat(t['created_at'])
+        if isinstance(t.get("created_at"), str):
+            t["created_at"] = datetime.fromisoformat(t["created_at"])
     return transactions
 
 # Budget Routes
@@ -3147,18 +3192,39 @@ async def create_lead(data: LeadCreate, current_user: dict = Depends(get_current
     await db.leads.insert_one(doc)
     return lead
 
-@api_router.get("/leads", response_model=List[dict])
-async def get_leads(status: Optional[str] = None, page: int = 1, page_size: int = 1000, current_user: dict = Depends(get_current_user)):
+@api_router.get("/leads")
+async def get_leads(
+    status: Optional[str] = None,
+    source: Optional[str] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+    current_user: dict = Depends(get_current_user),
+):
+    """Lista leads com paginação. Retorna { items, total } para carregamento rápido."""
     query = {}
     if status:
         query["status"] = status
+    if source:
+        query["source"] = source
+    if search and search.strip():
+        term = re.escape(search.strip())
+        re_opt = "i"
+        query["$or"] = [
+            {"name": {"$regex": term, "$options": re_opt}},
+            {"email": {"$regex": term, "$options": re_opt}},
+            {"phone": {"$regex": term, "$options": re_opt}},
+            {"notes": {"$regex": term, "$options": re_opt}},
+        ]
+    total = await db.leads.count_documents(query)
+    page_size = max(1, min(page_size, 500))
     skip = max(0, (page - 1) * page_size)
     cursor = db.leads.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(page_size)
-    leads = await cursor.to_list(length=page_size)
-    for l in leads:
-        if isinstance(l.get('created_at'), str):
-            l['created_at'] = datetime.fromisoformat(l['created_at'])
-    return leads
+    items = await cursor.to_list(length=page_size)
+    for l in items:
+        if isinstance(l.get("created_at"), str):
+            l["created_at"] = datetime.fromisoformat(l["created_at"])
+    return {"items": items, "total": total}
 
 @api_router.put("/leads/{lead_id}")
 async def update_lead(lead_id: str, data: LeadCreate, current_user: dict = Depends(get_current_user)):
@@ -3244,7 +3310,26 @@ async def create_conversation(lead_id: str, current_user: dict = Depends(get_cur
 
 @api_router.get("/conversations", response_model=List[dict])
 async def get_conversations(current_user: dict = Depends(get_current_user)):
-    conversations = await db.conversations.find({}, {"_id": 0}).sort("last_message_at", -1).to_list(1000)
+    # Aggregation: conversations + lead name/phone/email in one query (faster, avoids N+1)
+    pipeline = [
+        {"$sort": {"last_message_at": -1}},
+        {"$limit": 500},
+        {"$lookup": {
+            "from": "leads",
+            "localField": "lead_id",
+            "foreignField": "id",
+            "as": "_lead",
+            "pipeline": [{"$project": {"_id": 0, "id": 1, "name": 1, "phone": 1, "email": 1}}]
+        }},
+        {"$addFields": {
+            "lead_name": {"$arrayElemAt": ["$_lead.name", 0]},
+            "lead_phone": {"$arrayElemAt": ["$_lead.phone", 0]},
+            "lead_email": {"$arrayElemAt": ["$_lead.email", 0]}
+        }},
+        {"$project": {"_id": 0, "_lead": 0}}
+    ]
+    cursor = db.conversations.aggregate(pipeline)
+    conversations = await cursor.to_list(length=500)
     for c in conversations:
         try:
             if isinstance(c.get('created_at'), str):
@@ -3252,7 +3337,7 @@ async def get_conversations(current_user: dict = Depends(get_current_user)):
             if isinstance(c.get('last_message_at'), str):
                 c['last_message_at'] = datetime.fromisoformat(c['last_message_at'])
         except ValueError:
-            pass # Keep as string if parse fails
+            pass
     return conversations
 
 async def send_whatsapp_message(to_phone: str, message_body: str):
@@ -3629,15 +3714,43 @@ async def get_conversation(conversation_id: str, current_user: dict = Depends(ge
         
     return conversation
 
+def _phone_digits(s):
+    return re.sub(r"\D", "", str(s or ""))
+
+
 @api_router.get("/conversations/{conversation_id}/messages", response_model=List[dict])
 async def get_conversation_messages(conversation_id: str, current_user: dict = Depends(get_current_user)):
     """
-    Get messages for a specific conversation (Path Parameter version for Frontend).
+    Returns all messages (lead + consultant/secretary) for this conversation.
+    If there are other conversations for the same lead phone (duplicates), their messages
+    are included so the user sees the full thread including all secretary messages.
     """
-    messages = await db.messages.find({"conversation_id": conversation_id}, {"_id": 0}).to_list(1000)
+    conversation = await db.conversations.find_one({"id": conversation_id}, {"_id": 0})
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    conv_ids = [conversation_id]
+    lead = await db.leads.find_one({"id": conversation.get("lead_id")}, {"_id": 0, "id": 1, "phone": 1})
+    if lead and lead.get("phone"):
+        phone_digits = _phone_digits(lead["phone"])
+        if phone_digits:
+            lead_ids_same_phone = [lead["id"]]
+            async for other in db.leads.find({}, {"_id": 0, "id": 1, "phone": 1}).limit(3000):
+                if other["id"] != lead["id"] and _phone_digits(other.get("phone")) == phone_digits:
+                    lead_ids_same_phone.append(other["id"])
+            if len(lead_ids_same_phone) > 1:
+                extra = await db.conversations.find(
+                    {"lead_id": {"$in": lead_ids_same_phone}, "id": {"$ne": conversation_id}},
+                    {"_id": 0, "id": 1}
+                ).to_list(50)
+                conv_ids.extend(c["id"] for c in extra)
+
+    messages = await db.messages.find(
+        {"conversation_id": {"$in": conv_ids}}, {"_id": 0}
+    ).sort("created_at", 1).to_list(2000)
     for m in messages:
-        if isinstance(m.get('created_at'), str):
-            m['created_at'] = datetime.fromisoformat(m['created_at'])
+        if isinstance(m.get("created_at"), str):
+            m["created_at"] = datetime.fromisoformat(m["created_at"])
     return messages
 
 @api_router.put("/conversations/{conversation_id}/assign")
@@ -3660,10 +3773,12 @@ async def assign_conversation(conversation_id: str, current_user: dict = Depends
 
 @api_router.get("/messages", response_model=List[dict])
 async def get_messages(conversation_id: str, current_user: dict = Depends(get_current_user)):
-    messages = await db.messages.find({"conversation_id": conversation_id}, {"_id": 0}).to_list(1000)
+    messages = await db.messages.find(
+        {"conversation_id": conversation_id}, {"_id": 0}
+    ).sort("created_at", 1).to_list(1000)
     for m in messages:
-        if isinstance(m.get('created_at'), str):
-            m['created_at'] = datetime.fromisoformat(m['created_at'])
+        if isinstance(m.get("created_at"), str):
+            m["created_at"] = datetime.fromisoformat(m["created_at"])
     return messages
 
 # Nested Routes for Conversations (Frontend Compatibility)
@@ -4710,28 +4825,36 @@ async def uazapi_webhook(request: Request):
                         
                 return {"status": "processed", "type": "FileDownloaded"}
 
-        # Check if it's a message
-        # Evolution structure usually: data.message or data.data.message
-        # FortaLabs structure: payload.message
+        # Check if it's a message (incoming or outgoing/sent by secretary from cell)
+        # Evolution: data.message. FortaLabs: payload.message (with optional payload.chat)
         message_data = payload.get("data", {}).get("message") or \
                        payload.get("data") or \
-                       payload.get("message")
-        
-        # Adjust for FortaLabs custom payload if needed
+                       payload.get("message") or \
+                       payload.get("event", {})
         if not message_data and "content" in payload:
-             message_data = payload # Maybe it's flat
-             
+            message_data = payload
+        # Some providers send "sent" events with message at root or inside event
+        if not message_data and payload.get("event"):
+            message_data = payload["event"] if isinstance(payload["event"], dict) else message_data
+
         if not message_data:
             return {"status": "ignored", "reason": "no_message_data"}
 
-        # Extract info
-        from_number = message_data.get("remoteJid", "").split("@")[0]
+        # Log when we might be processing an outgoing (secretary) message — helps confirm if provider sends these
+        _from_me_raw = message_data.get("fromMe") or message_data.get("IsFromMe") or (message_data.get("key") or {}).get("fromMe")
+        if _from_me_raw:
+            logging.info(f"[WEBHOOK] Processing possible OUTGOING/sent message (fromMe=true). Chat/contact should be used as lead.")
+
+        # Extract the CONTACT number (lead) — the other party in the chat (1:1 = the lead)
+        # For INCOMING: sender_pn/chatid = lead. For OUTGOING (fromMe): chatid/wa_chatid = lead, sender = us.
+        chat_obj = payload.get("chat", {})
+        from_number = (message_data.get("remoteJid") or message_data.get("Chat") or message_data.get("chatid") or message_data.get("sender_pn") or "").split("@")[0]
         if not from_number:
-             from_number = message_data.get("from", "").split("@")[0]
+            from_number = message_data.get("from", "").split("@")[0]
         if not from_number:
-             from_number = message_data.get("sender_pn", "").split("@")[0]
-        if not from_number:
-             from_number = message_data.get("chatid", "").split("@")[0]
+            from_number = (chat_obj.get("wa_chatid") or chat_obj.get("phone") or "").split("@")[0]
+        if from_number:
+            from_number = re.sub(r"\D", "", from_number) or from_number
              
         # Check for Media Message first
         msg_type = message_data.get("messageType") or message_data.get("type")
@@ -4742,76 +4865,107 @@ async def uazapi_webhook(request: Request):
         body = None
         
         if msg_type in ["image", "video", "audio", "voice", "ptt", "document", "sticker"]:
-             # Try to extract media info
-             media_url = message_data.get("mediaUrl") or message_data.get("url") or message_data.get("URL")
-             # Some providers put URL inside content/body
-             if not media_url and isinstance(message_data.get("content"), dict):
-                 media_url = message_data.get("content").get("url") or message_data.get("content").get("URL")
-                 
+             # Try to extract media info (Evolution: url/URL at root; FortaLabs: inside content)
+             content_obj = message_data.get("content") if isinstance(message_data.get("content"), dict) else {}
+             media_url = (
+                 message_data.get("mediaUrl") or message_data.get("url") or message_data.get("URL")
+                 or content_obj.get("url") or content_obj.get("URL")
+             )
              base64_data = message_data.get("base64") or message_data.get("file", {}).get("base64")
-             
              body = {
-                 "mimetype": message_data.get("mimetype") or message_data.get("mediaType") or "application/octet-stream",
+                 "mimetype": (
+                     message_data.get("mimetype") or message_data.get("mediaType")
+                     or content_obj.get("mimetype") or content_obj.get("Mimetype")
+                     or "application/octet-stream"
+                 ),
                  "url": media_url,
                  "file_data": base64_data,
-                 "caption": message_data.get("caption"),
-                 "fileName": message_data.get("fileName"),
-                 "seconds": message_data.get("duration") or message_data.get("seconds"),
-                 "PTT": msg_type in ["ptt", "voice"]
+                 "caption": message_data.get("caption") or content_obj.get("caption"),
+                 "fileName": message_data.get("fileName") or content_obj.get("fileName"),
+                 "seconds": message_data.get("duration") or message_data.get("seconds") or content_obj.get("seconds"),
+                 "PTT": msg_type in ["ptt", "voice"] or content_obj.get("PTT"),
              }
-             
-             # If no URL and no Base64, but we have an encrypted file (.enc), we might need to rely on the frontend or provider settings
-             # But let's ensure we capture everything we can
-             if not body["url"] and not body["file_data"]:
-                 # Fallback to saving the whole message_data as content to debug/display raw
-                 logging.warning(f"Media message without URL or Base64: {message_data}")
-                 # Try to look deeper
-                 if "content" in message_data and isinstance(message_data["content"], dict):
-                     body.update(message_data["content"])
+             if not body["url"] and not body["file_data"] and content_obj:
+                 body.update(content_obj)
 
         if not body:
-            body = message_data.get("conversation") or \
-                   message_data.get("text") or \
-                   message_data.get("content") or \
-                   message_data.get("body") or \
-                   (message_data.get("extendedTextMessage", {}).get("text"))
-               
+            # Text message: Evolution uses conversation/text; FortaLabs may use text or Text
+            body = (
+                message_data.get("conversation") or message_data.get("text") or message_data.get("Text")
+                or message_data.get("body") or message_data.get("Body")
+                or (message_data.get("extendedTextMessage") or {}).get("text")
+            )
+            if isinstance(body, dict) and not body.get("url") and not body.get("URL"):
+                body = body.get("text") or body.get("Text") or body
+
+        def _digits(s):
+            return re.sub(r"\D", "", str(s or ""))
+
+        def _is_truthy(val):
+            if isinstance(val, bool): return val
+            if isinstance(val, str): return val.lower() in ("true", "1", "yes")
+            if isinstance(val, int): return val == 1
+            return False
+
+        # Detect if message was SENT by us (secretary from cell) — must be before lead lookup
+        is_from_me = (
+            _is_truthy(message_data.get("key", {}).get("fromMe")) or _is_truthy(message_data.get("fromMe"))
+            or _is_truthy(message_data.get("IsFromMe"))
+            or _is_truthy(payload.get("key", {}).get("fromMe"))
+            or _is_truthy(payload.get("data", {}).get("key", {}).get("fromMe"))
+            or _is_truthy(payload.get("event", {}).get("IsFromMe"))
+        )
+        if not is_from_me and chat_obj.get("owner") and chat_obj.get("wa_lastMessageSender"):
+            if isinstance(chat_obj.get("wa_lastMessageSender"), str) and chat_obj["wa_lastMessageSender"].startswith(str(chat_obj.get("owner", ""))):
+                is_from_me = True
+        if is_from_me and chat_obj:
+            contact_jid = (chat_obj.get("wa_chatid") or chat_obj.get("phone") or message_data.get("chatid") or "").split("@")[0]
+            if contact_jid:
+                from_number = _digits(contact_jid) or from_number
+
+        # When secretary sends from cell, some providers don't send body in webhook — keep message anyway
+        if not body and is_from_me:
+            body = "[mensagem enviada pelo celular]"
         if not from_number or not body:
-             return {"status": "ignored", "reason": "incomplete_data"}
+            return {"status": "ignored", "reason": "incomplete_data"}
 
-        # Normalize phone for search
-        # Try exact match first, then without 55 if present
         lead = await db.leads.find_one({"phone": from_number}, {"_id": 0})
-        
         if not lead and from_number.startswith("55"):
-            # Try without 55
-            short_number = from_number[2:]
-            lead = await db.leads.find_one({"phone": short_number}, {"_id": 0})
-            
+            lead = await db.leads.find_one({"phone": from_number[2:]}, {"_id": 0})
         if not lead:
-            # Try searching as if DB has 55 but incoming doesn't (unlikely for UazApi but possible)
             lead = await db.leads.find_one({"phone": f"55{from_number}"}, {"_id": 0})
-
-        # Handle Brazil 9th digit (55 + XX + 9 + 8 digits vs 55 + XX + 8 digits)
         if not lead and from_number.startswith("55"):
-            # If we have 13 digits (55 XX 9 XXXX XXXX), try removing the 9
-            if len(from_number) == 13 and from_number[4] == '9':
-                no_nine = from_number[:4] + from_number[5:]
-                lead = await db.leads.find_one({"phone": no_nine}, {"_id": 0})
-            
-            # If we have 12 digits (55 XX XXXX XXXX), try adding the 9
+            if len(from_number) == 13 and from_number[4] == "9":
+                lead = await db.leads.find_one({"phone": from_number[:4] + from_number[5:]}, {"_id": 0})
             elif len(from_number) == 12:
-                with_nine = from_number[:4] + '9' + from_number[4:]
-                lead = await db.leads.find_one({"phone": with_nine}, {"_id": 0})
+                lead = await db.leads.find_one({"phone": from_number[:4] + "9" + from_number[4:]}, {"_id": 0})
+        # FortaLabs/UI: lead can be stored as "+55 85 8940-9758" etc. Match by digits only.
+        if not lead:
+            incoming_digits = _digits(from_number)
+            cursor = db.leads.find({}, {"_id": 0}).limit(3000)
+            async for doc in cursor:
+                if _digits(doc.get("phone")) == incoming_digits:
+                    lead = doc
+                    break
+                if incoming_digits.startswith("55") and _digits(doc.get("phone")) == incoming_digits[2:]:
+                    lead = doc
+                    break
+                if _digits(doc.get("phone")) == incoming_digits[-11:] and len(incoming_digits) >= 11:
+                    lead = doc
+                    break
 
-        # Get name from payload
-        contact_name = message_data.get("pushName") or \
-                       message_data.get("notifyName") or \
-                       payload.get("sender", {}).get("name") or \
-                       payload.get("data", {}).get("pushName") or \
-                       payload.get("chat", {}).get("name") or \
-                       payload.get("chat", {}).get("wa_name") or \
-                       payload.get("chat", {}).get("contactName")
+        # Get name from payload (Evolution pushName; FortaLabs chat.lead_fullName / chat.name)
+        contact_name = (
+            message_data.get("pushName") or
+            message_data.get("notifyName") or
+            payload.get("sender", {}).get("name") or
+            payload.get("data", {}).get("pushName") or
+            payload.get("chat", {}).get("lead_fullName") or
+            payload.get("chat", {}).get("name") or
+            payload.get("chat", {}).get("wa_name") or
+            payload.get("chat", {}).get("contactName") or
+            payload.get("event", {}).get("MessageSender")
+        )
 
         # Try to fetch name from API if missing (FortaLabs/UazApi)
         if not contact_name:
@@ -4955,50 +5109,13 @@ async def uazapi_webhook(request: Request):
                  logging.info(f"Duplicate message {external_id} ignored.")
                  return {"status": "ignored", "reason": "duplicate"}
 
-        # Determine sender info
+        # Determine sender info (is_from_me was already detected above to fix from_number)
         sender_type = "lead"
         sender_id = lead["id"]
         sender_name = lead["name"]
-        
-        # Robust check for is_from_me
-        is_from_me = False
-        
-        def is_truthy(val):
-            if isinstance(val, bool): return val
-            if isinstance(val, str): return val.lower() in ('true', '1', 'yes')
-            if isinstance(val, int): return val == 1
-            return False
-
-        # 1. Check message_data directly
-        key = message_data.get("key", {})
-        if is_truthy(key.get("fromMe")) or is_truthy(message_data.get("fromMe")):
-            is_from_me = True
-            
-        # 2. Check payload root (Evolution/Baileys standard)
-        if not is_from_me:
-             if is_truthy(payload.get("key", {}).get("fromMe")):
-                 is_from_me = True
-             elif is_truthy(payload.get("data", {}).get("key", {}).get("fromMe")):
-                 is_from_me = True
-             elif is_truthy(payload.get("data", {}).get("message", {}).get("key", {}).get("fromMe")):
-                 is_from_me = True
-        
-        # 3. Check UazApi/FortaLabs owner matching
-        if not is_from_me:
-             chat_info = payload.get("chat", {})
-             owner = chat_info.get("owner")
-             last_sender = chat_info.get("wa_lastMessageSender")
-             
-             if owner and last_sender and isinstance(last_sender, str):
-                 # wa_lastMessageSender is usually "NUMBER@s.whatsapp.net"
-                 # owner is usually "NUMBER"
-                 if last_sender.startswith(owner):
-                     is_from_me = True
-                     logging.info(f"Detected is_from_me=True via UazApi wa_lastMessageSender: {last_sender}")
-
         if is_from_me:
             sender_type = "consultant"
-            sender_id = None # Unknown consultant if sent from mobile
+            sender_id = None
             sender_name = message_data.get("pushName") or "Via WhatsApp"
 
         message = {
@@ -5012,7 +5129,9 @@ async def uazapi_webhook(request: Request):
             "external_id": external_id
         }
         await db.messages.insert_one(message)
-        
+        if is_from_me:
+            logging.info(f"[WEBHOOK] Saved OUTGOING message to conversation {conversation['id']} (lead {lead.get('name', lead.get('phone'))})")
+
         # Update conversation timestamp
         await db.conversations.update_one(
             {"id": conversation["id"]},

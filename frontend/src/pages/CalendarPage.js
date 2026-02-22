@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
 import { Plus, ChevronLeft, ChevronRight, X } from "lucide-react";
@@ -54,6 +54,7 @@ export default function CalendarPage() {
   const [appointmentToDelete, setAppointmentToDelete] = useState(null);
   const [showPatientDialog, setShowPatientDialog] = useState(false);
   const [selectedPatientForDialog, setSelectedPatientForDialog] = useState(null);
+  const [patientNameCache, setPatientNameCache] = useState({});
 
   // Cores para cada profissional
   const professionalColors = [
@@ -72,6 +73,42 @@ export default function CalendarPage() {
     loadData();
   }, [currentDate]);
 
+  const requestedPatientIdsRef = useRef(new Set());
+
+  const fetchPatientName = (patientId) => {
+    const id = patientId != null ? String(patientId) : "";
+    if (!id || requestedPatientIdsRef.current.has(id)) return;
+    requestedPatientIdsRef.current.add(id);
+    api
+      .get(`/patients/${id}`)
+      .then((res) => {
+        const name = res.data?.name;
+        if (name) setPatientNameCache((prev) => ({ ...prev, [id]: name }));
+      })
+      .catch(() => {});
+  };
+
+  // Buscar nomes de pacientes que não estão na lista (ex.: além dos 500 carregados)
+  useEffect(() => {
+    const patientIds = [...new Set((appointments || []).map((a) => (a.patient_id != null ? String(a.patient_id) : null)).filter(Boolean))];
+    const missing = patientIds.filter(
+      (id) =>
+        !patients.some((p) => String(p.id) === id) &&
+        !requestedPatientIdsRef.current.has(id)
+    );
+    missing.forEach((id) => fetchPatientName(id));
+  }, [appointments, patients]);
+
+  // Ao abrir o modal do agendamento, garantir que o nome do paciente seja buscado se ainda não tiver
+  useEffect(() => {
+    if (showDetailsDialog && selectedAppointment?.patient_id) {
+      const id = String(selectedAppointment.patient_id);
+      const hasInList = patients.some((p) => String(p.id) === id);
+      const hasInCache = patientNameCache[id];
+      if (!hasInList && !hasInCache) fetchPatientName(id);
+    }
+  }, [showDetailsDialog, selectedAppointment?.patient_id]);
+
   // Verificar conflitos automaticamente quando campos importantes mudarem
   useEffect(() => {
     if (showDialog && formData.professional_id && formData.room_id && formData.appointment_date && formData.appointment_time) {
@@ -86,7 +123,7 @@ export default function CalendarPage() {
   const loadMonthAppointments = async () => {
     try {
       const response = await api.get(`/appointments?sort_by=appointment_date&order=asc`);
-      setAppointments(response.data);
+      setAppointments(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       toast.error("Erro ao carregar agendamentos");
     }
@@ -96,16 +133,17 @@ export default function CalendarPage() {
     try {
       const [prof, pat, serv, room] = await Promise.all([
         api.get("/professionals"),
-        api.get("/patients"),
+        api.get("/patients", { params: { page: 1, page_size: 500 } }),
         api.get("/services"),
         api.get("/rooms")
       ]);
-      setProfessionals(prof.data);
-      setPatients(pat.data);
-      setServices(serv.data);
-      setRooms(room.data);
+      setProfessionals(Array.isArray(prof.data) ? prof.data : []);
+      setPatients(Array.isArray(pat.data) ? pat.data : []);
+      setServices(Array.isArray(serv.data) ? serv.data : []);
+      setRooms(Array.isArray(room.data) ? room.data : []);
     } catch (error) {
-      console.error("Erro ao carregar dados");
+      console.error("Erro ao carregar dados do calendário", error);
+      toast.error("Erro ao carregar profissionais, pacientes e salas");
     }
   };
 
@@ -216,9 +254,18 @@ export default function CalendarPage() {
     }
   };
 
-  const openPatientDialog = (patientId) => {
-    const p = patients.find((x) => x.id === patientId);
-    if (!p) return;
+  const openPatientDialog = async (patientId) => {
+    if (!patientId) return;
+    let p = patients.find((x) => x.id === patientId);
+    if (!p) {
+      try {
+        const res = await api.get(`/patients/${patientId}`);
+        p = res.data;
+      } catch {
+        toast.error("Paciente não encontrado");
+        return;
+      }
+    }
     setSelectedPatientForDialog(p);
     setShowPatientDialog(true);
   };
@@ -290,8 +337,12 @@ export default function CalendarPage() {
   };
 
   const getPatientName = (patientId) => {
-    const patient = patients.find(p => p.id === patientId);
-    return patient ? patient.name : "Paciente";
+    if (patientId == null || patientId === "") return "Paciente";
+    const id = String(patientId);
+    const patient = patients.find((p) => String(p.id) === id);
+    if (patient?.name) return patient.name;
+    if (patientNameCache[id]) return patientNameCache[id];
+    return "Paciente";
   };
 
   const getServiceName = (serviceId) => {

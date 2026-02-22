@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
-import { Plus, Edit, Trash2, Filter, UserPlus, ChevronLeft, ChevronRight, X } from "lucide-react";
+import * as XLSX from "xlsx";
+import { Plus, Edit, Trash2, Filter, UserPlus, ChevronLeft, ChevronRight, X, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,8 @@ export default function LeadsPage() {
   const [filterSource, setFilterSource] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  const [totalLeads, setTotalLeads] = useState(0);
+  const pageSize = 50;
   const [formData, setFormData] = useState({ 
     name: "", 
     phone: "", 
@@ -33,19 +35,60 @@ export default function LeadsPage() {
   });
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [leadToDelete, setLeadToDelete] = useState(null);
+  const [loadingLeads, setLoadingLeads] = useState(false);
 
   useEffect(() => {
-    loadLeads();
-  }, [filterStatus]);
+    loadLeads(1);
+  }, [filterStatus, filterSource]);
 
-  const loadLeads = async () => {
+  const loadLeads = async (page = currentPage) => {
+    setLoadingLeads(true);
     try {
-      const params = filterStatus ? `?status=${filterStatus}` : "";
-      const response = await api.get(`/leads${params}`);
-      setLeads(response.data);
-      setCurrentPage(1);
+      const params = { page, page_size: pageSize };
+      if (filterStatus) params.status = filterStatus;
+      if (filterSource) params.source = filterSource;
+      if (searchTerm.trim()) params.search = searchTerm.trim();
+      const response = await api.get("/leads", { params });
+      const data = response.data?.items ?? (Array.isArray(response.data) ? response.data : []);
+      const total = response.data?.total ?? data.length;
+      setLeads(data);
+      setTotalLeads(total);
+      setCurrentPage(page);
     } catch (error) {
       toast.error("Erro ao carregar leads");
+    } finally {
+      setLoadingLeads(false);
+    }
+  };
+
+  const exportToExcel = async () => {
+    try {
+      const params = { page: 1, page_size: 5000 };
+      if (filterStatus) params.status = filterStatus;
+      if (filterSource) params.source = filterSource;
+      if (searchTerm.trim()) params.search = searchTerm.trim();
+      const response = await api.get("/leads", { params });
+      const data = response.data?.items ?? (Array.isArray(response.data) ? response.data : []);
+      if (!data.length) {
+        toast.error("Nenhum lead para exportar");
+        return;
+      }
+    const rows = data.map((l) => ({
+      Nome: l.name || "",
+      Telefone: l.phone || "",
+      Email: l.email || "",
+      Origem: l.source || "",
+      Status: l.status || "",
+      Observações: l.notes || "",
+      Data: l.created_at ? new Date(l.created_at).toLocaleString("pt-BR") : "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Leads");
+    XLSX.writeFile(wb, `leads_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success("Planilha exportada!");
+    } catch (e) {
+      toast.error("Erro ao exportar");
     }
   };
 
@@ -148,24 +191,16 @@ export default function LeadsPage() {
     return <span className={`status-badge ${styles[status]}`}>{labels[status]}</span>;
   };
 
-  // Filtros e Pesquisa
-  const filteredLeads = leads.filter(lead => {
-    const matchesSearch = lead.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         lead.phone.includes(searchTerm) ||
-                         (lead.email && lead.email.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesStatus = !filterStatus || lead.status === filterStatus;
-    const matchesSource = !filterSource || lead.source === filterSource;
-    
-    return matchesSearch && matchesStatus && matchesSource;
-  });
+  // Busca e filtros já aplicados no servidor; lista atual é a página atual
+  const currentLeads = leads;
+  const totalPages = Math.max(1, Math.ceil(totalLeads / pageSize));
 
-  // Paginação
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentLeads = filteredLeads.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredLeads.length / itemsPerPage);
+  const onSearch = () => loadLeads(1);
 
-  const paginate = (pageNumber) => setCurrentPage(pageNumber);
+  const paginate = (pageNumber) => {
+    if (pageNumber < 1 || pageNumber > totalPages) return;
+    loadLeads(pageNumber);
+  };
 
   const handleCleanupDuplicates = async () => {
     if (!window.confirm("Deseja remover leads que já são pacientes cadastrados?")) return;
@@ -185,6 +220,10 @@ export default function LeadsPage() {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900" data-testid="leads-page-title">Leads</h1>
           <div className="flex gap-3">
+            <Button onClick={exportToExcel} variant="outline" className="btn-secondary">
+              <Download className="w-5 h-5 mr-2" />
+              Exportar Excel
+            </Button>
             <Button onClick={handleCleanupDuplicates} variant="outline" className="btn-secondary">
               <Trash2 className="w-5 h-5 mr-2" />
               Limpar Duplicados
@@ -205,6 +244,7 @@ export default function LeadsPage() {
                 placeholder="Nome, telefone ou email..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), onSearch())}
                 className="w-full"
               />
             </div>
@@ -236,27 +276,38 @@ export default function LeadsPage() {
               </select>
             </div>
           </div>
-          {(searchTerm || filterStatus || filterSource) && (
-            <div className="mt-4">
-              <Button
-                onClick={() => {
-                  setSearchTerm("");
-                  setFilterStatus("");
-                  setFilterSource("");
-                }}
-                variant="outline"
-                className="btn-secondary text-sm"
-              >
-                <X className="w-4 h-4 mr-2" />
-                Limpar Filtros
-              </Button>
-              <span className="ml-4 text-sm text-gray-600">
-                {filteredLeads.length} resultado(s) encontrado(s)
-              </span>
-            </div>
-          )}
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button onClick={onSearch} variant="secondary" className="btn-secondary text-sm">
+              Buscar
+            </Button>
+            {(searchTerm || filterStatus || filterSource) && (
+              <>
+                <Button
+                  onClick={() => {
+                    setSearchTerm("");
+                    setFilterStatus("");
+                    setFilterSource("");
+                  }}
+                  variant="outline"
+                  className="btn-secondary text-sm"
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Limpar Filtros
+                </Button>
+                <span className="text-sm text-gray-600">
+                  {totalLeads} resultado(s)
+                </span>
+              </>
+            )}
+          </div>
         </div>
 
+        {loadingLeads ? (
+          <div className="flex items-center justify-center min-h-[300px]">
+            <div className="animate-spin rounded-full h-12 w-12 border-2 border-blue-500 border-t-transparent" />
+          </div>
+        ) : (
+        <>
         <div className="grid gap-6">
           {currentLeads.map((lead) => (
             <div key={lead.id} className="bg-white rounded-2xl p-6 shadow-lg">
@@ -313,7 +364,7 @@ export default function LeadsPage() {
               <ChevronLeft className="w-5 h-5" />
             </Button>
             <span className="text-gray-700">
-              Página {currentPage} de {totalPages}
+              Página {currentPage} de {totalPages} ({totalLeads} lead{totalLeads !== 1 ? "s" : ""})
             </span>
             <Button
               onClick={() => paginate(currentPage + 1)}
@@ -324,6 +375,8 @@ export default function LeadsPage() {
               <ChevronRight className="w-5 h-5" />
             </Button>
           </div>
+        )}
+        </>
         )}
 
         {/* Modal de Editar/Adicionar Lead */}

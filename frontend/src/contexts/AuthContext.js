@@ -8,13 +8,21 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const userData = localStorage.getItem('user');
-    
-    if (token && userData) {
-      setUser(JSON.parse(userData));
+    const finish = () => setLoading(false);
+    try {
+      const token = localStorage.getItem('token');
+      const userData = localStorage.getItem('user');
+      if (token && userData) {
+        const parsed = JSON.parse(userData);
+        if (parsed && typeof parsed === 'object') setUser(parsed);
+      }
+    } catch (e) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
     }
-    setLoading(false);
+    finish();
+    const t = setTimeout(finish, 2000);
+    return () => clearTimeout(t);
   }, []);
 
   const login = async (email, password) => {

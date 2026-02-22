@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
-import api from "../services/api";
+import api, { API_BASE } from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
-import { Settings, Users, Key, User as UserIcon, Plus, Trash2, Save } from "lucide-react";
+import { Settings, Users, Key, User as UserIcon, Plus, Trash2, Save, Copy, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -419,6 +419,38 @@ export default function SettingsPage() {
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Configurar Conexões</h2>
               
               <div className="space-y-8">
+                {/* Webhook WhatsApp (UAZ-API / Omnichannel) */}
+                <div className="border border-gray-200 rounded-xl p-6 bg-gradient-to-br from-green-50 to-white">
+                  <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-green-600" />
+                    Webhook WhatsApp (Omnichannel)
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Use esta URL no painel do UAZ-API/FortaLabs para receber mensagens no Omnichannel. Ative também eventos de <strong>mensagens enviadas</strong> para ver as respostas das secretarias pelo celular.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Input
+                      readOnly
+                      value={`${API_BASE.replace(/\/$/, "")}/api/webhook/uazapi`}
+                      className="font-mono text-sm bg-white border-green-200"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        const url = `${API_BASE.replace(/\/$/, "")}/api/webhook/uazapi`;
+                        navigator.clipboard.writeText(url).then(() => toast.success("URL copiada!")).catch(() => toast.error("Erro ao copiar"));
+                      }}
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copiar
+                    </Button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-3">
+                    Configure esta URL em: painel UAZ-API/FortaLabs → Webhook → URL de callback.
+                  </p>
+                </div>
+
                 {/* Meta Business API */}
                 <div className="border border-gray-200 rounded-xl p-6">
                   <h3 className="text-lg font-bold text-gray-900 mb-4">Meta Business API</h3>
