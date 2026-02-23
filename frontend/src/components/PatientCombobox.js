@@ -27,13 +27,13 @@ export default function PatientCombobox({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Filtra pacientes baseado no termo de busca
+  // Filtra pacientes baseado no termo de busca (campos opcionais para evitar erro quando null/undefined)
   const filteredPatients = patients.filter(patient => {
     const search = searchTerm.toLowerCase();
     return (
-      patient.name.toLowerCase().includes(search) ||
+      (patient.name && patient.name.toLowerCase().includes(search)) ||
       (patient.email && patient.email.toLowerCase().includes(search)) ||
-      patient.phone.includes(search)
+      (patient.phone && String(patient.phone).includes(search))
     );
   });
 

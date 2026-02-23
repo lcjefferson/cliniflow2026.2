@@ -131,16 +131,30 @@ export default function CalendarPage() {
 
   const loadData = async () => {
     try {
-      const [prof, pat, serv, room] = await Promise.all([
+      const [prof, serv, room] = await Promise.all([
         api.get("/professionals"),
-        api.get("/patients", { params: { page: 1, page_size: 500 } }),
         api.get("/services"),
         api.get("/rooms")
       ]);
       setProfessionals(Array.isArray(prof.data) ? prof.data : []);
-      setPatients(Array.isArray(pat.data) ? pat.data : []);
       setServices(Array.isArray(serv.data) ? serv.data : []);
       setRooms(Array.isArray(room.data) ? room.data : []);
+
+      // Carregar todos os pacientes (paginação) para o combobox de agendamento mostrar todos
+      const pageSize = 500;
+      let allPatients = [];
+      let page = 1;
+      let hasMore = true;
+      while (hasMore) {
+        const res = await api.get("/patients", {
+          params: { page, page_size: pageSize, sort_by: "name", order: "asc" }
+        });
+        const list = Array.isArray(res.data) ? res.data : [];
+        allPatients = allPatients.concat(list);
+        hasMore = list.length === pageSize;
+        page += 1;
+      }
+      setPatients(allPatients);
     } catch (error) {
       console.error("Erro ao carregar dados do calendário", error);
       toast.error("Erro ao carregar profissionais, pacientes e salas");
