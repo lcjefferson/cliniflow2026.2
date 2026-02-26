@@ -2496,11 +2496,20 @@ async def get_appointments(
     order: Optional[str] = "asc",
     patient_id: Optional[str] = None,
     limit: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     query = {}
     if patient_id:
         query["patient_id"] = patient_id
+    if date_from or date_to:
+        date_filter = {}
+        if date_from:
+            date_filter["$gte"] = date_from
+        if date_to:
+            date_filter["$lte"] = date_to
+        query["appointment_date"] = date_filter
 
     # Filter for professional users to only see their own appointments
     if current_user.get("user_type") in ["profissional", "profissional_admin"]:

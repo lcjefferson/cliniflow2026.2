@@ -122,7 +122,20 @@ export default function CalendarPage() {
 
   const loadMonthAppointments = async () => {
     try {
-      const response = await api.get(`/appointments?sort_by=appointment_date&order=asc`);
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const dateFrom = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      const dateTo = `${year}-${String(month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      const response = await api.get("/appointments", {
+        params: {
+          sort_by: "appointment_date",
+          order: "asc",
+          date_from: dateFrom,
+          date_to: dateTo,
+          limit: 500
+        }
+      });
       setAppointments(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       toast.error("Erro ao carregar agendamentos");
@@ -226,7 +239,7 @@ export default function CalendarPage() {
         appointment_time_end: "",
         notes: ""
       });
-      loadMonthAppointments();
+      await loadMonthAppointments();
     } catch (error) {
       toast.error(editingAppointment ? "Erro ao atualizar agendamento" : "Erro ao criar agendamento");
     }
@@ -262,7 +275,7 @@ export default function CalendarPage() {
       setDeleteDialog(false);
       setAppointmentToDelete(null);
       setShowDetailsDialog(false);
-      loadMonthAppointments();
+      await loadMonthAppointments();
     } catch (error) {
       toast.error("Erro ao deletar agendamento");
     }
