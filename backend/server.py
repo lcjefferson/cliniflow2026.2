@@ -132,6 +132,7 @@ mem = {
     "medical_records": [],
     "leads": [],
     "follow_ups": [],
+    "follow_up_rules": [],
     "expenses": [],
     "settings": {}
 }
@@ -238,7 +239,14 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="Token has expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
-    
+
+    if DEMO_MODE:
+        user = _find_one("users", {"id": user_id})
+        if user is None:
+            raise HTTPException(status_code=401, detail="User not found")
+        return user
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
@@ -564,9 +572,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.mount("/media", StaticFiles(directory="media"), name="media")
 
+# Use lista explícita para evitar valor duplicado com Socket.IO (um único valor por header).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -582,7 +591,31 @@ async def add_no_cache_header(request: Request, call_next):
     response.headers["Expires"] = "0"
     return response
 
-sio = SocketManager(app=app, mount_location='/socket.io', cors_allowed_origins="*")
+def _cors_headers():
+    return {
+        "Access-Control-Allow-Origin": ALLOWED_ORIGINS[0] if ALLOWED_ORIGINS else "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
+    }
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail} if isinstance(exc.detail, str) else {"detail": exc.detail},
+            headers=_cors_headers(),
+        )
+    logging.exception(exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers=_cors_headers(),
+    )
+
+# CORS para /socket.io já é tratado pelo CORSMiddleware; evitar valor duplicado.
+sio = SocketManager(app=app, mount_location='/socket.io', cors_allowed_origins=False)
 api_router = APIRouter(prefix="/api")
 
 @api_router.get("/health")
@@ -907,6 +940,7 @@ class Patient(BaseModel):
     treatments: List[Treatment] = []
     professionals: List[str] = []
     anamnese: Optional[Anamnese] = None
+    image_voice_consent: Optional[bool] = None  # Autorização uso de imagem e voz (institucional)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class PatientCreate(BaseModel):
@@ -916,7 +950,8 @@ class PatientCreate(BaseModel):
     birthdate: Optional[str] = None
     address: Optional[str] = None
     cpf: Optional[str] = None
-    
+    image_voice_consent: Optional[bool] = None
+
     @field_validator('email', mode='before')
     @classmethod
     def empty_str_to_none(cls, v):
@@ -957,20 +992,23 @@ class Appointment(BaseModel):
     patient_id: str
     professional_id: str
     service_id: Optional[str] = None
+    service_ids: Optional[List[str]] = None
     room_id: str
     appointment_date: str
     appointment_time: str  # Hora de início
     appointment_time_end: Optional[str] = None  # Hora de fim
-    status: str = "scheduled"  # scheduled, confirmed, completed, cancelled
+    status: str = "scheduled"  # scheduled, waiting, confirmed, completed, cancelled
     amount: Optional[float] = None  # Valor específico do agendamento
     paid: bool = False  # Se foi pago
     notes: Optional[str] = None
+    image_voice_consent: Optional[bool] = None  # Autorização uso de imagem e voz (institucional)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class AppointmentCreate(BaseModel):
     patient_id: str  # Obrigatório (nome do paciente)
     professional_id: str  # Obrigatório
     service_id: Optional[str] = None
+    service_ids: Optional[List[str]] = None
     room_id: str  # Obrigatório
     appointment_date: Optional[str] = None
     appointment_time: Optional[str] = None  # Hora de início
@@ -979,11 +1017,13 @@ class AppointmentCreate(BaseModel):
     amount: Optional[float] = None
     paid: bool = False
     notes: Optional[str] = None
+    image_voice_consent: Optional[bool] = None
 
 class AppointmentUpdate(BaseModel):
     patient_id: Optional[str] = None
     professional_id: Optional[str] = None
     service_id: Optional[str] = None
+    service_ids: Optional[List[str]] = None
     room_id: Optional[str] = None
     appointment_date: Optional[str] = None
     appointment_time: Optional[str] = None
@@ -992,6 +1032,7 @@ class AppointmentUpdate(BaseModel):
     amount: Optional[float] = None
     paid: Optional[bool] = None
     notes: Optional[str] = None
+    image_voice_consent: Optional[bool] = None
 
 class Transaction(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1006,7 +1047,7 @@ class Transaction(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class TransactionCreate(BaseModel):
-    patient_id: Optional[str] = None
+    patient_id: str  # obrigatório
     appointment_id: Optional[str] = None
     amount: float
     payment_method: Optional[str] = None
@@ -1154,9 +1195,12 @@ class FollowUpRule(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     type: str  # comercial, informativo
-    trigger: str  # lead_created, appointment_created, appointment_completed, patient_birthday
+    trigger: str  # lead_created, appointment_created, appointment_completed, patient_birthday, service_maintenance
+    service_id: Optional[str] = None  # quando trigger = service_maintenance
     days_after: int
     message_template: str
+    message_media_url: Optional[str] = None
+    message_media_type: Optional[str] = None  # image, video
     active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -1164,8 +1208,11 @@ class FollowUpRuleCreate(BaseModel):
     name: str
     type: str
     trigger: str
+    service_id: Optional[str] = None
     days_after: int
     message_template: str
+    message_media_url: Optional[str] = None
+    message_media_type: Optional[str] = None
     active: bool = True
 
 class AutoMessageRequest(BaseModel):
@@ -1221,21 +1268,29 @@ async def delete_transaction(transaction_id: str, current_user: dict = Depends(g
     if delete_result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
+async def _revenue_totals():
+    """Única fonte de verdade para totais de receita (paid e pending). Usado pelo Dashboard e pela página de Faturamento."""
+    if db is None:
+        return 0, 0
+    pipeline_paid = [{"$match": {"status": "paid"}}, {"$group": {"_id": None, "total": {"$sum": "$amount"}}}]
+    pipeline_pending = [{"$match": {"status": "pending"}}, {"$group": {"_id": None, "total": {"$sum": "$amount"}}}]
+    paid_res = await db.transactions.aggregate(pipeline_paid).to_list(1)
+    pending_res = await db.transactions.aggregate(pipeline_pending).to_list(1)
+    paid = paid_res[0]["total"] if paid_res else 0
+    pending = pending_res[0]["total"] if pending_res else 0
+    return paid, pending
+
 @api_router.get("/revenue/total")
 async def get_total_revenue(current_user: dict = Depends(get_current_user)):
+    """Total de receita recebida (status=paid). Mesmo valor do Dashboard 'Receita Recebida'."""
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-    
-    pipeline = [
-        {"$match": {"status": "paid"}},
-        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
-    ]
-    
-    result = await db.transactions.aggregate(pipeline).to_list(1)
-    
-    total_revenue = result[0]['total'] if result else 0
-    
-    return {"total_revenue": total_revenue}
+    revenue_paid, revenue_pending = await _revenue_totals()
+    return {
+        "total_revenue": revenue_paid,
+        "revenue_paid": revenue_paid,
+        "revenue_pending": revenue_pending,
+    }
 
 
 @api_router.get("/dashboard/stats")
@@ -1247,10 +1302,6 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
     query_prof = {}
     if current_user.get("user_type") in ["profissional", "profissional_admin"] and current_user.get("professional_id"):
         query_prof["professional_id"] = current_user.get("professional_id")
-
-    async def _rev_agg(status: str):
-        r = await db.transactions.aggregate([{"$match": {"status": status}}, {"$group": {"_id": None, "total": {"$sum": "$amount"}}}]).to_list(1)
-        return r[0]["total"] if r else 0
 
     async def _expenses_total():
         if current_user.get("user_type") != "superuser":
@@ -1264,11 +1315,10 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         db.appointments.count_documents(query_prof),
         db.appointments.count_documents({**query_prof, "appointment_date": today}),
         db.leads.count_documents({"status": "quente"}),
-        _rev_agg("paid"),
-        _rev_agg("pending"),
+        _revenue_totals(),
         _expenses_total(),
     )
-    patients_count, leads_count, appointments_total, appointments_today, leads_hot, revenue_paid, revenue_pending, expenses_total = results
+    patients_count, leads_count, appointments_total, appointments_today, leads_hot, (revenue_paid, revenue_pending), expenses_total = results
 
     return {
         "patientsTotal": patients_count,
@@ -1652,6 +1702,15 @@ async def create_room(data: RoomCreate, current_user: dict = Depends(get_current
 
 @api_router.get("/rooms", response_model=List[dict])
 async def get_rooms(current_user: dict = Depends(get_current_user)):
+    if db is None:
+        rooms = _find("rooms", {})
+        for r in rooms:
+            if isinstance(r.get("created_at"), str):
+                try:
+                    r["created_at"] = datetime.fromisoformat(r["created_at"])
+                except Exception:
+                    pass
+        return rooms
     rooms = await db.rooms.find({}, {"_id": 0}).to_list(1000)
     for r in rooms:
         if isinstance(r.get('created_at'), str):
@@ -2423,12 +2482,26 @@ async def update_anamnese(patient_id: str, anamnese_data: Anamnese, current_user
         raise HTTPException(status_code=404, detail="Patient not found")
     return {"message": "Anamnese updated successfully"}
 
+def _appointment_service_names(appointment: dict, services_list: list) -> list:
+    """Resolve service_ids or service_id to list of service names."""
+    ids = appointment.get("service_ids") or []
+    if not ids and appointment.get("service_id"):
+        ids = [appointment["service_id"]]
+    if not ids:
+        return []
+    name_by_id = {s.get("id"): s.get("name") for s in (services_list or []) if s.get("id")}
+    return [name_by_id[id] for id in ids if name_by_id.get(id)]
+
 # Appointment Routes
 @api_router.post("/appointments", response_model=Appointment)
 async def create_appointment(data: AppointmentCreate, current_user: dict = Depends(get_current_user)):
     payload = data.model_dump(exclude_none=True)
     if "status" not in payload:
         payload["status"] = "scheduled"
+    if payload.get("service_ids"):
+        payload["service_id"] = payload["service_ids"][0]
+    elif not payload.get("service_id") and payload.get("service_ids") is None:
+        pass
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
     try:
@@ -2473,6 +2546,8 @@ async def create_appointment(data: AppointmentCreate, current_user: dict = Depen
         pass
     appointment = Appointment(**payload)
     doc = appointment.model_dump()
+    if payload.get("service_ids") is not None:
+        doc["service_ids"] = payload["service_ids"]
     doc['created_at'] = doc['created_at'].isoformat()
     try:
         await db.appointments.insert_one(doc)
@@ -2511,7 +2586,6 @@ async def get_appointments(
             date_filter["$lte"] = date_to
         query["appointment_date"] = date_filter
 
-    # Filter for professional users to only see their own appointments
     if current_user.get("user_type") in ["profissional", "profissional_admin"]:
         if current_user.get("professional_id"):
             query["professional_id"] = current_user.get("professional_id")
@@ -2519,19 +2593,42 @@ async def get_appointments(
             return []
 
     sort_order = 1 if order == "asc" else -1
-    cap = max(1, min(limit or 1000, 2000))
+    cap = max(1, min(limit or 500, 2000))
+
+    if db is None:
+        appointments = _find("appointments", query)
+        if date_from or date_to:
+            def in_range(d):
+                if not d:
+                    return False
+                if date_from and d < date_from:
+                    return False
+                if date_to and d > date_to:
+                    return False
+                return True
+            appointments = [a for a in appointments if in_range(a.get("appointment_date"))]
+        if sort_by:
+            appointments.sort(key=lambda a: (a.get(sort_by) or ""), reverse=(sort_order == -1))
+        appointments = appointments[:cap]
+        services_list = mem.get("services") or []
+        for a in appointments:
+            if isinstance(a.get("created_at"), str):
+                try:
+                    a["created_at"] = datetime.fromisoformat(a["created_at"])
+                except Exception:
+                    pass
+            a["service_names"] = _appointment_service_names(a, services_list)
+        return appointments
 
     cursor = db.appointments.find(query, {"_id": 0})
-
     if sort_by:
         cursor = cursor.sort(sort_by, sort_order)
-
     appointments = await cursor.to_list(cap)
-    
+    services_list = await db.services.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(5000)
     for a in appointments:
         if isinstance(a.get('created_at'), str):
             a['created_at'] = datetime.fromisoformat(a['created_at'])
-            
+        a["service_names"] = _appointment_service_names(a, services_list)
     return appointments
 
 @api_router.put("/appointments/{appointment_id}")
@@ -2549,6 +2646,8 @@ async def update_appointment(appointment_id: str, data: AppointmentUpdate, curre
         target_time = update_data.get("appointment_time", current.get("appointment_time"))
         target_room = update_data.get("room_id", current.get("room_id"))
         target_service = update_data.get("service_id", current.get("service_id"))
+        if update_data.get("service_ids") is not None:
+            target_service = update_data["service_ids"][0] if update_data["service_ids"] else None
         target_professional = update_data.get("professional_id", current.get("professional_id"))
         duplicate_q_room = {
             "appointment_date": target_date,
@@ -2740,9 +2839,16 @@ async def get_transactions(
     effective_limit = max(1, min(limit or 200, 1000))
     cursor = db.transactions.find(query, {"_id": 0}).sort(sort_field, sort_order).limit(effective_limit)
     transactions = await cursor.to_list(length=effective_limit)
+    patient_ids = list({t.get("patient_id") for t in transactions if t.get("patient_id")})
+    patient_names = {}
+    if patient_ids:
+        cursor_p = db.patients.find({"id": {"$in": patient_ids}}, {"_id": 0, "id": 1, "name": 1})
+        for p in await cursor_p.to_list(length=len(patient_ids)):
+            patient_names[p["id"]] = p.get("name") or "Paciente"
     for t in transactions:
         if isinstance(t.get("created_at"), str):
             t["created_at"] = datetime.fromisoformat(t["created_at"])
+        t["patient_name"] = patient_names.get(t.get("patient_id")) or "Paciente"
     return transactions
 
 # Budget Routes
@@ -4246,9 +4352,13 @@ async def play_audio_proxy(message_id: str):
 class CampaignRequest(BaseModel):
     title: str
     target_type: str  # 'patients' or 'leads'
-    service_id: Optional[str] = None
+    target_filter: Optional[str] = None  # 'all' | 'by_services' (só para patients)
+    service_id: Optional[str] = None  # legado, preferir service_ids
+    service_ids: Optional[List[str]] = None  # múltiplos serviços (agendados)
     lead_status: Optional[str] = None
     message: str
+    message_media_url: Optional[str] = None
+    message_media_type: Optional[str] = None
     channel: str = "whatsapp"
 
 async def process_campaign_task(campaign_id: str, targets: List[dict], target_type: str, message_template: str, user: dict):
@@ -4303,6 +4413,52 @@ async def get_services():
     services = await db.services.find({}, {"_id": 0}).to_list(1000)
     return services
 
+async def _campaign_patient_ids_by_services(service_ids: List[str]):
+    """Retorna set de patient_id que tiveram agendamento com qualquer um dos serviços (service_id ou service_ids)."""
+    if not service_ids or db is None:
+        return set()
+    patient_ids = set()
+    q = {
+        "$or": [
+            {"service_id": {"$in": service_ids}},
+            {"service_ids": {"$in": service_ids}}
+        ]
+    }
+    cursor = db.appointments.find(q, {"patient_id": 1})
+    async for doc in cursor:
+        if doc.get("patient_id"):
+            patient_ids.add(doc["patient_id"])
+    return patient_ids
+
+@api_router.get("/campaigns/audience-estimate")
+async def get_campaign_audience_estimate(
+    target_type: str,
+    target_filter: Optional[str] = None,
+    service_ids: Optional[str] = None,  # comma-separated
+    current_user: dict = Depends(get_current_user)
+):
+    """Estimativa do tamanho do público para campanha (pacientes com telefone)."""
+    if db is None:
+        return {"estimate": 0}
+    if target_type == "leads":
+        query = {"phone": {"$exists": True, "$ne": ""}}
+        count = await db.leads.count_documents(query)
+        return {"estimate": count}
+    # patients
+    if target_filter == "by_services" and service_ids:
+        ids = [s.strip() for s in service_ids.split(",") if s.strip()]
+        patient_ids = await _campaign_patient_ids_by_services(ids)
+        if not patient_ids:
+            return {"estimate": 0}
+        count = await db.patients.count_documents({
+            "id": {"$in": list(patient_ids)},
+            "phone": {"$exists": True, "$ne": ""}
+        })
+        return {"estimate": count}
+    # all patients with phone
+    count = await db.patients.count_documents({"phone": {"$exists": True, "$ne": ""}})
+    return {"estimate": count}
+
 @api_router.get("/patients/by-treatment", response_model=List[dict])
 async def get_patients_by_treatment(service_id: str, current_user: dict = Depends(get_current_user)):
     if db is None:
@@ -4353,54 +4509,47 @@ async def get_campaigns(current_user: dict = Depends(get_current_user)):
 async def send_campaign(request: CampaignRequest, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-        
     targets = []
     if request.target_type == "patients":
-        if request.service_id:
-             # Find appointments for this service
-             cursor = db.appointments.find({"service_id": request.service_id}, {"patient_id": 1})
-             patient_ids = set()
-             async for doc in cursor:
-                 patient_ids.add(doc["patient_id"])
-             
-             # Match patients who have appointments OR have the treatment registered in their profile
-             query = {
-                 "$or": [
-                     {"id": {"$in": list(patient_ids)}},
-                     {"treatments": {"$elemMatch": {"service_id": request.service_id}}}
-                 ]
-             }
+        service_ids_list = request.service_ids or ([request.service_id] if request.service_id else [])
+        if request.target_filter == "by_services" and service_ids_list:
+            patient_ids = await _campaign_patient_ids_by_services(service_ids_list)
+            if not patient_ids:
+                return {"message": "Nenhum destinatário encontrado para os serviços selecionados", "count": 0}
+            query = {"id": {"$in": list(patient_ids)}, "phone": {"$exists": True, "$ne": ""}}
+            targets = await db.patients.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1}).to_list(5000)
         else:
-             query = {}
-        
-        # Only get patients with phone numbers
-        query["phone"] = {"$exists": True, "$ne": ""}
-        targets = await db.patients.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1}).to_list(1000)
-        
+            # Todos os pacientes com telefone (target_filter "all" ou legado sem filtro)
+            query = {"phone": {"$exists": True, "$ne": ""}}
+            if request.service_id and not service_ids_list:
+                pid_set = await _campaign_patient_ids_by_services([request.service_id])
+                if pid_set:
+                    query["id"] = {"$in": list(pid_set)}
+            targets = await db.patients.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1}).to_list(5000)
     elif request.target_type == "leads":
         query = {"phone": {"$exists": True, "$ne": ""}}
         if request.lead_status:
             query["status"] = request.lead_status
-        targets = await db.leads.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1}).to_list(1000)
-    
+        targets = await db.leads.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1}).to_list(5000)
     if not targets:
         return {"message": "Nenhum destinatário encontrado para esta campanha", "count": 0}
-
-    # Create Campaign Record
     campaign_id = str(uuid.uuid4())
     campaign = {
         "id": campaign_id,
         "title": request.title,
         "message": request.message,
+        "message_media_url": getattr(request, "message_media_url", None),
+        "message_media_type": getattr(request, "message_media_type", None),
         "target_type": request.target_type,
+        "target_filter": getattr(request, "target_filter", None),
         "service_id": request.service_id,
+        "service_ids": request.service_ids or [],
         "lead_status": request.lead_status,
         "created_by": current_user.get("id"),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "processing",
         "total_targets": len(targets)
     }
-    
     await db.campaigns.insert_one(campaign)
 
     # Add background task to process
@@ -4932,9 +5081,102 @@ async def uazapi_webhook(request: Request):
             if contact_jid:
                 from_number = _digits(contact_jid) or from_number
 
-        # When secretary sends from cell, some providers don't send body in webhook — keep message anyway
+        # When secretary sends from cell: try text in more places (incl. nested), then media, then placeholder
         if not body and is_from_me:
-            body = "[mensagem enviada pelo celular]"
+            data = payload.get("data") or {}
+            event = payload.get("event") or {}
+            inner = data.get("message") or event.get("message") or message_data.get("message")
+            if isinstance(inner, dict):
+                body = (
+                    inner.get("conversation")
+                    or inner.get("text")
+                    or inner.get("Text")
+                    or inner.get("body")
+                    or inner.get("Body")
+                    or (inner.get("extendedTextMessage") or {}).get("text")
+                )
+            if not body:
+                body = (
+                    message_data.get("conversation")
+                    or message_data.get("text")
+                    or message_data.get("Text")
+                    or message_data.get("body")
+                    or message_data.get("Body")
+                    or (message_data.get("extendedTextMessage") or {}).get("text")
+                )
+            # 1) Try to build media body from payload.data / payload.data.message / payload.event
+            if not body:
+                for _src in [data, data.get("message") or {}, event, event.get("message") or {}, message_data]:
+                    if not isinstance(_src, dict):
+                        continue
+                    content = _src.get("content") if isinstance(_src.get("content"), dict) else _src
+                    if not isinstance(content, dict):
+                        content = _src
+                    media_url = content.get("url") or content.get("URL") or content.get("mediaUrl") or _src.get("url") or _src.get("URL")
+                    base64_data = content.get("base64") or (content.get("file") or {}).get("base64") or _src.get("base64")
+                    mimetype = (content.get("mimetype") or content.get("mediaType") or _src.get("mimetype") or _src.get("type") or "").lower()
+                    if media_url or base64_data or mimetype:
+                        _type = mimetype or "application/octet-stream"
+                        if "image" in _type or _src.get("messageType") == "image" or _src.get("type") == "image":
+                            body = {"mimetype": _type or "image/jpeg", "url": media_url, "file_data": base64_data, "caption": content.get("caption") or _src.get("caption")}
+                            break
+                        if "audio" in _type or "voice" in _type or "ptt" in _type or _src.get("messageType") in ("audio", "voice", "ptt"):
+                            body = {"mimetype": _type or "audio/ogg", "url": media_url, "file_data": base64_data, "seconds": content.get("seconds") or content.get("duration") or _src.get("seconds"), "PTT": "ptt" in _type or "voice" in _type}
+                            break
+                        if "video" in _type or _src.get("messageType") == "video":
+                            body = {"mimetype": _type or "video/mp4", "url": media_url, "file_data": base64_data, "caption": content.get("caption") or _src.get("caption")}
+                            break
+                        if "document" in _type or _src.get("messageType") == "document" or content.get("fileName") or _src.get("fileName"):
+                            body = {"mimetype": _type or "application/octet-stream", "url": media_url, "file_data": base64_data, "fileName": content.get("fileName") or _src.get("fileName"), "caption": content.get("caption") or _src.get("caption")}
+                            break
+                        if media_url or base64_data:
+                            body = {"mimetype": _type, "url": media_url, "file_data": base64_data}
+                            break
+            # 2) Try text in other top-level keys
+            if not body:
+                body = (
+                    data.get("body")
+                    or data.get("text")
+                    or data.get("conversation")
+                    or (data.get("content") if isinstance(data.get("content"), str) else None)
+                    or payload.get("body")
+                    or payload.get("text")
+                    or event.get("body")
+                    or event.get("text")
+                    or event.get("conversation")
+                )
+                if isinstance(body, dict):
+                    body = body.get("text") or body.get("body") or body.get("conversation") or body.get("content")
+            # 3) Deep search for first string in common message keys (provider-specific nesting)
+            if not body:
+                def _find_text(d, depth=0):
+                    if depth > 5:
+                        return None
+                    if isinstance(d, str) and len(d.strip()) > 0:
+                        return d
+                    if isinstance(d, dict):
+                        for k in ("conversation", "text", "Text", "body", "Body", "content", "message", "caption"):
+                            if k in d:
+                                v = _find_text(d[k], depth + 1)
+                                if v:
+                                    return v
+                        for v in d.values():
+                            v = _find_text(v, depth + 1)
+                            if v:
+                                return v
+                    if isinstance(d, list) and d:
+                        return _find_text(d[0], depth + 1)
+                    return None
+                body = _find_text(payload)
+            # 4) Fallback placeholder and log to help debug provider format
+            if not body:
+                logging.warning(
+                    "[WEBHOOK] from_me message without body: payload keys=%s data.keys=%s event.keys=%s",
+                    list(payload.keys()),
+                    list(data.keys()) if isinstance(data, dict) else None,
+                    list(event.keys()) if isinstance(event, dict) else None,
+                )
+                body = "[mensagem enviada pelo celular]"
         if not from_number or not body:
             return {"status": "ignored", "reason": "incomplete_data"}
 
@@ -5172,10 +5414,43 @@ async def create_follow_up(data: FollowUpCreate, current_user: dict = Depends(ge
 
 @api_router.get("/follow-ups", response_model=List[dict])
 async def get_follow_ups(current_user: dict = Depends(get_current_user)):
+    if db is None:
+        follow_ups = _find("follow_ups", {})
+        for f in follow_ups:
+            if isinstance(f.get("created_at"), str):
+                try:
+                    f["created_at"] = datetime.fromisoformat(f["created_at"])
+                except Exception:
+                    pass
+            pid = f.get("patient_id")
+            lid = f.get("lead_id")
+            if pid:
+                p = _find_one("patients", {"id": pid})
+                f["patient_name"] = (p or {}).get("name", "")
+            else:
+                f["patient_name"] = ""
+            if lid:
+                lead = _find_one("leads", {"id": lid})
+                f["lead_name"] = (lead or {}).get("name", "")
+            else:
+                f["lead_name"] = ""
+        return follow_ups
     follow_ups = await db.follow_ups.find({}, {"_id": 0}).to_list(1000)
     for f in follow_ups:
         if isinstance(f.get('created_at'), str):
             f['created_at'] = datetime.fromisoformat(f['created_at'])
+        pid = f.get("patient_id")
+        lid = f.get("lead_id")
+        if pid:
+            p = await db.patients.find_one({"id": pid}, {"_id": 0, "name": 1})
+            f["patient_name"] = (p or {}).get("name", "")
+        else:
+            f["patient_name"] = ""
+        if lid:
+            lead = await db.leads.find_one({"id": lid}, {"_id": 0, "name": 1})
+            f["lead_name"] = (lead or {}).get("name", "")
+        else:
+            f["lead_name"] = ""
     return follow_ups
 
 @api_router.put("/follow-ups/{follow_up_id}")
@@ -5196,11 +5471,19 @@ async def delete_follow_up(follow_up_id: str, current_user: dict = Depends(get_c
     return
 
 # Follow-up Rule Routes
+MAX_RULE_IMAGE_MB = 5
+MAX_RULE_VIDEO_MB = 15
+
 @api_router.post("/follow-up-rules", response_model=FollowUpRule)
 async def create_follow_up_rule(data: FollowUpRuleCreate, current_user: dict = Depends(get_current_user)):
     if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
-    
+    if db is None:
+        rule = FollowUpRule(**data.model_dump())
+        doc = rule.model_dump()
+        doc["created_at"] = doc["created_at"].isoformat() if hasattr(doc["created_at"], "isoformat") else doc["created_at"]
+        _insert_one("follow_up_rules", doc)
+        return rule
     rule = FollowUpRule(**data.model_dump())
     doc = rule.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
@@ -5209,21 +5492,63 @@ async def create_follow_up_rule(data: FollowUpRuleCreate, current_user: dict = D
 
 @api_router.get("/follow-up-rules", response_model=List[dict])
 async def get_follow_up_rules(current_user: dict = Depends(get_current_user)):
+    if db is None:
+        rules = _find("follow_up_rules", {})
+        for r in rules:
+            if isinstance(r.get("created_at"), str):
+                try:
+                    r["created_at"] = datetime.fromisoformat(r["created_at"])
+                except Exception:
+                    pass
+        return rules
     rules = await db.follow_up_rules.find({}, {"_id": 0}).to_list(1000)
     for r in rules:
         if isinstance(r.get('created_at'), str):
             r['created_at'] = datetime.fromisoformat(r['created_at'])
     return rules
 
+@api_router.post("/follow-up-rules/upload-media")
+async def upload_follow_up_rule_media(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    content_type = (file.content_type or "").lower()
+    if "image" in content_type:
+        max_bytes = MAX_RULE_IMAGE_MB * 1024 * 1024
+        media_type = "image"
+    elif "video" in content_type:
+        max_bytes = MAX_RULE_VIDEO_MB * 1024 * 1024
+        media_type = "video"
+    else:
+        raise HTTPException(status_code=400, detail="Apenas imagens ou vídeos são permitidos")
+    body = await file.read()
+    if len(body) > max_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Arquivo muito grande. Máximo: {MAX_RULE_IMAGE_MB if media_type == 'image' else MAX_RULE_VIDEO_MB} MB"
+        )
+    media_dir = ROOT_DIR / "media" / "followup_rules"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename or "file").suffix or (".jpg" if media_type == "image" else ".mp4")
+    safe_name = f"{uuid.uuid4().hex}{ext}"
+    path = media_dir / safe_name
+    with open(path, "wb") as f:
+        f.write(body)
+    url = f"/media/followup_rules/{safe_name}"
+    return {"url": url, "media_type": media_type}
+
 @api_router.put("/follow-up-rules/{rule_id}")
 async def update_follow_up_rule(rule_id: str, data: FollowUpRuleCreate, current_user: dict = Depends(get_current_user)):
     if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
-    
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
-
+    if db is None:
+        _update_one("follow_up_rules", {"id": rule_id}, {"$set": update_data})
+        return {"message": "Rule updated successfully"}
     result = await db.follow_up_rules.update_one({"id": rule_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -5233,7 +5558,9 @@ async def update_follow_up_rule(rule_id: str, data: FollowUpRuleCreate, current_
 async def delete_follow_up_rule(rule_id: str, current_user: dict = Depends(get_current_user)):
     if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
         raise HTTPException(status_code=403, detail="Not authorized")
-    
+    if db is None:
+        _delete_one("follow_up_rules", {"id": rule_id})
+        return {"message": "Rule deleted successfully"}
     result = await db.follow_up_rules.delete_one({"id": rule_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -5262,12 +5589,34 @@ async def run_birthday_followup_automation(current_user: dict = Depends(get_curr
     
     days_offset = rule.get("days_after", 0)
     msg = rule.get("message_template")
-    
-    patients = await db.patients.find({}, {"_id": 0}).to_list(10000)
-    for p in patients:
+    # Processar em lotes para não carregar todos os pacientes na memória
+    batch_size = 500
+    cursor = db.patients.find({}, {"_id": 0, "id": 1, "name": 1, "phone": 1, "birthdate": 1})
+    batch = []
+    async for p in cursor:
+        batch.append(p)
+        if len(batch) >= batch_size:
+            for p in batch:
+                if _is_birthday_with_offset(p.get("birthdate"), days_offset):
+                    name = p.get("name")
+                    follow_up = FollowUp(
+                        patient_id=p.get("id"),
+                        scheduled_date=datetime.now(timezone.utc).isoformat(),
+                        notes=f"Aniversário de {name}",
+                        status="completed",
+                        contact_type="whatsapp",
+                        contact_reason="informativo"
+                    )
+                    doc = follow_up.model_dump()
+                    doc['created_at'] = doc['created_at'].isoformat()
+                    await db.follow_ups.insert_one(doc)
+                    created += 1
+                    if p.get("phone") and await send_whatsapp_message(p.get("phone"), msg or f"Parabéns {name}!"):
+                        sent += 1
+            batch = []
+    for p in batch:
         if _is_birthday_with_offset(p.get("birthdate"), days_offset):
             name = p.get("name")
-            # Create Follow-up
             follow_up = FollowUp(
                 patient_id=p.get("id"),
                 scheduled_date=datetime.now(timezone.utc).isoformat(),
@@ -5280,12 +5629,56 @@ async def run_birthday_followup_automation(current_user: dict = Depends(get_curr
             doc['created_at'] = doc['created_at'].isoformat()
             await db.follow_ups.insert_one(doc)
             created += 1
-            
-            # Send whatsapp
-            if p.get("phone"):
-                if await send_whatsapp_message(p.get("phone"), msg or f"Parabéns {name}!"):
+            if p.get("phone") and await send_whatsapp_message(p.get("phone"), msg or f"Parabéns {name}!"):
+                sent += 1
+    return {"created": created, "sent": sent}
+
+@api_router.post("/automations/service-maintenance-followup")
+async def run_service_maintenance_followup(current_user: dict = Depends(get_current_user)):
+    """Dispara follow-ups de manutenção: pacientes que tiveram consulta com o serviço X há exatamente N dias."""
+    created = 0
+    sent = 0
+    if db is None:
+        return {"created": 0, "sent": 0}
+    rules = await db.follow_up_rules.find(
+        {"trigger": "service_maintenance", "active": True, "service_id": {"$exists": True, "$ne": None}},
+        {"_id": 0}
+    ).to_list(100)
+    for rule in rules:
+        service_id = rule.get("service_id")
+        days = rule.get("days_after", 30)
+        target_date = (datetime.now(timezone.utc).date() - timedelta(days=days)).strftime("%Y-%m-%d")
+        query = {
+            "appointment_date": target_date,
+            "$or": [{"service_id": service_id}, {"service_ids": service_id}]
+        }
+        cursor = db.appointments.find(query, {"_id": 0, "patient_id": 1})
+        seen_patients = set()
+        async for apt in cursor:
+            pid = apt.get("patient_id")
+            if not pid or pid in seen_patients:
+                continue
+            seen_patients.add(pid)
+            patient = await db.patients.find_one({"id": pid}, {"_id": 0, "name": 1, "phone": 1})
+            if not patient:
+                continue
+            name = patient.get("name", "Cliente")
+            msg = (rule.get("message_template") or "Olá {nome}, lembrete de manutenção.").replace("{nome}", name).replace("{name}", name)
+            follow_up = FollowUp(
+                patient_id=pid,
+                scheduled_date=datetime.now(timezone.utc).date().isoformat(),
+                notes=f"Manutenção (regra: {rule.get('name', '')})",
+                status="pending",
+                contact_type="whatsapp",
+                contact_reason=rule.get("type", "informativo")
+            )
+            doc = follow_up.model_dump()
+            doc["created_at"] = doc["created_at"].isoformat()
+            await db.follow_ups.insert_one(doc)
+            created += 1
+            if patient.get("phone"):
+                if await send_whatsapp_message(patient["phone"], msg):
                     sent += 1
-                    
     return {"created": created, "sent": sent}
 
 @api_router.post("/automations/auto-message")

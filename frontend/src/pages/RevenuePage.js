@@ -24,6 +24,7 @@ export default function RevenuePage() {
   const [editingId, setEditingId] = useState(null);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [totalRevenue, setTotalRevenue] = useState(0);
+  const [totalRevenuePending, setTotalRevenuePending] = useState(0);
   const [totalExpenses, setTotalExpenses] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterPaymentMethod, setFilterPaymentMethod] = useState("");
@@ -74,7 +75,7 @@ export default function RevenuePage() {
         api.get("/transactions", { params: { limit: 500 } }),
         api.get("/appointments", { params: { limit: 500 } }),
         api.get("/patients", { params: { page: 1, page_size: 300, need_debt: true } }),
-        api.get("/revenue/total"),
+        api.get("/dashboard/stats"),
       ];
       if (isSuperUser) {
         promises.push(api.get("/expenses"));
@@ -83,7 +84,9 @@ export default function RevenuePage() {
       setTransactions(results[0].data);
       setAppointments(results[1].data);
       setPatients(results[2].data);
-      setTotalRevenue(results[3].data.total_revenue);
+      const dashboardStats = results[3].data;
+      setTotalRevenue(dashboardStats?.revenuePaid ?? 0);
+      setTotalRevenuePending(dashboardStats?.revenuePending ?? 0);
       if (isSuperUser && results[4]) {
         setExpenses(results[4].data);
         setTotalExpenses(results[4].data.reduce((acc, curr) => acc + curr.amount, 0));
@@ -229,6 +232,10 @@ export default function RevenuePage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.patient_id?.trim()) {
+      toast.error("Selecione um paciente para salvar a transação.");
+      return;
+    }
     try {
       const payload = {
         ...formData,
@@ -310,7 +317,10 @@ export default function RevenuePage() {
     });
   };
 
-  const getPatientName = (patientId) => {
+  const getPatientName = (transactionOrPatientId) => {
+    const patientId = typeof transactionOrPatientId === "string" ? transactionOrPatientId : transactionOrPatientId?.patient_id;
+    const patientName = typeof transactionOrPatientId === "object" && transactionOrPatientId?.patient_name;
+    if (patientName) return patientName;
     const patient = patients.find(p => p.id === patientId);
     return patient ? patient.name : "Paciente";
   };
@@ -330,7 +340,7 @@ export default function RevenuePage() {
 
   // Filtros e Pesquisa
   const filteredTransactions = transactions.filter(trans => {
-    const matchesSearch = getPatientName(trans.patient_id).toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = getPatientName(trans).toLowerCase().includes(searchTerm.toLowerCase()) ||
                          trans.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesPayment = !filterPaymentMethod || trans.payment_method === filterPaymentMethod;
     const matchesDateStart = !filterDateStart || trans.transaction_date >= filterDateStart;
@@ -451,19 +461,23 @@ export default function RevenuePage() {
     </div>
   );
 
+  const hasFilters = !!(searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd || filterStatus || filterWithDebt);
+  const paidFromList = filteredTransactions.filter(t => t.status === 'paid').reduce((sum, t) => sum + t.amount, 0);
+  const pendingFromList = filteredTransactions.filter(t => t.status === 'pending').reduce((sum, t) => sum + t.amount, 0);
+
   const renderRevenueCards = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
       <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-2xl p-8 shadow-lg">
         <div className="flex items-center justify-between text-white">
           <div>
             <p className="text-green-100 text-sm mb-2">
-              {(searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd || filterStatus || filterWithDebt) ? "Pagamentos Recebidos (Filtrado)" : "Total Recebido"}
+              {hasFilters ? "Pagamentos Recebidos (Filtrado)" : "Total Recebido"}
             </p>
             <h2 className="text-4xl font-bold">
-              R$ {filteredTransactions.filter(t => t.status === 'paid').reduce((sum, t) => sum + t.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              R$ {(hasFilters ? paidFromList : totalRevenue).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </h2>
             <p className="text-green-100 text-sm mt-2">
-              {filteredTransactions.filter(t => t.status === 'paid').length} transações pagas
+              {filteredTransactions.filter(t => t.status === 'paid').length} transações pagas{hasFilters ? " (na lista)" : ""}
             </p>
           </div>
           <CheckCircle className="w-20 h-20 opacity-30" />
@@ -474,13 +488,13 @@ export default function RevenuePage() {
         <div className="flex items-center justify-between text-white">
           <div>
             <p className="text-orange-100 text-sm mb-2">
-              {(searchTerm || filterPaymentMethod || filterDateStart || filterDateEnd || filterStatus || filterWithDebt) ? "Débitos Pendentes (Filtrado)" : "Total Pendente"}
+              {hasFilters ? "Débitos Pendentes (Filtrado)" : "Total Pendente"}
             </p>
             <h2 className="text-4xl font-bold">
-              R$ {filteredTransactions.filter(t => t.status === 'pending').reduce((sum, t) => sum + t.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              R$ {(hasFilters ? pendingFromList : totalRevenuePending).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </h2>
             <p className="text-orange-100 text-sm mt-2">
-              {filteredTransactions.filter(t => t.status === 'pending').length} débitos pendentes
+              {filteredTransactions.filter(t => t.status === 'pending').length} débitos pendentes{hasFilters ? " (na lista)" : ""}
             </p>
           </div>
           <Clock className="w-20 h-20 opacity-30" />
@@ -500,7 +514,7 @@ export default function RevenuePage() {
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
                   <h4 className="font-semibold text-gray-900">
-                    {getPatientName(transaction.patient_id)}
+                    {getPatientName(transaction)}
                   </h4>
                   <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
                     {getPaymentMethodLabel(transaction.payment_method)}

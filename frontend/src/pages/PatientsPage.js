@@ -17,7 +17,7 @@ export default function PatientsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
-  const [formData, setFormData] = useState({ name: "", email: "", phone: "", birthdate: "", address: "", cpf: "" });
+  const [formData, setFormData] = useState({ name: "", email: "", phone: "", birthdate: "", address: "", cpf: "", image_voice_consent: false });
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [error, setError] = useState(null);
@@ -90,7 +90,7 @@ export default function PatientsPage() {
       
       setShowDialog(false);
       setEditingId(null);
-      setFormData({ name: "", email: "", phone: "", birthdate: "", address: "", cpf: "" });
+      setFormData({ name: "", email: "", phone: "", birthdate: "", address: "", cpf: "", image_voice_consent: false });
       loadPatients();
     } catch (error) {
       toast.error(editingId ? "Erro ao atualizar paciente" : "Erro ao cadastrar paciente");
@@ -105,7 +105,8 @@ export default function PatientsPage() {
       phone: patient.phone,
       birthdate: patient.birthdate,
       address: patient.address || "",
-      cpf: patient.cpf || ""
+      cpf: patient.cpf || "",
+      image_voice_consent: !!patient.image_voice_consent
     });
     setShowDialog(true);
   };
@@ -325,6 +326,18 @@ export default function PatientsPage() {
               <div>
                 <Label>CPF</Label>
                 <Input value={formData.cpf} onChange={(e) => setFormData({...formData, cpf: e.target.value})} />
+              </div>
+              <div className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  id="patient_image_voice_consent"
+                  checked={!!formData.image_voice_consent}
+                  onChange={(e) => setFormData({...formData, image_voice_consent: e.target.checked})}
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <Label htmlFor="patient_image_voice_consent" className="text-sm font-normal cursor-pointer text-gray-700">
+                  Autorizo o uso da minha imagem e voz para fins institucionais e de comunicação da instituição.
+                </Label>
               </div>
               <Button type="submit" className="w-full btn-primary">
                 {editingId ? "Atualizar" : "Cadastrar"}

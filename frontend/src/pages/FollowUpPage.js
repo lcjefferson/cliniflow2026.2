@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Layout from "../components/Layout";
-import api from "../services/api";
-import { Plus, Edit, Trash2, Settings, ChevronLeft, ChevronRight, CheckCircle, Users, History, MessageSquare, BarChart } from "lucide-react";
+import api, { MEDIA_BASE } from "../services/api";
+import { Plus, Edit, Trash2, Settings, ChevronLeft, ChevronRight, CheckCircle, Users, History, MessageSquare, BarChart, ImagePlus, Video, Smile, ChevronDown, X } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@/components/ui/command";
 import { useAuth } from "../contexts/AuthContext";
 
 import LeadCombobox from "../components/LeadCombobox";
@@ -45,10 +47,17 @@ export default function FollowUpPage() {
     name: "",
     type: "comercial",
     trigger: "lead_created",
+    service_id: "",
     days_after: 1,
     message_template: "",
+    message_media_url: "",
+    message_media_type: "",
     active: true
   });
+  const messageTemplateRef = useRef(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const MAX_IMAGE_MB = 5;
+  const MAX_VIDEO_MB = 15;
 
   // Campaign State
   const [showCampaignDialog, setShowCampaignDialog] = useState(false);
@@ -58,10 +67,19 @@ export default function FollowUpPage() {
   const [campaignFormData, setCampaignFormData] = useState({
     title: "",
     target_type: "patients",
+    target_filter: "all",
     service_id: "",
+    service_ids: [],
     lead_status: "",
-    message: ""
+    message: "",
+    message_media_url: "",
+    message_media_type: ""
   });
+  const [campaignAudienceEstimate, setCampaignAudienceEstimate] = useState(null);
+  const campaignMessageRef = useRef(null);
+  const [campaignUploadingMedia, setCampaignUploadingMedia] = useState(false);
+  const CAMPAIGN_MAX_IMAGE_MB = 5;
+  const CAMPAIGN_MAX_VIDEO_MB = 15;
 
   useEffect(() => {
     loadFollowUps();
@@ -120,23 +138,110 @@ export default function FollowUpPage() {
     }
   };
 
+  useEffect(() => {
+    if (!showCampaignDialog) return;
+    const fetchEstimate = async () => {
+      try {
+        const params = new URLSearchParams({ target_type: campaignFormData.target_type });
+        if (campaignFormData.target_type === "patients") {
+          if (campaignFormData.target_filter === "by_services" && campaignFormData.service_ids?.length) {
+            params.set("target_filter", "by_services");
+            params.set("service_ids", campaignFormData.service_ids.join(","));
+          }
+        }
+        const res = await api.get(`/campaigns/audience-estimate?${params.toString()}`);
+        setCampaignAudienceEstimate(res.data?.estimate ?? 0);
+      } catch {
+        setCampaignAudienceEstimate(null);
+      }
+    };
+    fetchEstimate();
+  }, [showCampaignDialog, campaignFormData.target_type, campaignFormData.target_filter, campaignFormData.service_ids]);
+
+  const toggleCampaignService = (serviceId) => {
+    setCampaignFormData((prev) => {
+      const ids = prev.service_ids || [];
+      const next = ids.includes(serviceId) ? ids.filter((id) => id !== serviceId) : [...ids, serviceId];
+      return { ...prev, service_ids: next };
+    });
+  };
+
+  const insertCampaignEmoji = (emoji) => {
+    const ta = campaignMessageRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const text = campaignFormData.message || "";
+    const next = text.slice(0, start) + emoji + text.slice(end);
+    setCampaignFormData({ ...campaignFormData, message: next });
+    setTimeout(() => { ta.focus(); ta.setSelectionRange(start + emoji.length, start + emoji.length); }, 0);
+  };
+
+  const handleCampaignMediaUpload = async (e) => {
+    const file = e.target?.files?.[0];
+    if (!file) return;
+    const isImage = (file.type || "").startsWith("image/");
+    const isVideo = (file.type || "").startsWith("video/");
+    if (!isImage && !isVideo) {
+      toast.error("Selecione uma imagem ou vídeo.");
+      return;
+    }
+    const maxMb = isImage ? CAMPAIGN_MAX_IMAGE_MB : CAMPAIGN_MAX_VIDEO_MB;
+    if (file.size > maxMb * 1024 * 1024) {
+      toast.error(`Tamanho máximo: ${maxMb} MB`);
+      return;
+    }
+    setCampaignUploadingMedia(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await api.post("/follow-up-rules/upload-media", formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      setCampaignFormData({
+        ...campaignFormData,
+        message_media_url: res.data?.url ?? "",
+        message_media_type: res.data?.media_type ?? (isImage ? "image" : "video")
+      });
+      toast.success("Mídia anexada.");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Erro ao enviar mídia.");
+    } finally {
+      setCampaignUploadingMedia(false);
+      e.target.value = "";
+    }
+  };
+
   const handleCampaignSubmit = async (e) => {
     e.preventDefault();
     if (!campaignFormData.title) {
-        toast.error("Por favor, dê um título para a campanha");
-        return;
+      toast.error("Por favor, dê um título para a campanha");
+      return;
+    }
+    if (campaignFormData.target_type === "patients" && campaignFormData.target_filter === "by_services" && (!campaignFormData.service_ids || campaignFormData.service_ids.length === 0)) {
+      toast.error("Selecione ao menos um serviço para o público por serviços agendados.");
+      return;
     }
     try {
-      const response = await api.post("/campaigns/send", campaignFormData);
+      const payload = {
+        ...campaignFormData,
+        service_ids: campaignFormData.service_ids?.length ? campaignFormData.service_ids : undefined
+      };
+      const response = await api.post("/campaigns/send", payload);
       toast.success(response.data.message);
       setShowCampaignDialog(false);
       setCampaignFormData({
         title: "",
         target_type: "patients",
+        target_filter: "all",
         service_id: "",
+        service_ids: [],
         lead_status: "",
-        message: ""
+        message: "",
+        message_media_url: "",
+        message_media_type: ""
       });
+      setCampaignAudienceEstimate(null);
       loadFollowUps(); // Refresh to see new followups
       loadCampaigns(); // Refresh history
     } catch (error) {
@@ -240,8 +345,11 @@ export default function FollowUpPage() {
         name: "",
         type: "comercial",
         trigger: "lead_created",
+        service_id: "",
         days_after: 1,
         message_template: "",
+        message_media_url: "",
+        message_media_type: "",
         active: true
       });
       loadRules();
@@ -252,8 +360,64 @@ export default function FollowUpPage() {
 
   const handleEditRule = (rule) => {
     setEditingRuleId(rule.id);
-    setRuleFormData(rule);
+    setRuleFormData({
+      name: rule.name ?? "",
+      type: rule.type ?? "comercial",
+      trigger: rule.trigger ?? "lead_created",
+      service_id: rule.service_id ?? "",
+      days_after: rule.days_after ?? 1,
+      message_template: rule.message_template ?? "",
+      message_media_url: rule.message_media_url ?? "",
+      message_media_type: rule.message_media_type ?? "",
+      active: rule.active !== false
+    });
     setShowRuleDialog(true);
+  };
+
+  const insertEmoji = (emoji) => {
+    const ta = messageTemplateRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const text = ruleFormData.message_template || "";
+    const next = text.slice(0, start) + emoji + text.slice(end);
+    setRuleFormData({ ...ruleFormData, message_template: next });
+    setTimeout(() => { ta.focus(); ta.setSelectionRange(start + emoji.length, start + emoji.length); }, 0);
+  };
+
+  const handleRuleMediaUpload = async (e) => {
+    const file = e.target?.files?.[0];
+    if (!file) return;
+    const isImage = (file.type || "").startsWith("image/");
+    const isVideo = (file.type || "").startsWith("video/");
+    if (!isImage && !isVideo) {
+      toast.error("Selecione uma imagem ou vídeo.");
+      return;
+    }
+    const maxMb = isImage ? MAX_IMAGE_MB : MAX_VIDEO_MB;
+    if (file.size > maxMb * 1024 * 1024) {
+      toast.error(`Tamanho máximo: ${maxMb} MB`);
+      return;
+    }
+    setUploadingMedia(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await api.post("/follow-up-rules/upload-media", formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      setRuleFormData({
+        ...ruleFormData,
+        message_media_url: res.data?.url ?? "",
+        message_media_type: res.data?.media_type ?? (isImage ? "image" : "video")
+      });
+      toast.success("Mídia anexada.");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Erro ao enviar mídia.");
+    } finally {
+      setUploadingMedia(false);
+      e.target.value = "";
+    }
   };
 
   const handleDeleteRule = (rule) => {
@@ -339,7 +503,25 @@ export default function FollowUpPage() {
           <h1 className="text-4xl font-bold text-gray-900">Follow-up</h1>
           <div className="flex gap-3">
             {isAdmin && (
-              <Button onClick={() => setShowRuleDialog(true)} variant="outline" className="btn-secondary">
+              <Button
+                onClick={() => {
+                  setEditingRuleId(null);
+                  setRuleFormData({
+                    name: "",
+                    type: "comercial",
+                    trigger: "lead_created",
+                    service_id: "",
+                    days_after: 1,
+                    message_template: "",
+                    message_media_url: "",
+                    message_media_type: "",
+                    active: true
+                  });
+                  setShowRuleDialog(true);
+                }}
+                variant="outline"
+                className="btn-secondary"
+              >
                 <Settings className="w-5 h-5 mr-2" />
                 Gerenciar Regras
               </Button>
@@ -428,7 +610,9 @@ export default function FollowUpPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h3 className="text-xl font-bold text-gray-900">
-                      {followUp.lead_id ? getLeadName(followUp.lead_id) : getPatientName(followUp.patient_id)}
+                      {followUp.lead_id
+                        ? (followUp.lead_name || getLeadName(followUp.lead_id) || "—")
+                        : (followUp.patient_name || getPatientName(followUp.patient_id) || "—")}
                     </h3>
                     {getStatusBadge(followUp.status)}
                     <span className={`px-2 py-1 rounded text-xs ${
@@ -532,8 +716,8 @@ export default function FollowUpPage() {
                   <div className="bg-gray-50 p-3 rounded-lg">
                     <span className="text-gray-500 text-sm block">Público Alvo</span>
                     <span className="font-medium">
-                      {campaign.target_type === 'patients' ? 'Pacientes' : 'Leads'} 
-                      {campaign.service_id && ` (Por Tratamento)`}
+                      {campaign.target_type === 'patients' ? 'Pacientes' : 'Leads'}
+                      {(campaign.service_id || (campaign.service_ids && campaign.service_ids.length > 0)) && ' (Por serviços agendados)'}
                     </span>
                   </div>
                   <div className="bg-gray-50 p-3 rounded-lg">
@@ -697,32 +881,76 @@ export default function FollowUpPage() {
                   <select
                     className="input-field"
                     value={ruleFormData.trigger}
-                    onChange={(e) => setRuleFormData({...ruleFormData, trigger: e.target.value})}
+                    onChange={(e) => setRuleFormData({...ruleFormData, trigger: e.target.value, service_id: e.target.value === "service_maintenance" ? ruleFormData.service_id : ""})}
                   >
                     <option value="lead_created">Lead Criado</option>
                     <option value="appointment_created">Agendamento Criado</option>
                     <option value="appointment_completed">Consulta Concluída</option>
                     <option value="patient_birthday">Pacientes Aniversariantes</option>
+                    <option value="service_maintenance">Serviços</option>
                   </select>
                 </div>
               </div>
+              {ruleFormData.trigger === "service_maintenance" && (
+                <div>
+                  <Label>Serviço (manutenção) *</Label>
+                  <select
+                    className="input-field"
+                    value={ruleFormData.service_id}
+                    onChange={(e) => setRuleFormData({...ruleFormData, service_id: e.target.value})}
+                    required={ruleFormData.trigger === "service_maintenance"}
+                  >
+                    <option value="">Selecione o serviço</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Mensagem será enviada aos pacientes que realizaram este serviço há o tempo escolhido em &quot;Aguardar&quot;.
+                  </p>
+                </div>
+              )}
               <div>
                 <Label>Aguardar *</Label>
                 <select
                   className="input-field"
                   value={ruleFormData.days_after}
-                  onChange={(e) => setRuleFormData({...ruleFormData, days_after: parseInt(e.target.value)})}
+                  onChange={(e) => setRuleFormData({...ruleFormData, days_after: parseInt(e.target.value, 10)})}
                 >
                   <option value={0}>No dia</option>
                   <option value={1}>1 dia depois</option>
                   <option value={2}>2 dias depois</option>
                   <option value={-1}>1 dia antes</option>
                   <option value={-2}>2 dias antes</option>
+                  <option value={15}>15 dias</option>
+                  <option value={30}>1 mês</option>
+                  <option value={60}>2 meses</option>
+                  <option value={90}>3 meses</option>
+                  <option value={120}>4 meses</option>
+                  <option value={150}>5 meses</option>
+                  <option value={180}>6 meses</option>
                 </select>
               </div>
               <div>
                 <Label>Template da Mensagem *</Label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  <span className="text-xs text-gray-500 flex items-center gap-1">
+                    <Smile className="w-4 h-4" /> Inserir emoji:
+                  </span>
+                  {["😀", "👍", "❤️", "📅", "⏰", "✨", "🦷", "💬", "📱", "✅"].map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => insertEmoji(emoji)}
+                      className="text-lg hover:bg-gray-100 rounded p-1"
+                      title="Inserir emoji"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
                 <textarea
+                  ref={messageTemplateRef}
                   className="input-field min-h-[120px]"
                   value={ruleFormData.message_template}
                   onChange={(e) => setRuleFormData({...ruleFormData, message_template: e.target.value})}
@@ -730,8 +958,50 @@ export default function FollowUpPage() {
                   required
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Variáveis disponíveis: {"{nome}"}, {"{horario}"}, {"{data}"}
+                  Variáveis: {"{nome}"} ou {"{name}"}, {"{horario}"}, {"{data}"}
                 </p>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <Label className="sr-only">Anexar mídia</Label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer text-blue-600 hover:text-blue-800">
+                    <ImagePlus className="w-4 h-4" />
+                    <span>Imagem (máx. {MAX_IMAGE_MB} MB)</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleRuleMediaUpload}
+                      disabled={uploadingMedia}
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer text-blue-600 hover:text-blue-800">
+                    <Video className="w-4 h-4" />
+                    <span>Vídeo (máx. {MAX_VIDEO_MB} MB)</span>
+                    <input
+                      type="file"
+                      accept="video/*"
+                      className="hidden"
+                      onChange={handleRuleMediaUpload}
+                      disabled={uploadingMedia}
+                    />
+                  </label>
+                  {uploadingMedia && <span className="text-xs text-gray-500">Enviando...</span>}
+                </div>
+                {ruleFormData.message_media_url && (
+                  <div className="mt-2 p-2 border rounded-lg bg-gray-50">
+                    {ruleFormData.message_media_type === "image" ? (
+                      <img src={`${MEDIA_BASE}${ruleFormData.message_media_url}`} alt="Anexo" className="max-h-32 rounded object-contain" />
+                    ) : (
+                      <video src={`${MEDIA_BASE}${ruleFormData.message_media_url}`} controls className="max-h-32 rounded" />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setRuleFormData({ ...ruleFormData, message_media_url: "", message_media_type: "" })}
+                      className="text-xs text-red-600 hover:underline mt-1"
+                    >
+                      Remover mídia
+                    </button>
+                  </div>
+                )}
               </div>
               <Button type="submit" className="w-full btn-primary">
                 {editingRuleId ? "Salvar Alterações" : "Criar Regra"}
@@ -770,21 +1040,89 @@ export default function FollowUpPage() {
               </div>
 
               {campaignFormData.target_type === "patients" && (
-                <div>
-                  <Label>Filtrar por Tratamento (Opcional)</Label>
-                  <SearchableSelect
-                    options={[
-                      { id: "", name: "Todos os pacientes com telefone" },
-                      ...services
-                    ]}
-                    value={campaignFormData.service_id}
-                    onChange={(value) => setCampaignFormData({...campaignFormData, service_id: value})}
-                    placeholder="Selecione um tratamento..."
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Se selecionado, enviará apenas para pacientes que realizaram este tratamento.
-                  </p>
-                </div>
+                <>
+                  <div>
+                    <Label>Enviar para</Label>
+                    <select
+                      className="input-field"
+                      value={campaignFormData.target_filter}
+                      onChange={(e) => setCampaignFormData({...campaignFormData, target_filter: e.target.value})}
+                    >
+                      <option value="all">Todos os pacientes (com telefone)</option>
+                      <option value="by_services">Por serviços já agendados</option>
+                    </select>
+                  </div>
+                  {campaignFormData.target_filter === "by_services" && (
+                    <div>
+                      <Label>Serviços (pacientes que já agendaram)</Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full justify-between input-field min-h-[40px] font-normal mt-1"
+                          >
+                            Buscar e adicionar serviço...
+                            <ChevronDown className="h-4 w-4 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-white border shadow-lg z-[100]" align="start">
+                          <Command className="rounded-md border-0 bg-white max-h-[280px]">
+                            <CommandInput placeholder="Buscar serviço..." className="bg-white" />
+                            <div className="overflow-y-auto max-h-[220px] [&_[cmdk-list]]:max-h-none [&_[cmdk-list]]:overflow-visible" onWheel={(e) => e.stopPropagation()}>
+                              <CommandList className="bg-white">
+                                <CommandEmpty>Nenhum serviço encontrado.</CommandEmpty>
+                                {services.map((s) => (
+                                  <CommandItem
+                                    key={s.id}
+                                    value={s.name}
+                                    onSelect={() => toggleCampaignService(s.id)}
+                                    className="bg-white hover:bg-gray-100 cursor-pointer"
+                                  >
+                                    {(campaignFormData.service_ids || []).includes(s.id) ? "✓ " : ""}{s.name}
+                                  </CommandItem>
+                                ))}
+                              </CommandList>
+                            </div>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      {(campaignFormData.service_ids || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {(campaignFormData.service_ids || []).map((id) => {
+                            const s = services.find((x) => x.id === id);
+                            return s ? (
+                              <span
+                                key={id}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-200 text-sm"
+                              >
+                                {s.name}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCampaignService(id)}
+                                  className="hover:bg-gray-300 rounded p-0.5"
+                                  aria-label="Remover"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </span>
+                            ) : null;
+                          })}
+                        </div>
+                      )}
+                      {campaignAudienceEstimate !== null && (
+                        <p className="text-sm text-gray-600 mt-2">
+                          <strong>Estimativa do público:</strong> ~{campaignAudienceEstimate} pessoa{campaignAudienceEstimate !== 1 ? "s" : ""} (com telefone)
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {campaignFormData.target_filter === "all" && campaignAudienceEstimate !== null && (
+                    <p className="text-sm text-gray-600">
+                      <strong>Estimativa do público:</strong> ~{campaignAudienceEstimate} pessoa{campaignAudienceEstimate !== 1 ? "s" : ""}
+                    </p>
+                  )}
+                </>
               )}
 
               {campaignFormData.target_type === "leads" && (
@@ -803,12 +1141,33 @@ export default function FollowUpPage() {
                     <option value="converted">Convertido</option>
                     <option value="lost">Perdido</option>
                   </select>
+                  {campaignAudienceEstimate !== null && (
+                    <p className="text-sm text-gray-600 mt-2">
+                      <strong>Estimativa:</strong> ~{campaignAudienceEstimate} pessoa{campaignAudienceEstimate !== 1 ? "s" : ""}
+                    </p>
+                  )}
                 </div>
               )}
 
               <div>
                 <Label>Mensagem</Label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  <span className="text-xs text-gray-500 flex items-center gap-1">
+                    <Smile className="w-4 h-4" /> Emojis:
+                  </span>
+                  {["😀", "👍", "❤️", "📅", "✨", "💬", "📱", "✅"].map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => insertCampaignEmoji(emoji)}
+                      className="text-lg hover:bg-gray-100 rounded p-1"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
                 <textarea
+                  ref={campaignMessageRef}
                   className="input-field min-h-[120px]"
                   value={campaignFormData.message}
                   onChange={(e) => setCampaignFormData({...campaignFormData, message: e.target.value})}
@@ -816,8 +1175,49 @@ export default function FollowUpPage() {
                   required
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Variável disponível: {"{name}"}
+                  Variável: {"{name}"}
                 </p>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer text-blue-600 hover:text-blue-800">
+                    <ImagePlus className="w-4 h-4" />
+                    Imagem (máx. {CAMPAIGN_MAX_IMAGE_MB} MB)
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleCampaignMediaUpload}
+                      disabled={campaignUploadingMedia}
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer text-blue-600 hover:text-blue-800">
+                    <Video className="w-4 h-4" />
+                    Vídeo (máx. {CAMPAIGN_MAX_VIDEO_MB} MB)
+                    <input
+                      type="file"
+                      accept="video/*"
+                      className="hidden"
+                      onChange={handleCampaignMediaUpload}
+                      disabled={campaignUploadingMedia}
+                    />
+                  </label>
+                  {campaignUploadingMedia && <span className="text-xs text-gray-500">Enviando...</span>}
+                </div>
+                {campaignFormData.message_media_url && (
+                  <div className="mt-2 p-2 border rounded-lg bg-gray-50">
+                    {campaignFormData.message_media_type === "image" ? (
+                      <img src={`${MEDIA_BASE}${campaignFormData.message_media_url}`} alt="Anexo" className="max-h-32 rounded object-contain" />
+                    ) : (
+                      <video src={`${MEDIA_BASE}${campaignFormData.message_media_url}`} controls className="max-h-32 rounded" />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setCampaignFormData({ ...campaignFormData, message_media_url: "", message_media_type: "" })}
+                      className="text-xs text-red-600 hover:underline mt-1"
+                    >
+                      Remover mídia
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-md text-sm text-yellow-800">
@@ -827,6 +1227,9 @@ export default function FollowUpPage() {
                 <p>
                   Esta ação enviará mensagens via WhatsApp para todos os contatos do filtro selecionado.
                   Certifique-se de que a mensagem está correta antes de enviar.
+                </p>
+                <p className="mt-2 font-medium">
+                  Vários disparos em massa podem resultar no bloqueio ou banimento do número de WhatsApp configurado. Use com moderação.
                 </p>
               </div>
 

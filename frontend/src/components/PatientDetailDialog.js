@@ -161,19 +161,21 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     const fetchTabData = async () => {
       if (!isOpen || !detailedPatient) return;
       try {
+        if ((activeTab === 'info' || activeTab === 'revenue') && appointmentsList.length === 0) {
+          const appts = await api.get(`/appointments`, { params: { patient_id: detailedPatient.id, sort_by: 'appointment_date', order: 'desc', limit: 200 } });
+          setAppointmentsList(appts.data || []);
+        }
         if (activeTab === 'revenue' && transactions.length === 0) {
           const res = await api.get(`/transactions`, { params: { patient_id: detailedPatient.id, sort_by: 'created_at', order: 'desc', limit: 100 } });
           setTransactions(res.data || []);
-          if (appointmentsList.length === 0) {
-            const appts = await api.get(`/appointments`, { params: { patient_id: detailedPatient.id, sort_by: 'appointment_date', order: 'desc', limit: 200 } });
-            setAppointmentsList(appts.data || []);
-          }
         }
         if (activeTab === 'records' && medicalRecords.length === 0) {
           const res = await api.get(`/medical-records`, { params: { patient_id: detailedPatient.id, sort_by: 'created_at', order: 'desc', limit: 100 } });
           setMedicalRecords(res.data || []);
         }
         if (activeTab === 'treatments') {
+          const apptsRes = await api.get(`/appointments`, { params: { patient_id: detailedPatient.id, sort_by: 'appointment_date', order: 'desc', limit: 200 } });
+          setAppointmentsList(apptsRes.data || []);
           if (allProfessionals.length === 0) {
             const profsRes = await api.get(`/professionals`);
             const allClinicProfessionals = profsRes.data || [];
@@ -1006,6 +1008,19 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                       <Label className="text-sm font-semibold text-gray-700">Endereço</Label>
                       <p className="text-gray-900">{detailedPatient.address || "Não informado"}</p>
                     </div>
+                    <div className="col-span-2">
+                      <Label className="text-sm font-semibold text-gray-700">Autorização uso de imagem e voz</Label>
+                      <p className="text-gray-900">
+                        {(() => {
+                          if (detailedPatient?.image_voice_consent === true) return "Sim";
+                          const withConsent = (appointmentsList || []).filter((a) => a.image_voice_consent === true);
+                          if (withConsent.length === 0) return "Não informado";
+                          const last = withConsent.sort((a, b) => (b.appointment_date || "").localeCompare(a.appointment_date || ""))[0];
+                          const dateStr = last?.appointment_date ? new Date(last.appointment_date + "T00:00:00").toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "";
+                          return dateStr ? `Sim (autorizado em agendamento de ${dateStr})` : "Sim";
+                        })()}
+                      </p>
+                    </div>
                   </div>
 
                   {debts.total_debt > 0 && (
@@ -1409,8 +1424,30 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
               )}
 
               {/* Treatments Tab */}
-            {activeTab === "treatments" && (
+              {activeTab === "treatments" && (
               <div className="space-y-4">
+                  {/* Serviços dos agendamentos */}
+                  <div className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Serviços dos agendamentos</h3>
+                    {appointmentsList && appointmentsList.length > 0 ? (
+                      <ul className="space-y-2 border rounded-lg p-3 bg-gray-50 max-h-48 overflow-y-auto">
+                        {appointmentsList.map((apt) => (
+                          <li key={apt.id} className="text-sm flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span className="font-medium text-gray-700">
+                              {formatDate(apt.appointment_date)} {apt.appointment_time}
+                            </span>
+                            <span className="text-gray-600">
+                              {Array.isArray(apt.service_names) && apt.service_names.length > 0
+                                ? apt.service_names.join(", ")
+                                : (services.find((s) => s.id === apt.service_id)?.name || apt.service_id || "—")}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-gray-500">Nenhum agendamento encontrado.</p>
+                    )}
+                  </div>
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-semibold">Tratamentos Realizados</h3>
                     <Button 

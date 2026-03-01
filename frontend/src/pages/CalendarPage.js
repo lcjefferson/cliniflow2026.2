@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
-import { Plus, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, X, ChevronDown, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@/components/ui/command";
 import PatientCombobox from "../components/PatientCombobox";
 import PatientDetailDialog from "../components/PatientDetailDialog";
 import { useAuth } from "../contexts/AuthContext";
@@ -40,13 +42,15 @@ export default function CalendarPage() {
   const [formData, setFormData] = useState({
     patient_id: "",
     professional_id: "",
-    service_id: "",
     room_id: "",
     // Ajuste de fuso horário: usa data local (YYYY-MM-DD) sem deslocamento
     appointment_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
     appointment_time: "",
     appointment_time_end: "",
-    notes: ""
+    notes: "",
+    status: "scheduled",
+    service_ids: [],
+    image_voice_consent: false
   });
   const [conflicts, setConflicts] = useState(null);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
@@ -231,13 +235,14 @@ export default function CalendarPage() {
       setFormData({
         patient_id: "",
         professional_id: "",
-        service_id: "",
         room_id: "",
-        // Mantém data local correta após salvar
         appointment_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
         appointment_time: "",
         appointment_time_end: "",
-        notes: ""
+        notes: "",
+        status: "scheduled",
+        service_ids: [],
+        image_voice_consent: false
       });
       await loadMonthAppointments();
     } catch (error) {
@@ -247,15 +252,18 @@ export default function CalendarPage() {
 
   const handleEditAppointment = (appointment) => {
     setEditingAppointment(appointment);
+    const serviceIds = resolveServiceIdsFromAppointment(appointment);
     setFormData({
       patient_id: appointment.patient_id,
       professional_id: appointment.professional_id,
-      service_id: appointment.service_id,
       room_id: appointment.room_id,
       appointment_date: appointment.appointment_date,
       appointment_time: appointment.appointment_time,
       appointment_time_end: appointment.appointment_time_end || "",
-      notes: appointment.notes || ""
+      notes: appointment.notes || "",
+      status: appointment.status || "scheduled",
+      service_ids: serviceIds,
+      image_voice_consent: !!appointment.image_voice_consent
     });
     setShowDetailsDialog(false);
     setShowDialog(true);
@@ -310,13 +318,14 @@ export default function CalendarPage() {
     setFormData({
       patient_id: "",
       professional_id: "",
-      service_id: "",
       room_id: "",
-      // Ajuste de fuso horário: reseta com data local (YYYY-MM-DD)
       appointment_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
       appointment_time: "",
       appointment_time_end: "",
-      notes: ""
+      notes: "",
+      status: "scheduled",
+      service_ids: [],
+      image_voice_consent: false
     });
   };
 
@@ -383,10 +392,31 @@ export default function CalendarPage() {
   };
 
   const getAppointmentColor = (apt) => {
+    if (apt.status === 'waiting') return 'bg-violet-500';
     if (apt.status === 'in_progress') return 'bg-orange-500';
     if (apt.status === 'completed') return 'bg-green-600';
     if (apt.status === 'cancelled') return 'bg-red-600';
     return getProfessionalColor(apt.professional_id);
+  };
+
+  const resolveServiceIdsFromAppointment = (appointment) => {
+    if (!appointment) return [];
+    if (Array.isArray(appointment.service_ids) && appointment.service_ids.length) return appointment.service_ids;
+    if (appointment.service_id) return [appointment.service_id];
+    if (Array.isArray(appointment.service_names) && appointment.service_names.length && services.length) {
+      return appointment.service_names
+        .map((name) => services.find((s) => s.name === name)?.id)
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  const toggleServiceForForm = (serviceId) => {
+    setFormData((prev) => {
+      const ids = prev.service_ids || [];
+      const next = ids.includes(serviceId) ? ids.filter((id) => id !== serviceId) : [...ids, serviceId];
+      return { ...prev, service_ids: next };
+    });
   };
 
   const updateAppointmentStatus = async (id, status) => {
@@ -445,7 +475,9 @@ export default function CalendarPage() {
       filtered = filtered.filter(apt => apt.room_id === filterRoom);
     }
     if (filterService) {
-      filtered = filtered.filter(apt => apt.service_id === filterService);
+      filtered = filtered.filter(apt =>
+        apt.service_id === filterService || (Array.isArray(apt.service_ids) && apt.service_ids.includes(filterService))
+      );
     }
     
     // Ordenar por hora
@@ -760,7 +792,11 @@ export default function CalendarPage() {
                           {getPatientName(apt.patient_id)}
                         </span>
                         <div className="text-base opacity-95 font-medium">{getProfessionalName(apt.professional_id)}</div>
-                        <div className="text-sm opacity-80">{getServiceName(apt.service_id)}</div>
+                        <div className="text-sm opacity-80">
+                          {Array.isArray(apt.service_names) && apt.service_names.length > 0
+                            ? apt.service_names.join(", ")
+                            : getServiceName(apt.service_id)}
+                        </div>
                       </div>
                     </button>
                   ))}
@@ -790,100 +826,135 @@ export default function CalendarPage() {
 
         {/* Modal de Detalhes do Agendamento */}
         <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
-          <DialogContent className="rounded-2xl shadow-2xl border-0">
-            <DialogHeader>
+          <DialogContent className="rounded-2xl shadow-2xl border-0 max-h-[90vh] overflow-hidden flex flex-col p-6">
+            <DialogHeader className="flex-shrink-0 pr-8">
               <DialogTitle>Detalhes do Agendamento</DialogTitle>
             </DialogHeader>
             {selectedAppointment && (
-              <div className="space-y-4">
-                <div>
-                <Label className="text-gray-600 block mb-1">Paciente</Label>
-                <button
-                  type="button"
-                  onClick={() => openPatientDialog(selectedAppointment.patient_id)}
-                  className="text-2xl font-bold text-blue-600 hover:text-blue-800 text-left transition-colors"
-                >
-                  {getPatientName(selectedAppointment.patient_id)}
-                </button>
-              </div>
-                <div>
-                  <Label className="text-gray-600">Profissional</Label>
-                  <p className="font-semibold">{getProfessionalName(selectedAppointment.professional_id)}</p>
-                </div>
-                <div>
-                  <Label className="text-gray-600">Serviço</Label>
-                  <p className="font-semibold">{getServiceName(selectedAppointment.service_id)}</p>
-                </div>
-                <div>
-                  <Label className="text-gray-600">Sala</Label>
-                  <p className="font-semibold">{getRoomName(selectedAppointment.room_id)}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+              <>
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 sm:px-5 [scrollbar-gutter:stable] space-y-4">
                   <div>
-                    <Label className="text-gray-600">Data</Label>
-                    <p className="font-semibold">
-                      {new Date(selectedAppointment.appointment_date + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                    <Label className="text-gray-600">Status</Label>
+                    <div className="mt-1">
+                      <Select
+                        value={selectedAppointment.status || 'scheduled'}
+                        onValueChange={(value) => updateAppointmentStatus(selectedAppointment.id, value)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Selecione o status" />
+                        </SelectTrigger>
+                        <SelectContent className="z-[100]">
+                          <SelectItem value="scheduled">Agendado</SelectItem>
+                          <SelectItem value="waiting">Em espera</SelectItem>
+                          <SelectItem value="in_progress">Em andamento</SelectItem>
+                          <SelectItem value="completed">Concluído</SelectItem>
+                          <SelectItem value="cancelled">Cancelado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-gray-600 block mb-1">Paciente</Label>
+                    <button
+                      type="button"
+                      onClick={() => openPatientDialog(selectedAppointment.patient_id)}
+                      className="text-2xl font-bold text-blue-600 hover:text-blue-800 text-left transition-colors"
+                    >
+                      {getPatientName(selectedAppointment.patient_id)}
+                    </button>
+                  </div>
+                  <div>
+                    <Label className="text-gray-600">Profissional</Label>
+                    <p className="font-semibold">{getProfessionalName(selectedAppointment.professional_id)}</p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-600">Serviço(s)</Label>
+                    {Array.isArray(selectedAppointment.service_names) && selectedAppointment.service_names.length > 0 ? (
+                      <ul className="list-disc list-inside font-semibold">
+                        {selectedAppointment.service_names.map((name, i) => (
+                          <li key={i}>{name}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="font-semibold">{getServiceName(selectedAppointment.service_id)}</p>
+                    )}
+                  </div>
+                  <div>
+                    <Label className="text-gray-600">Sala</Label>
+                    <p className="font-semibold">{getRoomName(selectedAppointment.room_id)}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-gray-600">Data</Label>
+                      <p className="font-semibold">
+                        {new Date(selectedAppointment.appointment_date + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-gray-600">Horário</Label>
+                      <p className="font-semibold">{selectedAppointment.appointment_time}</p>
+                    </div>
+                  </div>
+                  {selectedAppointment.notes && (
+                    <div>
+                      <Label className="text-gray-600">Observações</Label>
+                      <p className="text-sm">{selectedAppointment.notes}</p>
+                    </div>
+                  )}
+                  <div>
+                    <Label className="text-gray-600">Autorização uso de imagem e voz</Label>
+                    <p className="text-sm font-semibold">
+                      {selectedAppointment.image_voice_consent ? "Sim" : "Não informado"}
                     </p>
                   </div>
-                  <div>
-                    <Label className="text-gray-600">Horário</Label>
-                    <p className="font-semibold">{selectedAppointment.appointment_time}</p>
-                  </div>
                 </div>
-                {selectedAppointment.notes && (
-                  <div>
-                    <Label className="text-gray-600">Observações</Label>
-                    <p className="text-sm">{selectedAppointment.notes}</p>
-                  </div>
-                )}
-                <div>
-                  <Label className="text-gray-600">Status</Label>
-                  <div className="mt-1">
-                    <Select
-                      value={selectedAppointment.status || 'scheduled'}
-                      onValueChange={(value) => updateAppointmentStatus(selectedAppointment.id, value)}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Selecione o status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="scheduled">Agendado</SelectItem>
-                        <SelectItem value="in_progress">Em andamento</SelectItem>
-                        <SelectItem value="completed">Concluído</SelectItem>
-                        <SelectItem value="cancelled">Cancelado</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                
-                {/* Botões de Ação */}
-                <div className="flex gap-3 pt-4 border-t">
-                  <Button 
-                    onClick={() => handleEditAppointment(selectedAppointment)} 
-                    className="flex-1 btn-primary"
+                <div className="flex flex-wrap gap-3 pt-4 border-t flex-shrink-0">
+                  <Button
+                    onClick={() => handleEditAppointment(selectedAppointment)}
+                    className="btn-primary"
                   >
                     Editar Agendamento
                   </Button>
-                  <Button 
-                    onClick={() => handleDeleteAppointment(selectedAppointment)} 
+                  <Button
+                    onClick={() => handleDeleteAppointment(selectedAppointment)}
                     variant="destructive"
-                    className="flex-1 bg-red-500 hover:bg-red-600 text-white"
+                    className="bg-red-500 hover:bg-red-600 text-white"
                   >
                     Deletar
                   </Button>
                 </div>
-              </div>
+              </>
             )}
           </DialogContent>
         </Dialog>
 
         {/* Modal de Novo Agendamento */}
         <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
-          <DialogContent className="max-w-2xl rounded-2xl">
-            <DialogHeader>
+          <DialogContent className="max-w-2xl rounded-2xl max-h-[90vh] overflow-hidden flex flex-col p-6">
+            <DialogHeader className="flex-shrink-0 pr-8">
               <DialogTitle>{editingAppointment ? "Editar Agendamento" : "Novo Agendamento"}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 sm:px-5 [scrollbar-gutter:stable] space-y-4">
+              {editingAppointment && (
+                <div>
+                  <Label>Status</Label>
+                  <Select
+                    value={formData.status || "scheduled"}
+                    onValueChange={(value) => setFormData({ ...formData, status: value })}
+                  >
+                    <SelectTrigger className="input-field w-full">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent className="z-[100]">
+                      <SelectItem value="scheduled">Agendado</SelectItem>
+                      <SelectItem value="waiting">Em espera</SelectItem>
+                      <SelectItem value="in_progress">Em andamento</SelectItem>
+                      <SelectItem value="completed">Concluído</SelectItem>
+                      <SelectItem value="cancelled">Cancelado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="mb-2 block">Paciente *</Label>
@@ -910,15 +981,61 @@ export default function CalendarPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Serviço</Label>
-                  <select
-                    className="input-field"
-                    value={formData.service_id}
-                    onChange={(e) => setFormData({...formData, service_id: e.target.value})}
-                  >
-                    <option value="">Selecione</option>
-                    {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
+                  <Label>Serviços</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full justify-between input-field min-h-[40px] font-normal"
+                      >
+                        Buscar e adicionar serviço...
+                        <ChevronDown className="h-4 w-4 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-white border shadow-lg z-[100]" align="start">
+                      <Command className="rounded-md border-0 bg-white max-h-[280px]">
+                        <CommandInput placeholder="Buscar serviço..." className="bg-white" />
+                        <div className="overflow-y-auto max-h-[220px] [&_[cmdk-list]]:max-h-none [&_[cmdk-list]]:overflow-visible" onWheel={(e) => e.stopPropagation()}>
+                          <CommandList className="bg-white">
+                            <CommandEmpty>Nenhum serviço encontrado.</CommandEmpty>
+                            {services.map((s) => (
+                              <CommandItem
+                                key={s.id}
+                                value={s.name}
+                                onSelect={() => toggleServiceForForm(s.id)}
+                                className="bg-white hover:bg-gray-100 cursor-pointer"
+                              >
+                                {(formData.service_ids || []).includes(s.id) ? "✓ " : ""}{s.name}
+                              </CommandItem>
+                            ))}
+                          </CommandList>
+                        </div>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  {(formData.service_ids || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {(formData.service_ids || []).map((id) => {
+                        const s = services.find((x) => x.id === id);
+                        return s ? (
+                          <span
+                            key={id}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-200 text-sm"
+                          >
+                            {s.name}
+                            <button
+                              type="button"
+                              onClick={() => toggleServiceForForm(id)}
+                              className="hover:bg-gray-300 rounded p-0.5"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <Label>Sala *</Label>
@@ -1022,6 +1139,18 @@ export default function CalendarPage() {
                   value={formData.notes}
                   onChange={(e) => setFormData({...formData, notes: e.target.value})}
                 />
+              </div>
+              <div className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  id="image_voice_consent"
+                  checked={!!formData.image_voice_consent}
+                  onChange={(e) => setFormData({...formData, image_voice_consent: e.target.checked})}
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <Label htmlFor="image_voice_consent" className="text-sm font-normal cursor-pointer text-gray-700">
+                  Autorizo o uso da minha imagem e voz para fins institucionais e de comunicação da instituição.
+                </Label>
               </div>
               <Button type="submit" className="w-full btn-primary">
                 {editingAppointment ? "Salvar Alterações" : "Agendar"}

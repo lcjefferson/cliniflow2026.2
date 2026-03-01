@@ -2,6 +2,7 @@ import axios from 'axios';
 
 // Prefer explicit backend URL in development to avoid dev-server relative path issues
 export const API_BASE = process.env.REACT_APP_BACKEND_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://clinicflow-lucj.onrender.com');
+export const MEDIA_BASE = API_BASE; // para URLs de mídia (ex: /media/...)
 const API_URL = `${API_BASE}/api`;
 
 const api = axios.create({

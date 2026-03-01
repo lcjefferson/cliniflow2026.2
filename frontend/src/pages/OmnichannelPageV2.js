@@ -718,6 +718,9 @@ export default function OmnichannelPageV2() {
           </a>
         );
       }
+      if (content === "[mensagem enviada pelo celular]") {
+        return <span className="italic text-gray-500 text-sm">(Mensagem enviada pelo celular)</span>;
+      }
       return content;
     }
     
