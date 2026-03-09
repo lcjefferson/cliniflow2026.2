@@ -1008,6 +1008,14 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                       <Label className="text-sm font-semibold text-gray-700">Endereço</Label>
                       <p className="text-gray-900">{detailedPatient.address || "Não informado"}</p>
                     </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-700">Cidade</Label>
+                      <p className="text-gray-900">{detailedPatient.city || "Não informado"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-700">Profissão</Label>
+                      <p className="text-gray-900">{detailedPatient.profession || "Não informado"}</p>
+                    </div>
                     <div className="col-span-2">
                       <Label className="text-sm font-semibold text-gray-700">Autorização uso de imagem e voz</Label>
                       <p className="text-gray-900">

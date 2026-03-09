@@ -70,11 +70,13 @@ export default function FollowUpPage() {
     target_filter: "all",
     service_id: "",
     service_ids: [],
+    cities: [],
     lead_status: "",
     message: "",
     message_media_url: "",
     message_media_type: ""
   });
+  const [campaignCities, setCampaignCities] = useState([]);
   const [campaignAudienceEstimate, setCampaignAudienceEstimate] = useState(null);
   const campaignMessageRef = useRef(null);
   const [campaignUploadingMedia, setCampaignUploadingMedia] = useState(false);
@@ -140,6 +142,19 @@ export default function FollowUpPage() {
 
   useEffect(() => {
     if (!showCampaignDialog) return;
+    const fetchCities = async () => {
+      try {
+        const res = await api.get("/patients/cities");
+        setCampaignCities(Array.isArray(res.data) ? res.data : []);
+      } catch {
+        setCampaignCities([]);
+      }
+    };
+    fetchCities();
+  }, [showCampaignDialog]);
+
+  useEffect(() => {
+    if (!showCampaignDialog) return;
     const fetchEstimate = async () => {
       try {
         const params = new URLSearchParams({ target_type: campaignFormData.target_type });
@@ -147,6 +162,9 @@ export default function FollowUpPage() {
           if (campaignFormData.target_filter === "by_services" && campaignFormData.service_ids?.length) {
             params.set("target_filter", "by_services");
             params.set("service_ids", campaignFormData.service_ids.join(","));
+          } else if (campaignFormData.target_filter === "by_cities" && campaignFormData.cities?.length) {
+            params.set("target_filter", "by_cities");
+            params.set("cities", campaignFormData.cities.join(","));
           }
         }
         const res = await api.get(`/campaigns/audience-estimate?${params.toString()}`);
@@ -156,7 +174,15 @@ export default function FollowUpPage() {
       }
     };
     fetchEstimate();
-  }, [showCampaignDialog, campaignFormData.target_type, campaignFormData.target_filter, campaignFormData.service_ids]);
+  }, [showCampaignDialog, campaignFormData.target_type, campaignFormData.target_filter, campaignFormData.service_ids, campaignFormData.cities]);
+
+  const toggleCampaignCity = (cityName) => {
+    setCampaignFormData((prev) => {
+      const list = prev.cities || [];
+      if (list.includes(cityName)) return { ...prev, cities: list.filter((c) => c !== cityName) };
+      return { ...prev, cities: [...list, cityName] };
+    });
+  };
 
   const toggleCampaignService = (serviceId) => {
     setCampaignFormData((prev) => {
@@ -222,10 +248,15 @@ export default function FollowUpPage() {
       toast.error("Selecione ao menos um serviço para o público por serviços agendados.");
       return;
     }
+    if (campaignFormData.target_type === "patients" && campaignFormData.target_filter === "by_cities" && (!campaignFormData.cities || campaignFormData.cities.length === 0)) {
+      toast.error("Selecione ao menos uma cidade para o público por cidades.");
+      return;
+    }
     try {
       const payload = {
         ...campaignFormData,
-        service_ids: campaignFormData.service_ids?.length ? campaignFormData.service_ids : undefined
+        service_ids: campaignFormData.service_ids?.length ? campaignFormData.service_ids : undefined,
+        cities: campaignFormData.cities?.length ? campaignFormData.cities : undefined
       };
       const response = await api.post("/campaigns/send", payload);
       toast.success(response.data.message);
@@ -236,6 +267,7 @@ export default function FollowUpPage() {
         target_filter: "all",
         service_id: "",
         service_ids: [],
+        cities: [],
         lead_status: "",
         message: "",
         message_media_url: "",
@@ -718,6 +750,7 @@ export default function FollowUpPage() {
                     <span className="font-medium">
                       {campaign.target_type === 'patients' ? 'Pacientes' : 'Leads'}
                       {(campaign.service_id || (campaign.service_ids && campaign.service_ids.length > 0)) && ' (Por serviços agendados)'}
+                      {(campaign.cities && campaign.cities.length > 0) && ` (Por cidades: ${campaign.cities.join(", ")})`}
                     </span>
                   </div>
                   <div className="bg-gray-50 p-3 rounded-lg">
@@ -1050,8 +1083,71 @@ export default function FollowUpPage() {
                     >
                       <option value="all">Todos os pacientes (com telefone)</option>
                       <option value="by_services">Por serviços já agendados</option>
+                      <option value="by_cities">Por cidades</option>
                     </select>
                   </div>
+                  {campaignFormData.target_filter === "by_cities" && (
+                    <div>
+                      <Label>Cidades (pacientes cadastrados nessas cidades)</Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full justify-between input-field min-h-[40px] font-normal mt-1"
+                          >
+                            Buscar e adicionar cidade...
+                            <ChevronDown className="h-4 w-4 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-white border shadow-lg z-[100]" align="start">
+                          <Command className="rounded-md border-0 bg-white max-h-[280px]">
+                            <CommandInput placeholder="Buscar cidade..." className="bg-white" />
+                            <div className="overflow-y-auto max-h-[220px] [&_[cmdk-list]]:max-h-none [&_[cmdk-list]]:overflow-visible" onWheel={(e) => e.stopPropagation()}>
+                              <CommandList className="bg-white">
+                                <CommandEmpty>Nenhuma cidade encontrada.</CommandEmpty>
+                                {campaignCities.map((city) => (
+                                  <CommandItem
+                                    key={city}
+                                    value={city}
+                                    onSelect={() => toggleCampaignCity(city)}
+                                    className="bg-white hover:bg-gray-100 cursor-pointer"
+                                  >
+                                    {(campaignFormData.cities || []).includes(city) ? "✓ " : ""}{city}
+                                  </CommandItem>
+                                ))}
+                              </CommandList>
+                            </div>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      {(campaignFormData.cities || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {(campaignFormData.cities || []).map((city) => (
+                            <span
+                              key={city}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-sm"
+                            >
+                              {city}
+                              <button
+                                type="button"
+                                onClick={() => toggleCampaignCity(city)}
+                                className="hover:bg-blue-200 rounded p-0.5"
+                                aria-label="Remover"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {campaignAudienceEstimate !== null && campaignFormData.target_filter === "by_cities" && (
+                        <p className="text-sm text-gray-600 mt-2">
+                          <strong>Estimativa do público:</strong> ~{campaignAudienceEstimate} pessoa{campaignAudienceEstimate !== 1 ? "s" : ""} (com telefone)
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {campaignFormData.target_filter === "by_services" && (
                     <div>
                       <Label>Serviços (pacientes que já agendaram)</Label>

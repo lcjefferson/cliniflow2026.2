@@ -934,6 +934,8 @@ class Patient(BaseModel):
     phone: Optional[str] = None
     birthdate: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = None
+    profession: Optional[str] = None
     cpf: Optional[str] = None
     attachments: List[Attachment] = []
     attachment_folders: List[AttachmentFolder] = []
@@ -949,6 +951,8 @@ class PatientCreate(BaseModel):
     phone: Optional[str] = None
     birthdate: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = None
+    profession: Optional[str] = None
     cpf: Optional[str] = None
     image_voice_consent: Optional[bool] = None
 
@@ -958,6 +962,17 @@ class PatientCreate(BaseModel):
         if v == '' or v is None:
             return None
         return v
+
+class PatientUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    birthdate: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    profession: Optional[str] = None
+    cpf: Optional[str] = None
+    image_voice_consent: Optional[bool] = None
 
 class BudgetTreatment(BaseModel):
     name: str
@@ -2359,7 +2374,7 @@ async def get_patients(
     if not use_aggregation:
         cursor = db.patients.find(
             search_query,
-            {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "birthdate": 1, "address": 1, "cpf": 1, "created_at": 1},
+            {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "birthdate": 1, "address": 1, "city": 1, "profession": 1, "cpf": 1, "created_at": 1},
         ).sort(sort_field, sort_order).skip(skip).limit(page_size)
         patients = await cursor.to_list(page_size)
         for p in patients:
@@ -2382,7 +2397,7 @@ async def get_patients(
         if has_debt is True:
             pipeline.append({"$match": {"total_debt": {"$gt": 0}}})
         pipeline += [
-            {"$project": {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "birthdate": 1, "address": 1, "cpf": 1, "created_at": 1, "total_debt": 1}},
+            {"$project": {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "birthdate": 1, "address": 1, "city": 1, "profession": 1, "cpf": 1, "created_at": 1, "total_debt": 1}},
             {"$sort": {sort_field: sort_order}},
             {"$skip": skip},
             {"$limit": page_size},
@@ -2397,6 +2412,18 @@ async def get_patients(
             logging.error("Error converting created_at for patient %s: %s", p.get("id"), e)
             p["created_at"] = None
     return patients
+
+@api_router.get("/patients/cities", response_model=List[str])
+async def get_patient_cities(current_user: dict = Depends(get_current_user)):
+    """Lista de cidades distintas cadastradas nos pacientes (para filtro de campanhas)."""
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    try:
+        values = await db.patients.distinct("city")
+    except Exception:
+        values = []
+    cities = sorted([str(v).strip() for v in values if v is not None and str(v).strip()])
+    return cities
 
 @api_router.get("/patients/{patient_id}/medical-records", response_model=List[dict])
 async def get_patient_medical_records(patient_id: str, current_user: dict = Depends(get_current_user)):
@@ -2451,7 +2478,7 @@ async def get_patient_professionals(patient_id: str, current_user: dict = Depend
 
 
 @api_router.put("/patients/{patient_id}")
-async def update_patient(patient_id: str, data: PatientCreate, current_user: dict = Depends(get_current_user)):
+async def update_patient(patient_id: str, data: PatientUpdate, current_user: dict = Depends(get_current_user)):
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -4352,9 +4379,10 @@ async def play_audio_proxy(message_id: str):
 class CampaignRequest(BaseModel):
     title: str
     target_type: str  # 'patients' or 'leads'
-    target_filter: Optional[str] = None  # 'all' | 'by_services' (só para patients)
+    target_filter: Optional[str] = None  # 'all' | 'by_services' | 'by_cities' (só para patients)
     service_id: Optional[str] = None  # legado, preferir service_ids
     service_ids: Optional[List[str]] = None  # múltiplos serviços (agendados)
+    cities: Optional[List[str]] = None  # cidades para filtro (by_cities)
     lead_status: Optional[str] = None
     message: str
     message_media_url: Optional[str] = None
@@ -4430,11 +4458,18 @@ async def _campaign_patient_ids_by_services(service_ids: List[str]):
             patient_ids.add(doc["patient_id"])
     return patient_ids
 
+def _normalize_cities_for_query(cities: List[str]):
+    """Retorna lista de strings normalizadas (strip) para query por cidade."""
+    if not cities:
+        return []
+    return [c.strip() for c in cities if c and str(c).strip()]
+
 @api_router.get("/campaigns/audience-estimate")
 async def get_campaign_audience_estimate(
     target_type: str,
     target_filter: Optional[str] = None,
     service_ids: Optional[str] = None,  # comma-separated
+    cities: Optional[str] = None,  # comma-separated (para by_cities)
     current_user: dict = Depends(get_current_user)
 ):
     """Estimativa do tamanho do público para campanha (pacientes com telefone)."""
@@ -4454,6 +4489,13 @@ async def get_campaign_audience_estimate(
             "id": {"$in": list(patient_ids)},
             "phone": {"$exists": True, "$ne": ""}
         })
+        return {"estimate": count}
+    if target_filter == "by_cities" and cities:
+        city_list = _normalize_cities_for_query([s.strip() for s in cities.split(",") if s.strip()])
+        if not city_list:
+            return {"estimate": 0}
+        query = {"city": {"$in": city_list}, "phone": {"$exists": True, "$ne": ""}}
+        count = await db.patients.count_documents(query)
         return {"estimate": count}
     # all patients with phone
     count = await db.patients.count_documents({"phone": {"$exists": True, "$ne": ""}})
@@ -4518,6 +4560,14 @@ async def send_campaign(request: CampaignRequest, background_tasks: BackgroundTa
                 return {"message": "Nenhum destinatário encontrado para os serviços selecionados", "count": 0}
             query = {"id": {"$in": list(patient_ids)}, "phone": {"$exists": True, "$ne": ""}}
             targets = await db.patients.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1}).to_list(5000)
+        elif request.target_filter == "by_cities" and request.cities:
+            city_list = _normalize_cities_for_query(request.cities)
+            if not city_list:
+                return {"message": "Selecione ao menos uma cidade", "count": 0}
+            query = {"city": {"$in": city_list}, "phone": {"$exists": True, "$ne": ""}}
+            targets = await db.patients.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1}).to_list(5000)
+            if not targets:
+                return {"message": "Nenhum paciente com telefone encontrado nas cidades selecionadas", "count": 0}
         else:
             # Todos os pacientes com telefone (target_filter "all" ou legado sem filtro)
             query = {"phone": {"$exists": True, "$ne": ""}}
@@ -4544,6 +4594,7 @@ async def send_campaign(request: CampaignRequest, background_tasks: BackgroundTa
         "target_filter": getattr(request, "target_filter", None),
         "service_id": request.service_id,
         "service_ids": request.service_ids or [],
+        "cities": getattr(request, "cities", None) or [],
         "lead_status": request.lead_status,
         "created_by": current_user.get("id"),
         "created_at": datetime.now(timezone.utc).isoformat(),

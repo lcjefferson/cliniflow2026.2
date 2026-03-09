@@ -36,7 +36,9 @@ export default function CalendarPage() {
     email: "",
     phone: "",
     birthdate: "",
-    address: ""
+    address: "",
+    city: "",
+    profession: ""
   });
   
   const [formData, setFormData] = useState({
@@ -50,7 +52,10 @@ export default function CalendarPage() {
     notes: "",
     status: "scheduled",
     service_ids: [],
-    image_voice_consent: false
+    image_voice_consent: false,
+    patient_profession: "",
+    patient_address: "",
+    patient_city: ""
   });
   const [conflicts, setConflicts] = useState(null);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
@@ -222,12 +227,25 @@ export default function CalendarPage() {
     }
     
     try {
+      const payload = { ...formData };
+      delete payload.patient_profession;
+      delete payload.patient_address;
+      delete payload.patient_city;
       if (editingAppointment) {
-        await api.put(`/appointments/${editingAppointment.id}`, formData);
+        await api.put(`/appointments/${editingAppointment.id}`, payload);
         toast.success("Agendamento atualizado!");
       } else {
-        await api.post("/appointments", formData);
+        await api.post("/appointments", payload);
         toast.success("Agendamento criado!");
+      }
+      if (formData.patient_id) {
+        try {
+          await api.put(`/patients/${formData.patient_id}`, {
+            profession: formData.patient_profession ?? "",
+            address: formData.patient_address ?? "",
+            city: formData.patient_city ?? ""
+          });
+        } catch (_) {}
       }
       setShowDialog(false);
       setEditingAppointment(null);
@@ -242,7 +260,10 @@ export default function CalendarPage() {
         notes: "",
         status: "scheduled",
         service_ids: [],
-        image_voice_consent: false
+        image_voice_consent: false,
+        patient_profession: "",
+        patient_address: "",
+        patient_city: ""
       });
       await loadMonthAppointments();
     } catch (error) {
@@ -253,6 +274,7 @@ export default function CalendarPage() {
   const handleEditAppointment = (appointment) => {
     setEditingAppointment(appointment);
     const serviceIds = resolveServiceIdsFromAppointment(appointment);
+    const pat = patients.find((p) => String(p.id) === String(appointment.patient_id));
     setFormData({
       patient_id: appointment.patient_id,
       professional_id: appointment.professional_id,
@@ -263,7 +285,10 @@ export default function CalendarPage() {
       notes: appointment.notes || "",
       status: appointment.status || "scheduled",
       service_ids: serviceIds,
-      image_voice_consent: !!appointment.image_voice_consent
+      image_voice_consent: !!appointment.image_voice_consent,
+      patient_profession: pat?.profession ?? "",
+      patient_address: pat?.address ?? "",
+      patient_city: pat?.city ?? ""
     });
     setShowDetailsDialog(false);
     setShowDialog(true);
@@ -325,7 +350,10 @@ export default function CalendarPage() {
       notes: "",
       status: "scheduled",
       service_ids: [],
-      image_voice_consent: false
+      image_voice_consent: false,
+      patient_profession: "",
+      patient_address: "",
+      patient_city: ""
     });
   };
 
@@ -340,11 +368,19 @@ export default function CalendarPage() {
         email: "",
         phone: "",
         birthdate: "",
-        address: ""
+        address: "",
+        city: "",
+        profession: ""
       });
       loadData();
-      // Automaticamente selecionar o novo paciente no formulário
-      setFormData({...formData, patient_id: response.data.id});
+      const p = response.data;
+      setFormData({
+        ...formData,
+        patient_id: p.id,
+        patient_profession: p.profession ?? "",
+        patient_address: p.address ?? "",
+        patient_city: p.city ?? ""
+      });
     } catch (error) {
       toast.error("Erro ao criar paciente");
     }
@@ -961,7 +997,16 @@ export default function CalendarPage() {
                   <PatientCombobox
                     patients={patients}
                     value={formData.patient_id}
-                    onChange={(patientId) => setFormData({...formData, patient_id: patientId})}
+                    onChange={(patientId) => {
+                      const p = patients.find((x) => String(x.id) === String(patientId));
+                      setFormData({
+                        ...formData,
+                        patient_id: patientId,
+                        patient_profession: p?.profession ?? "",
+                        patient_address: p?.address ?? "",
+                        patient_city: p?.city ?? ""
+                      });
+                    }}
                     onCreateNew={() => setShowNewPatientDialog(true)}
                     placeholder="Busque ou selecione um paciente..."
                   />
@@ -1036,6 +1081,30 @@ export default function CalendarPage() {
                       })}
                     </div>
                   )}
+                </div>
+                <div>
+                  <Label>Profissão</Label>
+                  <Input
+                    value={formData.patient_profession}
+                    onChange={(e) => setFormData({...formData, patient_profession: e.target.value})}
+                    placeholder="Profissão do paciente"
+                  />
+                </div>
+                <div>
+                  <Label>Endereço</Label>
+                  <Input
+                    value={formData.patient_address}
+                    onChange={(e) => setFormData({...formData, patient_address: e.target.value})}
+                    placeholder="Endereço do paciente"
+                  />
+                </div>
+                <div>
+                  <Label>Cidade</Label>
+                  <Input
+                    value={formData.patient_city}
+                    onChange={(e) => setFormData({...formData, patient_city: e.target.value})}
+                    placeholder="Cidade do paciente"
+                  />
                 </div>
                 <div>
                   <Label>Sala *</Label>
@@ -1204,7 +1273,23 @@ export default function CalendarPage() {
                 <Input
                   value={newPatientData.address}
                   onChange={(e) => setNewPatientData({...newPatientData, address: e.target.value})}
-                  placeholder="Rua, Número, Cidade, Estado"
+                  placeholder="Rua, Número, Bairro, Estado"
+                />
+              </div>
+              <div>
+                <Label>Cidade</Label>
+                <Input
+                  value={newPatientData.city}
+                  onChange={(e) => setNewPatientData({...newPatientData, city: e.target.value})}
+                  placeholder="Cidade"
+                />
+              </div>
+              <div>
+                <Label>Profissão</Label>
+                <Input
+                  value={newPatientData.profession}
+                  onChange={(e) => setNewPatientData({...newPatientData, profession: e.target.value})}
+                  placeholder="Profissão"
                 />
               </div>
               <Button type="submit" className="w-full btn-primary">Adicionar Paciente</Button>

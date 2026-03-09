@@ -17,7 +17,7 @@ export default function PatientsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
-  const [formData, setFormData] = useState({ name: "", email: "", phone: "", birthdate: "", address: "", cpf: "", image_voice_consent: false });
+  const [formData, setFormData] = useState({ name: "", email: "", phone: "", birthdate: "", address: "", city: "", profession: "", cpf: "", image_voice_consent: false });
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [error, setError] = useState(null);
@@ -90,7 +90,7 @@ export default function PatientsPage() {
       
       setShowDialog(false);
       setEditingId(null);
-      setFormData({ name: "", email: "", phone: "", birthdate: "", address: "", cpf: "", image_voice_consent: false });
+      setFormData({ name: "", email: "", phone: "", birthdate: "", address: "", city: "", profession: "", cpf: "", image_voice_consent: false });
       loadPatients();
     } catch (error) {
       toast.error(editingId ? "Erro ao atualizar paciente" : "Erro ao cadastrar paciente");
@@ -105,6 +105,8 @@ export default function PatientsPage() {
       phone: patient.phone,
       birthdate: patient.birthdate,
       address: patient.address || "",
+      city: patient.city || "",
+      profession: patient.profession || "",
       cpf: patient.cpf || "",
       image_voice_consent: !!patient.image_voice_consent
     });
@@ -298,51 +300,61 @@ export default function PatientsPage() {
         </div>
 
         <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
-          <DialogContent>
-            <DialogHeader>
+          <DialogContent className="max-w-lg max-h-[90vh] flex flex-col p-6">
+            <DialogHeader className="flex-shrink-0">
               <DialogTitle>{editingId ? "Editar Paciente" : "Adicionar Paciente"}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label>Nome *</Label>
-                <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
-              </div>
-              <div>
-                <Label>Email</Label>
-                <Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
-              </div>
-              <div>
-                <Label>Telefone</Label>
-                <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: formatPhone(e.target.value)})} />
-              </div>
-              <div>
-                <Label>Data de Nascimento</Label>
-                <Input type="date" value={formData.birthdate} onChange={(e) => setFormData({...formData, birthdate: e.target.value})} />
-              </div>
-              <div>
-                <Label>Endereço</Label>
-                <Input value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
-              </div>
-              <div>
-                <Label>CPF</Label>
-                <Input value={formData.cpf} onChange={(e) => setFormData({...formData, cpf: e.target.value})} />
-              </div>
-              <div className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  id="patient_image_voice_consent"
-                  checked={!!formData.image_voice_consent}
-                  onChange={(e) => setFormData({...formData, image_voice_consent: e.target.checked})}
-                  className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                />
-                <Label htmlFor="patient_image_voice_consent" className="text-sm font-normal cursor-pointer text-gray-700">
-                  Autorizo o uso da minha imagem e voz para fins institucionais e de comunicação da instituição.
-                </Label>
-              </div>
-              <Button type="submit" className="w-full btn-primary">
-                {editingId ? "Atualizar" : "Cadastrar"}
-              </Button>
-            </form>
+            <div className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1">
+              <form onSubmit={handleSubmit} className="space-y-4" id="patient-form">
+                <div>
+                  <Label>Nome *</Label>
+                  <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Telefone</Label>
+                  <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: formatPhone(e.target.value)})} />
+                </div>
+                <div>
+                  <Label>Data de Nascimento</Label>
+                  <Input type="date" value={formData.birthdate} onChange={(e) => setFormData({...formData, birthdate: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Endereço</Label>
+                  <Input value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} placeholder="Rua, número, bairro" />
+                </div>
+                <div>
+                  <Label>Cidade</Label>
+                  <Input value={formData.city} onChange={(e) => setFormData({...formData, city: e.target.value})} placeholder="Cidade" />
+                </div>
+                <div>
+                  <Label>Profissão</Label>
+                  <Input value={formData.profession} onChange={(e) => setFormData({...formData, profession: e.target.value})} placeholder="Profissão" />
+                </div>
+                <div>
+                  <Label>CPF</Label>
+                  <Input value={formData.cpf} onChange={(e) => setFormData({...formData, cpf: e.target.value})} />
+                </div>
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    id="patient_image_voice_consent"
+                    checked={!!formData.image_voice_consent}
+                    onChange={(e) => setFormData({...formData, image_voice_consent: e.target.checked})}
+                    className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <Label htmlFor="patient_image_voice_consent" className="text-sm font-normal cursor-pointer text-gray-700">
+                    Autorizo o uso da minha imagem e voz para fins institucionais e de comunicação da instituição.
+                  </Label>
+                </div>
+                <Button type="submit" className="w-full btn-primary">
+                  {editingId ? "Atualizar" : "Cadastrar"}
+                </Button>
+              </form>
+            </div>
           </DialogContent>
         </Dialog>
 
