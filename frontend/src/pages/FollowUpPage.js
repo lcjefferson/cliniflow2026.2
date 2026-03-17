@@ -12,6 +12,7 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@
 import { useAuth } from "../contexts/AuthContext";
 
 import LeadCombobox from "../components/LeadCombobox";
+import PatientCombobox from "../components/PatientCombobox";
 import SearchableSelect from "../components/SearchableSelect";
 
 export default function FollowUpPage() {
@@ -34,6 +35,7 @@ export default function FollowUpPage() {
   const [itemsPerPage] = useState(10);
   
   const [formData, setFormData] = useState({
+    target_kind: "lead", // 'lead' | 'patient'
     lead_id: "",
     patient_id: "",
     contact_type: "whatsapp",
@@ -124,8 +126,19 @@ export default function FollowUpPage() {
 
   const loadPatients = async () => {
     try {
-      const response = await api.get("/patients");
-      setPatients(response.data);
+      // Carregar todos os pacientes (paginação) para permitir busca por nome/telefone
+      const pageSize = 500;
+      let all = [];
+      let page = 1;
+      let hasMore = true;
+      while (hasMore) {
+        const res = await api.get("/patients", { params: { page, page_size: pageSize, sort_by: "name", order: "asc" } });
+        const list = res.data?.items ?? (Array.isArray(res.data) ? res.data : []);
+        all = all.concat(list);
+        hasMore = Array.isArray(list) && list.length === pageSize;
+        page += 1;
+      }
+      setPatients(all);
     } catch (error) {
       console.error("Erro ao carregar pacientes");
     }
@@ -293,6 +306,14 @@ export default function FollowUpPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (formData.target_kind === "lead" && !formData.lead_id) {
+      toast.error("Selecione um lead para criar o follow-up.");
+      return;
+    }
+    if (formData.target_kind === "patient" && !formData.patient_id) {
+      toast.error("Selecione um paciente para criar o follow-up.");
+      return;
+    }
     try {
       if (editingId) {
         await api.put(`/follow-ups/${editingId}`, formData);
@@ -304,6 +325,7 @@ export default function FollowUpPage() {
       setShowDialog(false);
       setEditingId(null);
       setFormData({
+        target_kind: "lead",
         lead_id: "",
         patient_id: "",
         contact_type: "whatsapp",
@@ -321,6 +343,7 @@ export default function FollowUpPage() {
   const handleEdit = (followUp) => {
     setEditingId(followUp.id);
     setFormData({
+      target_kind: followUp.patient_id ? "patient" : "lead",
       lead_id: followUp.lead_id || "",
       patient_id: followUp.patient_id || "",
       contact_type: followUp.contact_type,
@@ -812,24 +835,46 @@ export default function FollowUpPage() {
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <Label>Lead (opcional)</Label>
-                <LeadCombobox
-                  leads={leads}
-                  value={formData.lead_id}
-                  onChange={(leadId) => setFormData({...formData, lead_id: leadId, patient_id: ""})}
-                  placeholder="Selecione um lead"
-                />
-              </div>
-              <div>
-                <Label>Paciente (opcional)</Label>
+                <Label>Criar para</Label>
                 <select
                   className="input-field"
-                  value={formData.patient_id}
-                  onChange={(e) => setFormData({...formData, patient_id: e.target.value, lead_id: ""})}
+                  value={formData.target_kind}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setFormData({
+                      ...formData,
+                      target_kind: next,
+                      lead_id: next === "lead" ? formData.lead_id : "",
+                      patient_id: next === "patient" ? formData.patient_id : "",
+                    });
+                  }}
                 >
-                  <option value="">Selecione um paciente</option>
-                  {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  <option value="lead">Lead</option>
+                  <option value="patient">Paciente</option>
                 </select>
+              </div>
+              <div>
+                {formData.target_kind === "lead" ? (
+                  <>
+                    <Label>Lead *</Label>
+                    <LeadCombobox
+                      leads={leads}
+                      value={formData.lead_id}
+                      onChange={(leadId) => setFormData({ ...formData, lead_id: leadId, patient_id: "" })}
+                      placeholder="Busque por nome, telefone ou email..."
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Label>Paciente *</Label>
+                    <PatientCombobox
+                      patients={patients}
+                      value={formData.patient_id}
+                      onChange={(patientId) => setFormData({ ...formData, patient_id: patientId, lead_id: "" })}
+                      placeholder="Busque por nome, telefone ou email..."
+                    />
+                  </>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
