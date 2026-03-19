@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Layout from "../components/Layout";
 import api, { MEDIA_BASE } from "../services/api";
-import { Plus, Edit, Trash2, Settings, ChevronLeft, ChevronRight, CheckCircle, Users, History, MessageSquare, BarChart, ImagePlus, Video, Smile, ChevronDown, X } from "lucide-react";
+import { Plus, Edit, Trash2, Settings, ChevronLeft, ChevronRight, CheckCircle, Users, History, MessageSquare, BarChart, ImagePlus, Video, Smile, ChevronDown, X, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,51 @@ function getEmptyFollowUpForm() {
   };
 }
 
+function getEmptyRuleForm() {
+  return {
+    name: "",
+    type: "comercial",
+    trigger: "lead_created",
+    service_id: "",
+    days_after: 1,
+    message_template: "",
+    message_media_url: "",
+    message_media_type: "",
+    active: true
+  };
+}
+
+function getTriggerLabel(trigger) {
+  const labels = {
+    lead_created: "Lead criado",
+    appointment_created: "Agendamento criado",
+    appointment_completed: "Consulta concluída",
+    patient_birthday: "Pacientes aniversariantes",
+    service_maintenance: "Manutenção de serviço"
+  };
+  return labels[trigger] || trigger || "—";
+}
+
+function formatRuleDaysAfter(days) {
+  const n = Number(days);
+  const map = {
+    0: "No dia",
+    1: "1 dia depois",
+    2: "2 dias depois",
+    [-1]: "1 dia antes",
+    [-2]: "2 dias antes",
+    15: "15 dias",
+    30: "1 mês",
+    60: "2 meses",
+    90: "3 meses",
+    120: "4 meses",
+    150: "5 meses",
+    180: "6 meses"
+  };
+  if (map[n] !== undefined) return map[n];
+  return `${n} dia(s)`;
+}
+
 export default function FollowUpPage() {
   const { user } = useAuth();
   const isAdmin = user?.role?.is_admin || user?.user_type === "admin" || user?.user_type === "superuser";
@@ -49,17 +94,16 @@ export default function FollowUpPage() {
   
   const [formData, setFormData] = useState(() => getEmptyFollowUpForm());
 
-  const [ruleFormData, setRuleFormData] = useState({
-    name: "",
-    type: "comercial",
-    trigger: "lead_created",
-    service_id: "",
-    days_after: 1,
-    message_template: "",
-    message_media_url: "",
-    message_media_type: "",
-    active: true
-  });
+  const [ruleFormData, setRuleFormData] = useState(() => getEmptyRuleForm());
+  const [viewingRule, setViewingRule] = useState(null);
+  const [rulesHistoryPage, setRulesHistoryPage] = useState(1);
+  const RULES_HISTORY_PER_PAGE = 10;
+
+  useEffect(() => {
+    const maxPage = Math.ceil(rules.length / RULES_HISTORY_PER_PAGE) || 1;
+    if (rulesHistoryPage > maxPage) setRulesHistoryPage(maxPage);
+  }, [rules.length, rulesHistoryPage]);
+
   const messageTemplateRef = useRef(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const MAX_IMAGE_MB = 5;
@@ -405,17 +449,7 @@ export default function FollowUpPage() {
       }
       setShowRuleDialog(false);
       setEditingRuleId(null);
-      setRuleFormData({
-        name: "",
-        type: "comercial",
-        trigger: "lead_created",
-        service_id: "",
-        days_after: 1,
-        message_template: "",
-        message_media_url: "",
-        message_media_type: "",
-        active: true
-      });
+      setRuleFormData(getEmptyRuleForm());
       loadRules();
     } catch (error) {
       toast.error(editingRuleId ? "Erro ao atualizar regra" : "Erro ao criar regra");
@@ -423,6 +457,7 @@ export default function FollowUpPage() {
   };
 
   const handleEditRule = (rule) => {
+    setViewingRule(null);
     setEditingRuleId(rule.id);
     setRuleFormData({
       name: rule.name ?? "",
@@ -436,6 +471,20 @@ export default function FollowUpPage() {
       active: rule.active !== false
     });
     setShowRuleDialog(true);
+  };
+
+  const handleOpenNewRule = () => {
+    setEditingRuleId(null);
+    setRuleFormData(getEmptyRuleForm());
+    setShowRuleDialog(true);
+  };
+
+  const handleRuleDialogOpenChange = (open) => {
+    setShowRuleDialog(open);
+    if (!open) {
+      setEditingRuleId(null);
+      setRuleFormData(getEmptyRuleForm());
+    }
   };
 
   const insertEmoji = (emoji) => {
@@ -525,6 +574,12 @@ export default function FollowUpPage() {
     return patient ? patient.name : "";
   };
 
+  const getServiceName = (serviceId) => {
+    if (!serviceId) return "";
+    const s = services.find((x) => x.id === serviceId);
+    return s ? s.name : serviceId;
+  };
+
   const getStatusBadge = (status) => {
     const styles = {
       pending: "bg-yellow-100 text-yellow-700",
@@ -560,6 +615,17 @@ export default function FollowUpPage() {
   const currentCampaigns = campaigns.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const totalCampaignPages = Math.ceil(campaigns.length / itemsPerPage);
 
+  const sortedRulesHistory = [...rules].sort((a, b) => {
+    const ta = a.created_at != null ? new Date(a.created_at).getTime() : 0;
+    const tb = b.created_at != null ? new Date(b.created_at).getTime() : 0;
+    return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
+  });
+  const totalRuleHistoryPages = Math.ceil(sortedRulesHistory.length / RULES_HISTORY_PER_PAGE) || 1;
+  const pagedRulesHistory = sortedRulesHistory.slice(
+    (rulesHistoryPage - 1) * RULES_HISTORY_PER_PAGE,
+    rulesHistoryPage * RULES_HISTORY_PER_PAGE
+  );
+
   return (
     <Layout>
       <div>
@@ -567,27 +633,9 @@ export default function FollowUpPage() {
           <h1 className="text-4xl font-bold text-gray-900">Follow-up</h1>
           <div className="flex gap-3">
             {isAdmin && (
-              <Button
-                onClick={() => {
-                  setEditingRuleId(null);
-                  setRuleFormData({
-                    name: "",
-                    type: "comercial",
-                    trigger: "lead_created",
-                    service_id: "",
-                    days_after: 1,
-                    message_template: "",
-                    message_media_url: "",
-                    message_media_type: "",
-                    active: true
-                  });
-                  setShowRuleDialog(true);
-                }}
-                variant="outline"
-                className="btn-secondary"
-              >
+              <Button onClick={handleOpenNewRule} variant="outline" className="btn-secondary">
                 <Settings className="w-5 h-5 mr-2" />
-                Gerenciar Regras
+                Nova regra
               </Button>
             )}
             <Button onClick={() => setShowCampaignDialog(true)} variant="outline" className="btn-secondary border-green-200 text-green-700 bg-green-50 hover:bg-green-100">
@@ -621,6 +669,18 @@ export default function FollowUpPage() {
           >
             Histórico de Campanhas
           </button>
+          {isAdmin && (
+            <button
+              className={`pb-2 px-4 font-medium ${activeTab === "rules_history" ? "text-green-600 border-b-2 border-green-600" : "text-gray-500 hover:text-gray-700"}`}
+              onClick={() => {
+                setActiveTab("rules_history");
+                setRulesHistoryPage(1);
+                loadRules();
+              }}
+            >
+              Histórico de Regras
+            </button>
+          )}
         </div>
 
         {/* Regras Ativas (apenas para admin e aba lista) */}
@@ -836,6 +896,104 @@ export default function FollowUpPage() {
           </div>
         )}
 
+        {/* Histórico de regras automáticas (admin) */}
+        {isAdmin && activeTab === "rules_history" && (
+          <div className="space-y-6">
+            <p className="text-sm text-gray-600">
+              Todas as regras criadas (ativas e inativas). Visualize detalhes, edite ou exclua quando necessário.
+            </p>
+            {pagedRulesHistory.map((rule) => (
+              <div key={rule.id} className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <h3 className="text-xl font-bold text-gray-900">{rule.name || "Sem nome"}</h3>
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-semibold ${
+                          rule.active ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"
+                        }`}
+                      >
+                        {rule.active ? "Ativa" : "Inativa"}
+                      </span>
+                      <span
+                        className={`px-2 py-1 rounded text-xs ${
+                          rule.type === "comercial" ? "bg-green-50 text-green-700" : "bg-blue-50 text-blue-700"
+                        }`}
+                      >
+                        {rule.type === "comercial" ? "Comercial" : "Informativo"}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      <span className="font-medium text-gray-800">{getTriggerLabel(rule.trigger)}</span>
+                      {" · "}
+                      {formatRuleDaysAfter(rule.days_after)}
+                      {rule.trigger === "service_maintenance" && rule.service_id && (
+                        <> · Serviço: {getServiceName(rule.service_id)}</>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Criada em{" "}
+                      {rule.created_at
+                        ? new Date(rule.created_at).toLocaleString("pt-BR")
+                        : "—"}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setViewingRule(rule)} title="Visualizar">
+                      <Eye className="w-4 h-4 mr-1" />
+                      Ver
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleEditRule(rule)} title="Editar">
+                      <Edit className="w-4 h-4 mr-1" />
+                      Editar
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => toggleRuleActive(rule.id)} title="Ativar ou desativar">
+                      {rule.active ? "Desativar" : "Ativar"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-red-600 border-red-200 hover:bg-red-50"
+                      onClick={() => handleDeleteRule(rule)}
+                      title="Excluir"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      Excluir
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {sortedRulesHistory.length === 0 && (
+              <div className="text-center py-10 text-gray-500">
+                Nenhuma regra cadastrada. Use <strong>Nova regra</strong> para criar a primeira.
+              </div>
+            )}
+            {sortedRulesHistory.length > RULES_HISTORY_PER_PAGE && (
+              <div className="flex justify-center items-center gap-4 mt-6">
+                <Button
+                  variant="outline"
+                  onClick={() => setRulesHistoryPage((p) => Math.max(1, p - 1))}
+                  disabled={rulesHistoryPage === 1}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="text-sm text-gray-600">
+                  Página {rulesHistoryPage} de {totalRuleHistoryPages}
+                </span>
+                <Button
+                  variant="outline"
+                  onClick={() => setRulesHistoryPage((p) => Math.min(totalRuleHistoryPages, p + 1))}
+                  disabled={rulesHistoryPage === totalRuleHistoryPages}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Modal de Criar/Editar Follow-up */}
         <Dialog open={showDialog} onOpenChange={handleFollowUpDialogOpenChange}>
           <DialogContent>
@@ -935,8 +1093,95 @@ export default function FollowUpPage() {
           </DialogContent>
         </Dialog>
 
+        {/* Visualizar regra (somente leitura) */}
+        <Dialog open={!!viewingRule} onOpenChange={(open) => !open && setViewingRule(null)}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Detalhes da regra</DialogTitle>
+            </DialogHeader>
+            {viewingRule && (
+              <div className="space-y-4 text-sm">
+                <div>
+                  <span className="text-gray-500 block text-xs uppercase tracking-wide">Nome</span>
+                  <p className="font-semibold text-gray-900">{viewingRule.name || "—"}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-gray-500 block text-xs uppercase tracking-wide">Tipo</span>
+                    <p className="text-gray-900">{viewingRule.type === "comercial" ? "Comercial" : "Informativo"}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 block text-xs uppercase tracking-wide">Status</span>
+                    <p className="text-gray-900">{viewingRule.active !== false ? "Ativa" : "Inativa"}</p>
+                  </div>
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-xs uppercase tracking-wide">Disparar quando</span>
+                  <p className="text-gray-900">{getTriggerLabel(viewingRule.trigger)}</p>
+                </div>
+                {viewingRule.trigger === "service_maintenance" && viewingRule.service_id && (
+                  <div>
+                    <span className="text-gray-500 block text-xs uppercase tracking-wide">Serviço</span>
+                    <p className="text-gray-900">{getServiceName(viewingRule.service_id)}</p>
+                  </div>
+                )}
+                <div>
+                  <span className="text-gray-500 block text-xs uppercase tracking-wide">Aguardar</span>
+                  <p className="text-gray-900">{formatRuleDaysAfter(viewingRule.days_after)}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500 block text-xs uppercase tracking-wide">Template da mensagem</span>
+                  <p className="text-gray-900 whitespace-pre-wrap mt-1 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                    {viewingRule.message_template || "—"}
+                  </p>
+                </div>
+                {viewingRule.message_media_url && (
+                  <div>
+                    <span className="text-gray-500 block text-xs uppercase tracking-wide mb-2">Mídia</span>
+                    {viewingRule.message_media_type === "image" ? (
+                      <img
+                        src={`${MEDIA_BASE}${viewingRule.message_media_url}`}
+                        alt="Anexo da regra"
+                        className="max-h-48 rounded-lg object-contain border"
+                      />
+                    ) : (
+                      <video
+                        src={`${MEDIA_BASE}${viewingRule.message_media_url}`}
+                        controls
+                        className="max-h-48 rounded-lg border"
+                      />
+                    )}
+                  </div>
+                )}
+                <div>
+                  <span className="text-gray-500 block text-xs uppercase tracking-wide">Criada em</span>
+                  <p className="text-gray-900">
+                    {viewingRule.created_at ? new Date(viewingRule.created_at).toLocaleString("pt-BR") : "—"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <Button type="button" variant="outline" onClick={() => setViewingRule(null)}>
+                    Fechar
+                  </Button>
+                  <Button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => {
+                      const r = viewingRule;
+                      setViewingRule(null);
+                      handleEditRule(r);
+                    }}
+                  >
+                    Editar regra
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
         {/* Modal de Gerenciar Regras */}
-        <Dialog open={showRuleDialog} onOpenChange={setShowRuleDialog}>
+        <Dialog open={showRuleDialog} onOpenChange={handleRuleDialogOpenChange}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>{editingRuleId ? "Editar Regra" : "Nova Regra de Follow-up"}</DialogTitle>
