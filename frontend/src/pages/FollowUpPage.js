@@ -15,6 +15,19 @@ import LeadCombobox from "../components/LeadCombobox";
 import PatientCombobox from "../components/PatientCombobox";
 import SearchableSelect from "../components/SearchableSelect";
 
+function getEmptyFollowUpForm() {
+  return {
+    target_kind: "lead",
+    lead_id: "",
+    patient_id: "",
+    contact_type: "whatsapp",
+    status: "pending",
+    scheduled_date: new Date().toISOString().split("T")[0],
+    notes: "",
+    contact_reason: "comercial"
+  };
+}
+
 export default function FollowUpPage() {
   const { user } = useAuth();
   const isAdmin = user?.role?.is_admin || user?.user_type === "admin" || user?.user_type === "superuser";
@@ -34,16 +47,7 @@ export default function FollowUpPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   
-  const [formData, setFormData] = useState({
-    target_kind: "lead", // 'lead' | 'patient'
-    lead_id: "",
-    patient_id: "",
-    contact_type: "whatsapp",
-    status: "pending",
-    scheduled_date: new Date().toISOString().split('T')[0],
-    notes: "",
-    contact_reason: "comercial"
-  });
+  const [formData, setFormData] = useState(() => getEmptyFollowUpForm());
 
   const [ruleFormData, setRuleFormData] = useState({
     name: "",
@@ -324,16 +328,7 @@ export default function FollowUpPage() {
       }
       setShowDialog(false);
       setEditingId(null);
-      setFormData({
-        target_kind: "lead",
-        lead_id: "",
-        patient_id: "",
-        contact_type: "whatsapp",
-        status: "pending",
-        scheduled_date: new Date().toISOString().split('T')[0],
-        notes: "",
-        contact_reason: "comercial"
-      });
+      setFormData(getEmptyFollowUpForm());
       loadFollowUps();
     } catch (error) {
       toast.error(editingId ? "Erro ao atualizar follow-up" : "Erro ao criar follow-up");
@@ -353,6 +348,20 @@ export default function FollowUpPage() {
       contact_reason: followUp.contact_reason || "comercial"
     });
     setShowDialog(true);
+  };
+
+  const handleOpenNewFollowUp = () => {
+    setEditingId(null);
+    setFormData(getEmptyFollowUpForm());
+    setShowDialog(true);
+  };
+
+  const handleFollowUpDialogOpenChange = (open) => {
+    setShowDialog(open);
+    if (!open) {
+      setEditingId(null);
+      setFormData(getEmptyFollowUpForm());
+    }
   };
 
   const handleDelete = async (followUp) => {
@@ -585,7 +594,7 @@ export default function FollowUpPage() {
               <Users className="w-5 h-5 mr-2" />
               Campanha em Massa
             </Button>
-            <Button onClick={() => setShowDialog(true)} className="btn-primary">
+            <Button onClick={handleOpenNewFollowUp} className="btn-primary">
               <Plus className="w-5 h-5 mr-2" />
               Novo Follow-up
             </Button>
@@ -828,7 +837,7 @@ export default function FollowUpPage() {
         )}
 
         {/* Modal de Criar/Editar Follow-up */}
-        <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <Dialog open={showDialog} onOpenChange={handleFollowUpDialogOpenChange}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{editingId ? "Editar Follow-up" : "Novo Follow-up"}</DialogTitle>
