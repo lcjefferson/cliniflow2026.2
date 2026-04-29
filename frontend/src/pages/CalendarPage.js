@@ -14,6 +14,21 @@ import PatientCombobox from "../components/PatientCombobox";
 import PatientDetailDialog from "../components/PatientDetailDialog";
 import { useAuth } from "../contexts/AuthContext";
 
+/** Data local YYYY-MM-DD (igual às células do calendário). */
+function toYMD(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Garante comparação com células mesmo se a API devolver ISO com hora. */
+function appointmentDateKey(raw) {
+  if (raw == null || raw === "") return "";
+  const s = String(raw);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
 export default function CalendarPage() {
   const { user } = useAuth();
   const [appointments, setAppointments] = useState([]);
@@ -78,9 +93,12 @@ export default function CalendarPage() {
   ];
 
   useEffect(() => {
-    loadMonthAppointments();
     loadData();
-  }, [currentDate]);
+  }, []);
+
+  useEffect(() => {
+    loadMonthAppointments();
+  }, [currentDate, viewMode]);
 
   const requestedPatientIdsRef = useRef(new Set());
 
@@ -129,20 +147,45 @@ export default function CalendarPage() {
     }
   }, [formData.professional_id, formData.room_id, formData.appointment_date, formData.appointment_time, formData.appointment_time_end, showDialog]);
 
+  // Profissionais: garantir profissional_id do usuário no formulário para coincidir com o filtro do GET /appointments
+  useEffect(() => {
+    if (!showDialog || editingAppointment) return;
+    const pid = user?.professional_id;
+    const ut = user?.user_type;
+    if (!pid || (ut !== "profissional" && ut !== "profissional_admin")) return;
+    setFormData((prev) => (prev.professional_id ? prev : { ...prev, professional_id: pid }));
+  }, [showDialog, editingAppointment, user?.professional_id, user?.user_type]);
+
   const loadMonthAppointments = async () => {
     try {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth();
-      const dateFrom = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-      const lastDay = new Date(year, month + 1, 0).getDate();
-      const dateTo = `${year}-${String(month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      let dateFrom;
+      let dateTo;
+      if (viewMode === "month") {
+        dateFrom = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+        const lastDay = new Date(year, month + 1, 0).getDate();
+        dateTo = `${year}-${String(month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      } else if (viewMode === "week") {
+        const start = new Date(currentDate);
+        const dow = start.getDay();
+        start.setDate(start.getDate() - dow);
+        const end = new Date(start);
+        end.setDate(start.getDate() + 6);
+        dateFrom = toYMD(start);
+        dateTo = toYMD(end);
+      } else {
+        const ymd = toYMD(currentDate);
+        dateFrom = ymd;
+        dateTo = ymd;
+      }
       const response = await api.get("/appointments", {
         params: {
           sort_by: "appointment_date",
           order: "asc",
           date_from: dateFrom,
           date_to: dateTo,
-          limit: 500
+          limit: 2000
         }
       });
       setAppointments(Array.isArray(response.data) ? response.data : []);
@@ -501,7 +544,7 @@ export default function CalendarPage() {
 
   const getAppointmentsForDay = (date) => {
     if (!date) return [];
-    let filtered = appointments.filter(apt => apt.appointment_date === date);
+    let filtered = appointments.filter((apt) => appointmentDateKey(apt.appointment_date) === date);
     
     // Aplicar filtros
     if (filterProfessional) {
@@ -546,13 +589,6 @@ export default function CalendarPage() {
     } else {
       setCurrentDate(new Date(currentDate.getTime() + 24 * 60 * 60 * 1000));
     }
-  };
-
-  const toYMD = (d) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
   };
 
   const getWeekDays = () => {
