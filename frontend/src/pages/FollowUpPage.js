@@ -78,8 +78,11 @@ export default function FollowUpPage() {
   const isAdmin = user?.role?.is_admin || user?.user_type === "admin" || user?.user_type === "superuser";
   
   const [followUps, setFollowUps] = useState([]);
+  const [loadingFollowUps, setLoadingFollowUps] = useState(true);
   const [leads, setLeads] = useState([]);
   const [patients, setPatients] = useState([]);
+  const pickerDataLoadingRef = useRef(false);
+  const pickerDataLoadedRef = useRef(false);
   const [rules, setRules] = useState([]);
   const [showDialog, setShowDialog] = useState(false);
   const [showRuleDialog, setShowRuleDialog] = useState(false);
@@ -134,15 +137,32 @@ export default function FollowUpPage() {
   const CAMPAIGN_MAX_VIDEO_MB = 15;
 
   useEffect(() => {
-    loadFollowUps();
-    loadLeads();
-    loadPatients();
-    loadServices();
-    loadCampaigns();
     if (isAdmin) {
       loadRules();
     }
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (activeTab === "list" || activeTab === "completed") {
+      loadFollowUps(activeTab);
+    } else if (activeTab === "history") {
+      loadCampaigns();
+    } else if (activeTab === "rules_history" && isAdmin) {
+      loadRules();
+    }
+  }, [activeTab, isAdmin]);
+
+  useEffect(() => {
+    if (showDialog) {
+      ensurePickerData();
+    }
+  }, [showDialog]);
+
+  useEffect(() => {
+    if (showRuleDialog || showCampaignDialog) {
+      loadServices();
+    }
+  }, [showRuleDialog, showCampaignDialog]);
 
   const loadCampaigns = async () => {
     try {
@@ -153,12 +173,43 @@ export default function FollowUpPage() {
     }
   };
 
-  const loadFollowUps = async () => {
+  const loadFollowUps = async (tab = activeTab) => {
+    if (tab !== "list" && tab !== "completed") return;
+    setLoadingFollowUps(true);
     try {
-      const response = await api.get("/follow-ups");
+      const params = { status: tab === "completed" ? "completed" : "pending" };
+      const response = await api.get("/follow-ups", { params });
       setFollowUps(response.data);
     } catch (error) {
       toast.error("Erro ao carregar follow-ups");
+    } finally {
+      setLoadingFollowUps(false);
+    }
+  };
+
+  const ensurePickerData = async () => {
+    if (pickerDataLoadedRef.current || pickerDataLoadingRef.current) return;
+    pickerDataLoadingRef.current = true;
+    try {
+      await Promise.all([loadLeads(), loadPatients()]);
+      pickerDataLoadedRef.current = true;
+    } finally {
+      pickerDataLoadingRef.current = false;
+    }
+  };
+
+  const seedPickerSelection = (followUp) => {
+    if (followUp.lead_id) {
+      setLeads((prev) => {
+        if (prev.some((l) => l.id === followUp.lead_id)) return prev;
+        return [{ id: followUp.lead_id, name: followUp.lead_name || "Lead" }, ...prev];
+      });
+    }
+    if (followUp.patient_id) {
+      setPatients((prev) => {
+        if (prev.some((p) => p.id === followUp.patient_id)) return prev;
+        return [{ id: followUp.patient_id, name: followUp.patient_name || "Paciente" }, ...prev];
+      });
     }
   };
 
@@ -335,7 +386,7 @@ export default function FollowUpPage() {
         message_media_type: ""
       });
       setCampaignAudienceEstimate(null);
-      loadFollowUps(); // Refresh to see new followups
+      loadFollowUps("list");
       loadCampaigns(); // Refresh history
     } catch (error) {
       toast.error("Erro ao enviar campanha");
@@ -373,13 +424,15 @@ export default function FollowUpPage() {
       setShowDialog(false);
       setEditingId(null);
       setFormData(getEmptyFollowUpForm());
-      loadFollowUps();
+      loadFollowUps(activeTab);
     } catch (error) {
       toast.error(editingId ? "Erro ao atualizar follow-up" : "Erro ao criar follow-up");
     }
   };
 
   const handleEdit = (followUp) => {
+    seedPickerSelection(followUp);
+    ensurePickerData();
     setEditingId(followUp.id);
     setFormData({
       target_kind: followUp.patient_id ? "patient" : "lead",
@@ -397,6 +450,7 @@ export default function FollowUpPage() {
   const handleOpenNewFollowUp = () => {
     setEditingId(null);
     setFormData(getEmptyFollowUpForm());
+    ensurePickerData();
     setShowDialog(true);
   };
 
@@ -421,7 +475,7 @@ export default function FollowUpPage() {
       toast.success("Follow-up deletado!");
       setDeleteDialog(false);
       setFollowUpToDelete(null);
-      loadFollowUps();
+      loadFollowUps(activeTab);
     } catch (error) {
       toast.error("Erro ao deletar follow-up");
     }
@@ -431,7 +485,7 @@ export default function FollowUpPage() {
     try {
       await api.put(`/follow-ups/${id}`, { status: "completed" });
       toast.success("Follow-up marcado como concluído!");
-      loadFollowUps();
+      loadFollowUps(activeTab);
     } catch (error) {
       toast.error("Erro ao atualizar status");
     }
@@ -728,6 +782,10 @@ export default function FollowUpPage() {
         {/* Lista de Follow-ups (Pendentes e Concluídos) */}
         {(activeTab === 'list' || activeTab === 'completed') && (
         <div className="grid gap-6">
+          {loadingFollowUps ? (
+            <div className="text-center py-10 text-gray-500">Carregando follow-ups...</div>
+          ) : (
+          <>
           {currentFollowUps.map((followUp) => (
             <div key={followUp.id} className="bg-white rounded-2xl p-6 shadow-lg">
               <div className="flex justify-between items-start">
@@ -813,6 +871,8 @@ export default function FollowUpPage() {
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
+          )}
+          </>
           )}
         </div>
         )}

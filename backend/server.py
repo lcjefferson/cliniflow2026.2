@@ -5463,45 +5463,78 @@ async def create_follow_up(data: FollowUpCreate, current_user: dict = Depends(ge
     await db.follow_ups.insert_one(doc)
     return follow_up
 
-@api_router.get("/follow-ups", response_model=List[dict])
-async def get_follow_ups(current_user: dict = Depends(get_current_user)):
+async def _attach_follow_up_names(follow_ups: List[dict]) -> None:
+    """Resolve lead/patient names in batch (evita N+1 queries por follow-up)."""
+    patient_ids = {f.get("patient_id") for f in follow_ups if f.get("patient_id")}
+    lead_ids = {f.get("lead_id") for f in follow_ups if f.get("lead_id")}
+
+    patient_map: dict = {}
+    lead_map: dict = {}
+
     if db is None:
-        follow_ups = _find("follow_ups", {})
+        if patient_ids:
+            for p in _find("patients", {}):
+                if p.get("id") in patient_ids:
+                    patient_map[p["id"]] = p.get("name", "")
+        if lead_ids:
+            for lead in _find("leads", {}):
+                if lead.get("id") in lead_ids:
+                    lead_map[lead["id"]] = lead.get("name", "")
+    else:
+        if patient_ids:
+            rows = await db.patients.find(
+                {"id": {"$in": list(patient_ids)}},
+                {"_id": 0, "id": 1, "name": 1},
+            ).to_list(len(patient_ids))
+            patient_map = {r["id"]: r.get("name", "") for r in rows}
+        if lead_ids:
+            rows = await db.leads.find(
+                {"id": {"$in": list(lead_ids)}},
+                {"_id": 0, "id": 1, "name": 1},
+            ).to_list(len(lead_ids))
+            lead_map = {r["id"]: r.get("name", "") for r in rows}
+
+    for f in follow_ups:
+        pid = f.get("patient_id")
+        lid = f.get("lead_id")
+        f["patient_name"] = patient_map.get(pid, "") if pid else ""
+        f["lead_name"] = lead_map.get(lid, "") if lid else ""
+
+
+@api_router.get("/follow-ups", response_model=List[dict])
+async def get_follow_ups(
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Lista follow-ups. status=pending (não concluídos) ou status=completed."""
+    if db is None:
+        all_follow_ups = _find("follow_ups", {})
+        if status == "completed":
+            follow_ups = [f for f in all_follow_ups if f.get("status") == "completed"]
+        elif status == "pending":
+            follow_ups = [f for f in all_follow_ups if f.get("status") != "completed"]
+        else:
+            follow_ups = all_follow_ups
         for f in follow_ups:
             if isinstance(f.get("created_at"), str):
                 try:
                     f["created_at"] = datetime.fromisoformat(f["created_at"])
                 except Exception:
                     pass
-            pid = f.get("patient_id")
-            lid = f.get("lead_id")
-            if pid:
-                p = _find_one("patients", {"id": pid})
-                f["patient_name"] = (p or {}).get("name", "")
-            else:
-                f["patient_name"] = ""
-            if lid:
-                lead = _find_one("leads", {"id": lid})
-                f["lead_name"] = (lead or {}).get("name", "")
-            else:
-                f["lead_name"] = ""
+        await _attach_follow_up_names(follow_ups)
         return follow_ups
-    follow_ups = await db.follow_ups.find({}, {"_id": 0}).to_list(1000)
+
+    query: dict = {}
+    if status == "completed":
+        query["status"] = "completed"
+    elif status == "pending":
+        query["status"] = {"$ne": "completed"}
+
+    follow_ups = await db.follow_ups.find(query, {"_id": 0}).sort("scheduled_date", -1).to_list(1000)
     for f in follow_ups:
-        if isinstance(f.get('created_at'), str):
-            f['created_at'] = datetime.fromisoformat(f['created_at'])
-        pid = f.get("patient_id")
-        lid = f.get("lead_id")
-        if pid:
-            p = await db.patients.find_one({"id": pid}, {"_id": 0, "name": 1})
-            f["patient_name"] = (p or {}).get("name", "")
-        else:
-            f["patient_name"] = ""
-        if lid:
-            lead = await db.leads.find_one({"id": lid}, {"_id": 0, "name": 1})
-            f["lead_name"] = (lead or {}).get("name", "")
-        else:
-            f["lead_name"] = ""
+        if isinstance(f.get("created_at"), str):
+            f["created_at"] = datetime.fromisoformat(f["created_at"])
+    await _attach_follow_up_names(follow_ups)
     return follow_ups
 
 @api_router.put("/follow-ups/{follow_up_id}")
