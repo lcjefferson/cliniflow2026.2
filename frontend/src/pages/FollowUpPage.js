@@ -73,6 +73,12 @@ function formatRuleDaysAfter(days) {
   return `${n} dia(s)`;
 }
 
+function compareFollowUpByContactDate(a, b) {
+  const da = (a.scheduled_date || "").slice(0, 10);
+  const db = (b.scheduled_date || "").slice(0, 10);
+  return da.localeCompare(db);
+}
+
 export default function FollowUpPage() {
   const { user } = useAuth();
   const isAdmin = user?.role?.is_admin || user?.user_type === "admin" || user?.user_type === "superuser";
@@ -678,25 +684,29 @@ export default function FollowUpPage() {
 
   const getFilteredFollowUps = () => {
     if (activeTab === "list") {
-      return followUps.filter((f) => {
-        if (f.status === "completed") return false;
+      return followUps
+        .filter((f) => {
+          if (f.status === "completed") return false;
 
-        if (pendingFilters.contact_type && f.contact_type !== pendingFilters.contact_type) {
-          return false;
-        }
-        if (pendingFilters.contact_reason && f.contact_reason !== pendingFilters.contact_reason) {
-          return false;
-        }
+          if (pendingFilters.contact_type && f.contact_type !== pendingFilters.contact_type) {
+            return false;
+          }
+          if (pendingFilters.contact_reason && f.contact_reason !== pendingFilters.contact_reason) {
+            return false;
+          }
 
-        const sched = (f.scheduled_date || "").slice(0, 10);
-        if (pendingFilters.dateFrom && sched < pendingFilters.dateFrom) return false;
-        if (pendingFilters.dateTo && sched > pendingFilters.dateTo) return false;
+          const sched = (f.scheduled_date || "").slice(0, 10);
+          if (pendingFilters.dateFrom && sched < pendingFilters.dateFrom) return false;
+          if (pendingFilters.dateTo && sched > pendingFilters.dateTo) return false;
 
-        return true;
-      });
+          return true;
+        })
+        .sort(compareFollowUpByContactDate);
     }
     if (activeTab === "completed") {
-      return followUps.filter((f) => f.status === "completed");
+      return followUps
+        .filter((f) => f.status === "completed")
+        .sort(compareFollowUpByContactDate);
     }
     return [];
   };

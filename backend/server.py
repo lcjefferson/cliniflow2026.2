@@ -5522,6 +5522,7 @@ async def get_follow_ups(
                 except Exception:
                     pass
         await _attach_follow_up_names(follow_ups)
+        follow_ups.sort(key=lambda f: f.get("scheduled_date") or "")
         return follow_ups
 
     query: dict = {}
@@ -5530,7 +5531,7 @@ async def get_follow_ups(
     elif status == "pending":
         query["status"] = {"$ne": "completed"}
 
-    follow_ups = await db.follow_ups.find(query, {"_id": 0}).sort("scheduled_date", -1).to_list(1000)
+    follow_ups = await db.follow_ups.find(query, {"_id": 0}).sort("scheduled_date", 1).to_list(1000)
     for f in follow_ups:
         if isinstance(f.get("created_at"), str):
             f["created_at"] = datetime.fromisoformat(f["created_at"])
