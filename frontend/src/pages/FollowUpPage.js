@@ -94,6 +94,12 @@ export default function FollowUpPage() {
   const [ruleToDelete, setRuleToDelete] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+  const [pendingFilters, setPendingFilters] = useState({
+    dateFrom: "",
+    dateTo: "",
+    contact_type: "",
+    contact_reason: ""
+  });
   
   const [formData, setFormData] = useState(() => getEmptyFollowUpForm());
 
@@ -106,6 +112,10 @@ export default function FollowUpPage() {
     const maxPage = Math.ceil(rules.length / RULES_HISTORY_PER_PAGE) || 1;
     if (rulesHistoryPage > maxPage) setRulesHistoryPage(maxPage);
   }, [rules.length, rulesHistoryPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [pendingFilters]);
 
   const messageTemplateRef = useRef(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
@@ -651,12 +661,42 @@ export default function FollowUpPage() {
   };
 
   // Paginação e Filtros
+  const hasActivePendingFilters =
+    pendingFilters.dateFrom ||
+    pendingFilters.dateTo ||
+    pendingFilters.contact_type ||
+    pendingFilters.contact_reason;
+
+  const clearPendingFilters = () => {
+    setPendingFilters({
+      dateFrom: "",
+      dateTo: "",
+      contact_type: "",
+      contact_reason: ""
+    });
+  };
+
   const getFilteredFollowUps = () => {
-    if (activeTab === 'list') {
-      return followUps.filter(f => f.status !== 'completed');
+    if (activeTab === "list") {
+      return followUps.filter((f) => {
+        if (f.status === "completed") return false;
+
+        if (pendingFilters.contact_type && f.contact_type !== pendingFilters.contact_type) {
+          return false;
+        }
+        if (pendingFilters.contact_reason && f.contact_reason !== pendingFilters.contact_reason) {
+          return false;
+        }
+
+        const sched = (f.scheduled_date || "").slice(0, 10);
+        if (pendingFilters.dateFrom && sched < pendingFilters.dateFrom) return false;
+        if (pendingFilters.dateTo && sched > pendingFilters.dateTo) return false;
+
+        return true;
+      });
     }
-    if (activeTab === 'completed') {
-      return followUps.filter(f => f.status === 'completed');
+    if (activeTab === "completed") {
+      return followUps.filter((f) => f.status === "completed");
     }
     return [];
   };
@@ -779,6 +819,68 @@ export default function FollowUpPage() {
           </div>
         )}
 
+        {/* Filtros — aba Pendentes */}
+        {activeTab === "list" && !loadingFollowUps && (
+          <div className="bg-white rounded-2xl p-4 mb-6 shadow-md border border-gray-100">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="min-w-[140px]">
+                <Label className="text-xs text-gray-500">Data de</Label>
+                <Input
+                  type="date"
+                  value={pendingFilters.dateFrom}
+                  onChange={(e) => setPendingFilters({ ...pendingFilters, dateFrom: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+              <div className="min-w-[140px]">
+                <Label className="text-xs text-gray-500">Data até</Label>
+                <Input
+                  type="date"
+                  value={pendingFilters.dateTo}
+                  min={pendingFilters.dateFrom || undefined}
+                  onChange={(e) => setPendingFilters({ ...pendingFilters, dateTo: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+              <div className="min-w-[160px]">
+                <Label className="text-xs text-gray-500">Tipo de contato</Label>
+                <select
+                  className="input-field mt-1"
+                  value={pendingFilters.contact_type}
+                  onChange={(e) => setPendingFilters({ ...pendingFilters, contact_type: e.target.value })}
+                >
+                  <option value="">Todos</option>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="phone">Telefone</option>
+                  <option value="email">Email</option>
+                </select>
+              </div>
+              <div className="min-w-[160px]">
+                <Label className="text-xs text-gray-500">Motivo do contato</Label>
+                <select
+                  className="input-field mt-1"
+                  value={pendingFilters.contact_reason}
+                  onChange={(e) => setPendingFilters({ ...pendingFilters, contact_reason: e.target.value })}
+                >
+                  <option value="">Todos</option>
+                  <option value="comercial">Comercial</option>
+                  <option value="informativo">Informativo</option>
+                </select>
+              </div>
+              {hasActivePendingFilters && (
+                <Button type="button" variant="outline" onClick={clearPendingFilters} className="mb-0.5">
+                  Limpar filtros
+                </Button>
+              )}
+            </div>
+            {hasActivePendingFilters && (
+              <p className="text-xs text-gray-500 mt-3">
+                {filteredList.length} follow-up(s) encontrado(s)
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Lista de Follow-ups (Pendentes e Concluídos) */}
         {(activeTab === 'list' || activeTab === 'completed') && (
         <div className="grid gap-6">
@@ -846,7 +948,11 @@ export default function FollowUpPage() {
           
           {filteredList.length === 0 && (
             <div className="text-center py-10 text-gray-500">
-              {activeTab === 'list' ? 'Nenhum follow-up pendente.' : 'Nenhum follow-up concluído.'}
+              {activeTab === "list"
+                ? hasActivePendingFilters
+                  ? "Nenhum follow-up pendente encontrado com os filtros selecionados."
+                  : "Nenhum follow-up pendente."
+                : "Nenhum follow-up concluído."}
             </div>
           )}
 
