@@ -51,6 +51,14 @@ const formatDayLabel = (value) => {
 
 const dayKey = (value) => toDate(value)?.toDateString() || "";
 
+// The message list ships media as a media_path (fetched once, cached by the browser); real-time
+// socket messages may still carry the base64 inline.
+const mediaSrc = (content, fallbackMime) => {
+  if (content.file_data) return `data:${content.mimetype || fallbackMime};base64,${content.file_data}`;
+  if (content.media_path) return `${API_BASE}${content.media_path}?token=${encodeURIComponent(localStorage.getItem("token") || "")}`;
+  return null;
+};
+
 const AudioMessage = ({ content, messageId }) => {
   const [error, setError] = useState(false);
   const [audioSrc, setAudioSrc] = useState(null);
@@ -62,8 +70,8 @@ const AudioMessage = ({ content, messageId }) => {
 
   useEffect(() => {
     // Initial load logic
-    let src = (content.file_data || content.body || content.data ? 
-        `data:${content.mimetype || 'audio/ogg'};base64,${content.file_data || content.body || content.data}` : null) || 
+    let src = mediaSrc(content, 'audio/ogg') ||
+        (content.body || content.data ? `data:${content.mimetype || 'audio/ogg'};base64,${content.body || content.data}` : null) || 
         content.url || content.URL || content.mediaUrl || content.link;
     
     if (src && src.startsWith('/media')) {
@@ -176,8 +184,8 @@ const ImageMessage = ({ content, messageId }) => {
 
   useEffect(() => {
     const mimetype = content.mimetype || content.mediaType || 'image/jpeg';
-    // Prioritize base64 data if available to prevent reverting to encrypted URL during polling
-    let src = (content.file_data ? `data:${mimetype};base64,${content.file_data}` : null) ||
+    // Prioritize stored media if available to prevent reverting to encrypted URL during polling
+    let src = mediaSrc(content, mimetype) ||
         content.url || content.URL || content.mediaUrl;
 
     if (src && src.startsWith('/media')) {
@@ -280,8 +288,8 @@ const DocumentMessage = ({ content, messageId }) => {
 
   useEffect(() => {
     const mimetype = content.mimetype || content.mediaType || 'application/pdf';
-    // Prioritize base64 data
-    let src = (content.file_data ? `data:${mimetype};base64,${content.file_data}` : null) ||
+    // Prioritize stored media
+    let src = mediaSrc(content, mimetype) ||
         content.url || content.URL || content.mediaUrl;
 
     if (src && src.startsWith('/media')) {
@@ -765,7 +773,8 @@ export default function OmnichannelPageV2() {
           mimetype.toLowerCase().includes('msword') ||
           mimetype.toLowerCase().includes('application/octet-stream') ||
           content.fileName || 
-          content.url) {
+          content.url ||
+          content.media_path) {
          return <DocumentMessage content={content} messageId={messageId} />;
       }
 

@@ -362,7 +362,7 @@ export default function FollowUpPage() {
   const loadPatients = async () => {
     try {
       // Carregar todos os pacientes (paginação) para permitir busca por nome/telefone
-      const pageSize = 500;
+      const pageSize = 5000;
       let all = [];
       let page = 1;
       let hasMore = true;
@@ -370,7 +370,8 @@ export default function FollowUpPage() {
         const res = await api.get("/patients", { params: { page, page_size: pageSize, sort_by: "name", order: "asc" } });
         const list = res.data?.items ?? (Array.isArray(res.data) ? res.data : []);
         all = all.concat(list);
-        hasMore = Array.isArray(list) && list.length === pageSize;
+        // 500 = page cap of older API versions
+        hasMore = Array.isArray(list) && (list.length === pageSize || list.length === 500);
         page += 1;
       }
       setPatients(all);

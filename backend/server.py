@@ -1,10 +1,11 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, File, UploadFile, Form, BackgroundTasks
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 import io
 import json
 import shutil
 import asyncio
+import time
 from collections import defaultdict
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
@@ -45,6 +46,7 @@ except Exception:
 import httpx
 import json
 import base64
+import binascii
 from PIL import Image
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -250,10 +252,28 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         return user
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
+    cached = _user_cache.get(user_id)
+    if cached and cached[0] > time.monotonic():
+        return dict(cached[1])
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
-    return user
+    _user_cache[user_id] = (time.monotonic() + USER_CACHE_TTL, user)
+    return dict(user)
+
+
+# The database is far from the API host, so each round trip is expensive; the user lookup runs on
+# every authenticated request. Changes made through this API invalidate the entry immediately;
+# changes made elsewhere take effect within the TTL.
+USER_CACHE_TTL = 30
+_user_cache: dict = {}
+
+
+def _invalidate_user_cache(user_id: Optional[str] = None):
+    if user_id is None:
+        _user_cache.clear()
+    else:
+        _user_cache.pop(user_id, None)
 
 
 
@@ -1789,6 +1809,7 @@ async def update_user(user_id: str, data: UserUpdate, current_user: dict = Depen
     
     if update_data:
         await db.users.update_one({"id": user_id}, {"$set": update_data})
+        _invalidate_user_cache(user_id)
     
     return {"message": "User updated successfully"}
 
@@ -1799,6 +1820,7 @@ async def delete_user(user_id: str, current_user: dict = Depends(get_current_use
         raise HTTPException(status_code=403, detail="Not authorized")
     
     result = await db.users.delete_one({"id": user_id})
+    _invalidate_user_cache(user_id)
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "User deleted successfully"}
@@ -2584,11 +2606,11 @@ async def get_patients(
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
 
-    page_size = max(1, min(page_size, 500))
+    use_aggregation = has_debt is True or need_debt is True
+    page_size = max(1, min(page_size, 500 if use_aggregation else 5000))
     skip = max(0, (page - 1) * page_size)
     sort_field = sort_by if sort_by in {"name", "created_at"} else "created_at"
     sort_order = 1 if order == "asc" else -1
-    use_aggregation = has_debt is True or need_debt is True
 
     search_query = {}
     if search and search.strip():
@@ -2888,11 +2910,25 @@ async def get_appointments(
             a["service_names"] = _appointment_service_names(a, services_list)
         return appointments
 
-    cursor = db.appointments.find(query, {"_id": 0})
+    pipeline = [{"$match": query}]
     if sort_by:
-        cursor = cursor.sort(sort_by, sort_order)
-    appointments = await cursor.to_list(cap)
-    services_list = await db.services.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(5000)
+        pipeline.append({"$sort": {sort_by: sort_order}})
+    pipeline += [
+        {"$limit": cap},
+        {"$lookup": {
+            "from": "patients",
+            "localField": "patient_id",
+            "foreignField": "id",
+            "as": "_patient",
+            "pipeline": [{"$project": {"_id": 0, "name": 1}}],
+        }},
+        {"$addFields": {"patient_name": {"$arrayElemAt": ["$_patient.name", 0]}}},
+        {"$project": {"_id": 0, "_patient": 0}},
+    ]
+    appointments, services_list = await asyncio.gather(
+        db.appointments.aggregate(pipeline).to_list(cap),
+        db.services.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(5000),
+    )
     for a in appointments:
         if isinstance(a.get('created_at'), str):
             a['created_at'] = datetime.fromisoformat(a['created_at'])
@@ -3819,11 +3855,10 @@ async def get_leads(
             {"phone": {"$regex": term, "$options": re_opt}},
             {"notes": {"$regex": term, "$options": re_opt}},
         ]
-    total = await db.leads.count_documents(query)
-    page_size = max(1, min(page_size, 500))
+    page_size = max(1, min(page_size, 5000))
     skip = max(0, (page - 1) * page_size)
     cursor = db.leads.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(page_size)
-    items = await cursor.to_list(length=page_size)
+    total, items = await asyncio.gather(db.leads.count_documents(query), cursor.to_list(length=page_size))
     for l in items:
         if isinstance(l.get("created_at"), str):
             l["created_at"] = datetime.fromisoformat(l["created_at"])
@@ -4337,10 +4372,12 @@ async def get_conversation_messages(conversation_id: str, current_user: dict = D
     if lead and lead.get("phone"):
         phone_digits = _phone_digits(lead["phone"])
         if phone_digits:
-            lead_ids_same_phone = [lead["id"]]
-            async for other in db.leads.find({}, {"_id": 0, "id": 1, "phone": 1}).limit(3000):
-                if other["id"] != lead["id"] and _phone_digits(other.get("phone")) == phone_digits:
-                    lead_ids_same_phone.append(other["id"])
+            # Same digits regardless of formatting, e.g. "(11) 9999-0000" and "11 99990000".
+            same_digits = "^\\D*" + "\\D*".join(phone_digits) + "\\D*$"
+            others = await db.leads.find(
+                {"phone": {"$regex": same_digits}, "id": {"$ne": lead["id"]}}, {"_id": 0, "id": 1}
+            ).to_list(50)
+            lead_ids_same_phone = [lead["id"]] + [o["id"] for o in others]
             if len(lead_ids_same_phone) > 1:
                 extra = await db.conversations.find(
                     {"lead_id": {"$in": lead_ids_same_phone}, "id": {"$ne": conversation_id}},
@@ -4348,13 +4385,54 @@ async def get_conversation_messages(conversation_id: str, current_user: dict = D
                 ).to_list(50)
                 conv_ids.extend(c["id"] for c in extra)
 
-    messages = await db.messages.find(
-        {"conversation_id": {"$in": conv_ids}}, {"_id": 0}
-    ).sort("created_at", 1).to_list(2000)
+    return await _list_messages({"conversation_id": {"$in": conv_ids}})
+
+
+MESSAGE_LIST_CAP = 2000
+
+
+async def _list_messages(match: dict) -> List[dict]:
+    """Latest messages in chronological order, without inline media.
+
+    Media is stored as base64 in content.file_data (up to several MB per message) and the chat
+    polls this list every few seconds, so the payload carries only a media_path that the browser
+    fetches once from /messages/{id}/media.
+    """
+    pipeline = [
+        {"$match": match},
+        {"$sort": {"created_at": -1}},
+        {"$limit": MESSAGE_LIST_CAP},
+        {"$addFields": {"_has_media": {"$eq": [{"$type": "$content.file_data"}, "string"]}}},
+        {"$project": {"_id": 0, "content.file_data": 0}},
+    ]
+    messages = await db.messages.aggregate(pipeline).to_list(MESSAGE_LIST_CAP)
+    messages.reverse()
     for m in messages:
+        if m.pop("_has_media", False) and isinstance(m.get("content"), dict):
+            m["content"]["media_path"] = f"/api/messages/{m.get('id')}/media"
         if isinstance(m.get("created_at"), str):
             m["created_at"] = datetime.fromisoformat(m["created_at"])
     return messages
+
+
+@api_router.get("/messages/{message_id}/media")
+async def get_message_media(message_id: str, current_user: dict = Depends(get_current_user)):
+    message = await db.messages.find_one({"id": message_id}, {"_id": 0, "content.file_data": 1, "content.mimetype": 1})
+    content = (message or {}).get("content")
+    data = content.get("file_data") if isinstance(content, dict) else None
+    if not isinstance(data, str) or not data:
+        raise HTTPException(status_code=404, detail="Media not found")
+    if data.startswith("data:"):
+        data = data.split(",", 1)[-1]
+    try:
+        raw = base64.b64decode(data)
+    except (ValueError, binascii.Error):
+        raise HTTPException(status_code=422, detail="Invalid media data")
+    return Response(
+        content=raw,
+        media_type=content.get("mimetype") or "application/octet-stream",
+        headers={"Cache-Control": "private, max-age=604800"},
+    )
 
 @api_router.put("/conversations/{conversation_id}/assign")
 async def assign_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
@@ -4376,13 +4454,7 @@ async def assign_conversation(conversation_id: str, current_user: dict = Depends
 
 @api_router.get("/messages", response_model=List[dict])
 async def get_messages(conversation_id: str, current_user: dict = Depends(get_current_user)):
-    messages = await db.messages.find(
-        {"conversation_id": conversation_id}, {"_id": 0}
-    ).sort("created_at", 1).to_list(1000)
-    for m in messages:
-        if isinstance(m.get("created_at"), str):
-            m["created_at"] = datetime.fromisoformat(m["created_at"])
-    return messages
+    return await _list_messages({"conversation_id": conversation_id})
 
 # Nested Routes for Conversations (Frontend Compatibility)
 @api_router.get("/conversations/{conversation_id}/messages", response_model=List[dict])
@@ -4990,23 +5062,24 @@ async def get_campaigns(current_user: dict = Depends(get_current_user)):
     # Fetch campaigns sorted by date desc
     campaigns = await db.campaigns.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
     
-    # Enrich with delivery stats from followups
-    results = []
+    camp_ids = [c.get("id") for c in campaigns if c.get("id")]
+    counts = defaultdict(int)
+    if camp_ids:
+        grouped = await db.followups.aggregate([
+            {"$match": {"campaign_id": {"$in": camp_ids}, "status": {"$in": ["completed", "failed"]}}},
+            {"$group": {"_id": {"c": "$campaign_id", "s": "$status"}, "n": {"$sum": 1}}},
+        ]).to_list(None)
+        for g in grouped:
+            counts[(g["_id"]["c"], g["_id"]["s"])] = g["n"]
+
     for camp in campaigns:
         camp_id = camp.get("id")
-        
-        # Count stats from followups
-        total_sent = await db.followups.count_documents({"campaign_id": camp_id, "status": "completed"})
-        total_failed = await db.followups.count_documents({"campaign_id": camp_id, "status": "failed"})
-        
         camp["stats"] = {
-            "delivered": total_sent,
-            "failed": total_failed,
+            "delivered": counts[(camp_id, "completed")],
+            "failed": counts[(camp_id, "failed")],
             "total": camp.get("total_targets", 0)
         }
-        results.append(camp)
-        
-    return results
+    return campaigns
 
 @api_router.post("/campaigns/send")
 async def send_campaign(request: CampaignRequest, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):

@@ -83,14 +83,7 @@ export default function Dashboard() {
         .sort((a, b) => String(a.appointment_time || "").localeCompare(String(b.appointment_time || "")));
       setTodayAppointments(list);
       setProfessionals(Array.isArray(profRes.data) ? profRes.data : []);
-
-      const ids = [...new Set(list.map((a) => a.patient_id).filter(Boolean).map(String))];
-      const entries = await Promise.all(
-        ids.map((id) =>
-          api.get(`/patients/${id}`).then((r) => [id, r.data?.name]).catch(() => [id, null])
-        )
-      );
-      setPatientNames(Object.fromEntries(entries.filter(([, name]) => name)));
+      setPatientNames(Object.fromEntries(list.filter((a) => a.patient_id && a.patient_name).map((a) => [String(a.patient_id), a.patient_name])));
     } catch (error) {
       console.error("Erro ao carregar agenda do dia", error);
     } finally {

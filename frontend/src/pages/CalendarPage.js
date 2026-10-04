@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
 import { Plus, ChevronLeft, ChevronRight, X, ChevronDown, Search, SlidersHorizontal } from "lucide-react";
@@ -37,6 +37,7 @@ export default function CalendarPage() {
   const [appointments, setAppointments] = useState([]);
   const [professionals, setProfessionals] = useState([]);
   const [patients, setPatients] = useState([]);
+  const patientById = useMemo(() => new Map(patients.map((p) => [String(p.id), p])), [patients]);
   const [services, setServices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -120,22 +121,18 @@ export default function CalendarPage() {
       .catch(() => {});
   };
 
-  // Buscar nomes de pacientes que não estão na lista (ex.: além dos 500 carregados)
+  // Nomes já vêm em cada agendamento; só busca individualmente quem vier sem nome.
   useEffect(() => {
-    const patientIds = [...new Set((appointments || []).map((a) => (a.patient_id != null ? String(a.patient_id) : null)).filter(Boolean))];
-    const missing = patientIds.filter(
-      (id) =>
-        !patients.some((p) => String(p.id) === id) &&
-        !requestedPatientIdsRef.current.has(id)
-    );
+    const missing = [...new Set((appointments || []).filter((a) => a.patient_id != null && !a.patient_name).map((a) => String(a.patient_id)))]
+      .filter((id) => !patientById.has(id) && !requestedPatientIdsRef.current.has(id));
     missing.forEach((id) => fetchPatientName(id));
-  }, [appointments, patients]);
+  }, [appointments, patientById]);
 
   // Ao abrir o modal do agendamento, garantir que o nome do paciente seja buscado se ainda não tiver
   useEffect(() => {
     if (showDetailsDialog && selectedAppointment?.patient_id) {
       const id = String(selectedAppointment.patient_id);
-      const hasInList = patients.some((p) => String(p.id) === id);
+      const hasInList = patientById.has(id) || !!selectedAppointment.patient_name;
       const hasInCache = patientNameCache[id];
       if (!hasInList && !hasInCache) fetchPatientName(id);
     }
@@ -193,7 +190,10 @@ export default function CalendarPage() {
           limit: 2000
         }
       });
-      setAppointments(Array.isArray(response.data) ? response.data : []);
+      const list = Array.isArray(response.data) ? response.data : [];
+      setAppointments(list);
+      const names = Object.fromEntries(list.filter((a) => a.patient_id != null && a.patient_name).map((a) => [String(a.patient_id), a.patient_name]));
+      setPatientNameCache((prev) => ({ ...prev, ...names }));
     } catch (error) {
       toast.error("Erro ao carregar agendamentos");
     }
@@ -211,7 +211,7 @@ export default function CalendarPage() {
       setRooms(Array.isArray(room.data) ? room.data : []);
 
       // Carregar todos os pacientes (paginação) para o combobox de agendamento mostrar todos
-      const pageSize = 500;
+      const pageSize = 5000;
       let allPatients = [];
       let page = 1;
       let hasMore = true;
@@ -221,7 +221,8 @@ export default function CalendarPage() {
         });
         const list = Array.isArray(res.data) ? res.data : [];
         allPatients = allPatients.concat(list);
-        hasMore = list.length === pageSize;
+        // 500 = page cap of older API versions
+        hasMore = list.length === pageSize || list.length === 500;
         page += 1;
       }
       setPatients(allPatients);
@@ -459,7 +460,7 @@ export default function CalendarPage() {
   const getPatientName = (patientId) => {
     if (patientId == null || patientId === "") return "Paciente";
     const id = String(patientId);
-    const patient = patients.find((p) => String(p.id) === id);
+    const patient = patientById.get(id);
     if (patient?.name) return patient.name;
     if (patientNameCache[id]) return patientNameCache[id];
     return "Paciente";
