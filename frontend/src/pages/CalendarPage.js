@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
-import { Plus, ChevronLeft, ChevronRight, X, ChevronDown, Search } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, X, ChevronDown, Search, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,18 @@ function appointmentDateKey(raw) {
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
+const STATUS_META = {
+  scheduled: { label: "Agendado", className: "status-scheduled", dot: "bg-slate-400" },
+  waiting: { label: "Em espera", className: "status-waiting", dot: "bg-violet-500" },
+  in_progress: { label: "Em andamento", className: "status-in-progress", dot: "bg-orange-500" },
+  completed: { label: "Concluído", className: "status-completed", dot: "bg-green-600" },
+  cancelled: { label: "Cancelado", className: "status-cancelled", dot: "bg-red-600" },
+};
+
+const getStatusDot = (apt) => (STATUS_META[apt.status] || STATUS_META.scheduled).dot;
+
+const MONTH_CELL_LIMIT = 3;
+
 export default function CalendarPage() {
   const { user } = useAuth();
   const [appointments, setAppointments] = useState([]);
@@ -38,6 +50,8 @@ export default function CalendarPage() {
   const [rooms, setRooms] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState("month"); // month, week, day
+  const [selectedDay, setSelectedDay] = useState(() => toYMD(new Date()));
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [filterProfessional, setFilterProfessional] = useState("");
   const [filterRoom, setFilterRoom] = useState("");
   const [filterService, setFilterService] = useState("");
@@ -470,14 +484,6 @@ export default function CalendarPage() {
     return room ? room.name : "Sala";
   };
 
-  const getAppointmentColor = (apt) => {
-    if (apt.status === 'waiting') return 'bg-violet-500';
-    if (apt.status === 'in_progress') return 'bg-orange-500';
-    if (apt.status === 'completed') return 'bg-green-600';
-    if (apt.status === 'cancelled') return 'bg-red-600';
-    return getProfessionalColor(apt.professional_id);
-  };
-
   const resolveServiceIdsFromAppointment = (appointment) => {
     if (!appointment) return [];
     if (Array.isArray(appointment.service_ids) && appointment.service_ids.length) return appointment.service_ids;
@@ -616,9 +622,14 @@ export default function CalendarPage() {
       return `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
     } else if (viewMode === "week") {
       const weekDays = getWeekDays();
-      const firstDay = weekDays[0];
-      const lastDay = weekDays[6];
-      return `${firstDay.day} - ${lastDay.day} ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+      const first = new Date(`${weekDays[0].date}T00:00:00`);
+      const last = new Date(`${weekDays[6].date}T00:00:00`);
+      if (first.getMonth() === last.getMonth()) {
+        return `${first.getDate()} – ${last.getDate()} ${monthNames[last.getMonth()]} ${last.getFullYear()}`;
+      }
+      const short = (d) => monthNames[d.getMonth()].slice(0, 3).toLowerCase();
+      const firstYear = first.getFullYear() !== last.getFullYear() ? ` ${first.getFullYear()}` : "";
+      return `${first.getDate()} ${short(first)}${firstYear} – ${last.getDate()} ${short(last)} ${last.getFullYear()}`;
     } else {
       return `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
     }
@@ -636,263 +647,514 @@ export default function CalendarPage() {
     setShowDetailsDialog(true);
   };
 
+  const goToToday = () => {
+    setCurrentDate(new Date());
+    setSelectedDay(toYMD(new Date()));
+  };
+
+  const openDay = (date) => {
+    if (!date) return;
+    setCurrentDate(new Date(`${date}T00:00:00`));
+    setSelectedDay(date);
+    setViewMode("day");
+  };
+
+  const getServiceLabel = (apt) =>
+    Array.isArray(apt.service_names) && apt.service_names.length > 0
+      ? apt.service_names.join(", ")
+      : apt.service_id ? getServiceName(apt.service_id) : "";
+
+  const getAppointmentTooltip = (apt) =>
+    [
+      apt.appointment_time,
+      getPatientName(apt.patient_id),
+      getProfessionalName(apt.professional_id),
+      getServiceLabel(apt),
+      STATUS_META[apt.status]?.label,
+    ].filter(Boolean).join(" · ");
+
+  const renderDayRow = (apt, index) => {
+    const status = STATUS_META[apt.status] || STATUS_META.scheduled;
+    const details = [getProfessionalName(apt.professional_id), getServiceLabel(apt), apt.room_id ? getRoomName(apt.room_id) : ""]
+      .filter(Boolean)
+      .join(" · ");
+    return (
+      <button
+        key={apt.id || index}
+        onClick={() => openAppointmentDetails(apt)}
+        className="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+      >
+        <span className="w-24 flex-shrink-0 text-sm font-semibold text-slate-900 tabular-nums">
+          {apt.appointment_time}
+          {apt.appointment_time_end ? <span className="font-normal text-slate-400"> – {apt.appointment_time_end}</span> : null}
+        </span>
+        <span className={`w-1.5 self-stretch rounded-full flex-shrink-0 ${getProfessionalColor(apt.professional_id)}`} />
+        <span className="min-w-0 flex-1">
+          <span className={`block text-sm font-medium truncate ${apt.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+            {getPatientName(apt.patient_id)}
+          </span>
+          <span className="block text-xs text-slate-500 truncate">{details}</span>
+        </span>
+        <span className={`status-badge flex-shrink-0 ${status.className}`}>{status.label}</span>
+      </button>
+    );
+  };
+
+  const renderMobileAppointment = (apt, index) => {
+    const serviceLabel = getServiceLabel(apt);
+    return (
+      <button
+        key={apt.id || index}
+        onClick={() => openAppointmentDetails(apt)}
+        className="w-full flex items-stretch gap-3 text-left bg-white border border-slate-200 rounded-lg p-3 active:bg-slate-50"
+      >
+        <span className={`w-1.5 rounded-full flex-shrink-0 ${getProfessionalColor(apt.professional_id)}`} />
+        <span className="w-16 flex-shrink-0 flex items-start gap-1.5 text-sm font-semibold text-slate-900 tabular-nums">
+          <span className={`mt-1.5 w-2.5 h-2.5 rounded-full flex-shrink-0 ${getStatusDot(apt)}`} title={STATUS_META[apt.status]?.label} />
+          {apt.appointment_time}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className={`block text-sm font-medium truncate ${apt.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+            {getPatientName(apt.patient_id)}
+          </span>
+          <span className="block text-xs text-slate-500 truncate">
+            {getProfessionalName(apt.professional_id)}{serviceLabel ? ` · ${serviceLabel}` : ""}
+          </span>
+        </span>
+      </button>
+    );
+  };
+
+  const monthDays = generateCalendarDays();
+  const mobileSelectedDay = monthDays.some((d) => d.date === selectedDay)
+    ? selectedDay
+    : monthDays.find((d) => d.date)?.date;
+  const mobileSelectedAppointments = getAppointmentsForDay(mobileSelectedDay);
+  const monthCells = [
+    ...monthDays,
+    ...Array.from({ length: (7 - (monthDays.length % 7)) % 7 }, () => ({ day: null, date: null })),
+  ];
+  const activeFilterCount = [filterProfessional, filterRoom, filterService].filter(Boolean).length;
+  const dayAppointments = viewMode === "day" ? getAppointmentsForDay(toYMD(currentDate)) : [];
+
   return (
     <Layout>
       <div>
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900">Calendário</h1>
-          <div className="flex gap-3">
-            <Button onClick={() => setShowDialog(true)} className="btn-primary">
-              <Plus className="w-5 h-5 mr-2" />
-              Novo Agendamento
-            </Button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4 md:mb-6 short:mb-3">
+          <div>
+            <h1 className="text-2xl md:text-3xl short:text-xl font-bold text-gray-900">Calendário</h1>
+            <p className="hidden md:block short:hidden text-sm text-slate-500 mt-1">Agenda de atendimentos da clínica</p>
           </div>
+          <Button onClick={() => setShowDialog(true)} className="btn-primary w-full sm:w-auto">
+            <Plus className="w-4 h-4" />
+            Novo Agendamento
+          </Button>
         </div>
 
-        {/* Filtros e Visualizações */}
-        <div className="bg-white rounded-2xl p-6 shadow-lg mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Visualização */}
-            <div>
-              <Label className="text-sm font-semibold mb-2 block">Visualização</Label>
-              <select
-                className="input-field"
-                value={viewMode}
-                onChange={(e) => setViewMode(e.target.value)}
+        {/* Barra de navegação, visualização e filtros */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 md:p-4 mb-4">
+          <div className="flex flex-wrap items-center gap-2 md:gap-3">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={previousPeriod}
+                className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+                aria-label="Período anterior"
               >
-                <option value="month">Mês</option>
-                <option value="week">Semana</option>
-                <option value="day">Dia</option>
-              </select>
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={nextPeriod}
+                className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+                aria-label="Próximo período"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
+            <button
+              onClick={goToToday}
+              className="h-9 px-3 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Hoje
+            </button>
+            <h2 className="flex-1 min-w-0 text-base md:text-xl font-semibold text-slate-900 truncate">
+              {getPeriodTitle()}
+            </h2>
 
-            {/* Filtro por Profissional */}
-            <div>
-              <Label className="text-sm font-semibold mb-2 block">Profissional</Label>
-              <select
-                className="input-field"
-                value={filterProfessional}
-                onChange={(e) => setFilterProfessional(e.target.value)}
-                disabled={user?.user_type === 'profissional_admin' || user?.user_type === 'profissional'}
-              >
-                <option value="">Todos</option>
-                {professionals.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
+            <div className="order-last w-full md:order-none md:w-auto flex items-center gap-2">
+              <div className="flex-1 md:flex-none grid grid-cols-3 rounded-lg bg-slate-100 p-1">
+                {[
+                  { value: "month", label: "Mês" },
+                  { value: "week", label: "Semana" },
+                  { value: "day", label: "Dia" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => setViewMode(option.value)}
+                    className={`px-3 md:px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                      viewMode === option.value
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
                 ))}
-              </select>
-            </div>
-
-            {/* Filtro por Sala */}
-            <div>
-              <Label className="text-sm font-semibold mb-2 block">Sala</Label>
-              <select
-                className="input-field"
-                value={filterRoom}
-                onChange={(e) => setFilterRoom(e.target.value)}
+              </div>
+              <button
+                onClick={() => setShowMobileFilters((v) => !v)}
+                className={`md:hidden short:inline-flex h-9 px-3 inline-flex items-center gap-1.5 rounded-lg border text-sm font-medium ${
+                  showMobileFilters || activeFilterCount ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-700'
+                }`}
               >
-                <option value="">Todas</option>
-                {rooms.map(r => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Filtro por Serviço */}
-            <div>
-              <Label className="text-sm font-semibold mb-2 block">Serviço</Label>
-              <select
-                className="input-field"
-                value={filterService}
-                onChange={(e) => setFilterService(e.target.value)}
-              >
-                <option value="">Todos</option>
-                {services.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+                <SlidersHorizontal className="w-4 h-4" />
+                Filtros{activeFilterCount ? ` (${activeFilterCount})` : ""}
+              </button>
             </div>
           </div>
 
-          {/* Botão Limpar Filtros */}
-          {(filterProfessional || filterRoom || filterService) && (
-            <div className="mt-4">
-              <Button
-                onClick={() => {
-                  setFilterProfessional("");
-                  setFilterRoom("");
-                  setFilterService("");
-                }}
-                variant="outline"
-                className="btn-secondary"
-              >
-                <X className="w-4 h-4 mr-2" />
-                Limpar Filtros
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* Navegação do Período */}
-        <div className="flex items-center justify-between mb-6 bg-white rounded-2xl p-6 shadow-lg">
-          <Button onClick={previousPeriod} variant="outline" className="btn-secondary">
-            <ChevronLeft className="w-5 h-5" />
-          </Button>
-          <h2 className="text-2xl font-bold text-gray-900">
-            {getPeriodTitle()}
-          </h2>
-          <Button onClick={nextPeriod} variant="outline" className="btn-secondary">
-            <ChevronRight className="w-5 h-5" />
-          </Button>
+          <div className={`${showMobileFilters ? 'grid' : 'hidden md:grid short:hidden'} grid-cols-1 md:grid-cols-[repeat(3,minmax(0,1fr))_auto] gap-2 md:gap-3 mt-3 pt-3 border-t border-slate-100`}>
+            <select
+              className="input-field"
+              value={filterProfessional}
+              onChange={(e) => setFilterProfessional(e.target.value)}
+              disabled={user?.user_type === 'profissional_admin' || user?.user_type === 'profissional'}
+              aria-label="Profissional"
+            >
+              <option value="">Todos os profissionais</option>
+              {professionals.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <select
+              className="input-field"
+              value={filterRoom}
+              onChange={(e) => setFilterRoom(e.target.value)}
+              aria-label="Sala"
+            >
+              <option value="">Todas as salas</option>
+              {rooms.map(r => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
+            <select
+              className="input-field"
+              value={filterService}
+              onChange={(e) => setFilterService(e.target.value)}
+              aria-label="Serviço"
+            >
+              <option value="">Todos os serviços</option>
+              {services.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => {
+                setFilterProfessional("");
+                setFilterRoom("");
+                setFilterService("");
+              }}
+              disabled={!activeFilterCount}
+              className="h-9 px-3 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              <X className="w-4 h-4" />
+              Limpar
+            </button>
+          </div>
         </div>
 
         {/* Grade do Calendário */}
-        <div className="bg-white rounded-2xl shadow-lg p-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 md:p-0 md:overflow-hidden">
           {viewMode === "month" && (
-            <>
-              {/* Cabeçalho dos dias da semana */}
-              <div className="grid grid-cols-7 gap-2 mb-4">
+            <div className="md:hidden">
+              <div className="grid grid-cols-7 mb-1">
                 {weekDays.map((day, index) => (
-                  <div key={index} className="text-center font-bold text-gray-700 py-2">
+                  <div key={index} className="text-center text-[11px] font-medium text-slate-500 py-1">
+                    {day.charAt(0)}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {monthDays.map((dayObj, index) => {
+                  if (!dayObj.day) return <div key={index} />;
+                  const cellAppointments = getAppointmentsForDay(dayObj.date);
+                  const isSelected = dayObj.date === mobileSelectedDay;
+                  return (
+                    <button
+                      key={index}
+                      onClick={() => setSelectedDay(dayObj.date)}
+                      className={`h-12 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
+                        isSelected
+                          ? 'bg-blue-600 text-white'
+                          : dayObj.isToday
+                            ? 'bg-blue-50 text-blue-700'
+                            : 'text-slate-700 active:bg-slate-100'
+                      }`}
+                    >
+                      <span className="text-sm font-medium leading-none">{dayObj.day}</span>
+                      <span className="flex items-center gap-0.5 h-2">
+                        {cellAppointments.slice(0, 3).map((apt, i) => (
+                          <span
+                            key={i}
+                            className={`w-2 h-2 rounded-full ${getStatusDot(apt)} ${isSelected ? 'ring-1 ring-white' : ''}`}
+                          />
+                        ))}
+                        {cellAppointments.length > 3 && (
+                          <span className={`text-[9px] leading-none font-semibold ${isSelected ? 'text-white' : 'text-slate-500'}`}>
+                            +{cellAppointments.length - 3}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-slate-200">
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <h3 className="text-sm font-semibold text-slate-900 first-letter:uppercase">
+                    {mobileSelectedDay && new Date(`${mobileSelectedDay}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                  </h3>
+                  <button
+                    onClick={() => handleDayDoubleClick(mobileSelectedDay)}
+                    className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 flex-shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Agendar
+                  </button>
+                </div>
+                {mobileSelectedAppointments.length > 0 ? (
+                  <div className="space-y-2">
+                    {mobileSelectedAppointments.map(renderMobileAppointment)}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 text-center py-6">Nenhum agendamento neste dia</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {viewMode === "month" && (
+            <div className="hidden md:block">
+              <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+                {weekDays.map((day, index) => (
+                  <div key={index} className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-500">
                     {day}
                   </div>
                 ))}
               </div>
-
-              {/* Dias do mês */}
-              <div className="grid grid-cols-7 gap-2">
-                {generateCalendarDays().map((dayObj, index) => (
-                  <div
-                    key={index}
-                    onDoubleClick={() => handleDayDoubleClick(dayObj.date)}
-                    className={`min-h-[120px] border rounded-lg p-2 cursor-pointer ${
-                      dayObj.day ? 'bg-white hover:bg-gray-50' : 'bg-gray-100'
-                    } ${dayObj.isToday ? 'border-blue-500 border-2' : 'border-gray-200'}`}
-                  >
-                    {dayObj.day && (
-                      <>
-                        <div className={`text-sm font-semibold mb-2 ${
-                          dayObj.isToday ? 'text-blue-600' : 'text-gray-700'
-                        }`}>
+              <div className="grid grid-cols-7 gap-px bg-slate-200">
+                {monthCells.map((dayObj, index) => {
+                  if (!dayObj.day) {
+                    return <div key={index} className="bg-slate-50 min-h-[92px] lg:min-h-[124px]" />;
+                  }
+                  const cellAppointments = getAppointmentsForDay(dayObj.date);
+                  const visible = cellAppointments.slice(0, MONTH_CELL_LIMIT);
+                  const hidden = cellAppointments.length - visible.length;
+                  return (
+                    <div
+                      key={index}
+                      onDoubleClick={() => handleDayDoubleClick(dayObj.date)}
+                      className={`group min-h-[92px] lg:min-h-[124px] p-1.5 flex flex-col ${dayObj.isToday ? 'bg-[#f5f8ff]' : 'bg-white'}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <button
+                          onClick={() => openDay(dayObj.date)}
+                          className={`h-6 min-w-[24px] px-1.5 rounded-full text-xs font-semibold ${
+                            dayObj.isToday ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-100'
+                          }`}
+                          title="Ver o dia"
+                        >
                           {dayObj.day}
-                        </div>
-                        
-                        {/* Agendamentos do dia */}
-                        <div className="space-y-1">
-                          {getAppointmentsForDay(dayObj.date).map((apt, aptIndex) => (
-                            <button
-                              key={aptIndex}
-                              onClick={() => openAppointmentDetails(apt)}
-                          className={`w-full text-left text-xs px-2 py-1 rounded text-white hover:opacity-80 transition-opacity truncate ${
-                                getAppointmentColor(apt)
-                              }`}
-                            >
-                              {apt.appointment_time} - {getProfessionalName(apt.professional_id)}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ))}
+                        </button>
+                        <button
+                          onClick={() => handleDayDoubleClick(dayObj.date)}
+                          className="opacity-0 group-hover:opacity-100 focus:opacity-100 h-6 w-6 inline-flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-blue-600 transition-opacity"
+                          title="Agendar neste dia"
+                          aria-label="Agendar neste dia"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div className="space-y-0.5 min-w-0">
+                        {visible.map((apt, aptIndex) => (
+                          <button
+                            key={apt.id || aptIndex}
+                            onClick={() => openAppointmentDetails(apt)}
+                            title={getAppointmentTooltip(apt)}
+                            className={`relative overflow-hidden w-full flex items-center gap-1.5 rounded pl-2 pr-1.5 py-0.5 text-left text-xs hover:bg-slate-100 ${
+                              apt.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-800'
+                            }`}
+                          >
+                            <span className={`absolute inset-0 opacity-[0.12] ${getProfessionalColor(apt.professional_id)}`} />
+                            <span className={`absolute inset-y-0 left-0 w-[3px] ${getProfessionalColor(apt.professional_id)}`} />
+                            <span className={`relative w-2 h-2 rounded-full flex-shrink-0 ${getStatusDot(apt)}`} />
+                            <span className="relative font-semibold tabular-nums flex-shrink-0">{apt.appointment_time}</span>
+                            <span className="relative truncate">{getProfessionalName(apt.professional_id)}</span>
+                          </button>
+                        ))}
+                        {hidden > 0 && (
+                          <button
+                            onClick={() => openDay(dayObj.date)}
+                            className="px-1.5 text-xs font-medium text-slate-500 hover:text-blue-600"
+                          >
+                            +{hidden} mais
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </>
+            </div>
           )}
 
           {viewMode === "week" && (
-            <>
-              {/* Visualização de Semana */}
-              <div className="grid grid-cols-7 gap-2">
-                {getWeekDays().map((dayObj, index) => (
+            <div className="md:hidden divide-y divide-slate-200">
+              {getWeekDays().map((dayObj, index) => {
+                const cellAppointments = getAppointmentsForDay(dayObj.date);
+                return (
+                  <div key={index} className="py-3 first:pt-0 last:pb-0">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className={`flex items-baseline gap-2 ${dayObj.isToday ? 'text-blue-600' : 'text-slate-900'}`}>
+                        <span className="text-lg font-semibold">{dayObj.day}</span>
+                        <span className="text-sm font-medium">{dayObj.dayName}</span>
+                        {dayObj.isToday && <span className="text-xs font-medium">· Hoje</span>}
+                      </div>
+                      <button
+                        onClick={() => handleDayDoubleClick(dayObj.date)}
+                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"
+                        aria-label="Agendar neste dia"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {cellAppointments.length > 0 ? (
+                      <div className="space-y-2">{cellAppointments.map(renderMobileAppointment)}</div>
+                    ) : (
+                      <p className="text-xs text-slate-400">Sem agendamentos</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {viewMode === "week" && (
+            <div className="hidden md:grid grid-cols-7 gap-px bg-slate-200">
+              {getWeekDays().map((dayObj, index) => {
+                const cellAppointments = getAppointmentsForDay(dayObj.date);
+                return (
                   <div
                     key={index}
                     onDoubleClick={() => handleDayDoubleClick(dayObj.date)}
-                    className={`min-h-[400px] border rounded-lg p-2 cursor-pointer bg-white hover:bg-gray-50 ${
-                      dayObj.isToday ? 'border-blue-500 border-2' : 'border-gray-200'
-                    }`}
+                    className={`group flex flex-col min-h-[320px] lg:min-h-[440px] ${dayObj.isToday ? 'bg-[#f5f8ff]' : 'bg-white'}`}
                   >
-                    <div className={`text-center mb-3 ${dayObj.isToday ? 'text-blue-600' : 'text-gray-700'}`}>
-                      <div className="font-bold">{dayObj.dayName}</div>
-                      <div className="text-2xl font-bold">{dayObj.day}</div>
+                    <div className="px-2 py-2 border-b border-slate-100 flex flex-col items-center">
+                      <span className={`text-xs font-medium uppercase tracking-wide ${dayObj.isToday ? 'text-blue-600' : 'text-slate-500'}`}>
+                        {dayObj.dayName}
+                      </span>
+                      <button
+                        onClick={() => openDay(dayObj.date)}
+                        className={`mt-0.5 h-8 w-8 inline-flex items-center justify-center rounded-full text-base font-semibold ${
+                          dayObj.isToday ? 'bg-blue-600 text-white' : 'text-slate-900 hover:bg-slate-100'
+                        }`}
+                        title="Ver o dia"
+                      >
+                        {dayObj.day}
+                      </button>
                     </div>
-                    
-                    <div className="space-y-2">
-                      {getAppointmentsForDay(dayObj.date).map((apt, aptIndex) => (
+                    <div className="flex-1 p-1.5 space-y-1.5 min-w-0">
+                      {cellAppointments.map((apt, aptIndex) => (
                         <button
-                          key={aptIndex}
+                          key={apt.id || aptIndex}
                           onClick={() => openAppointmentDetails(apt)}
-                          className={`w-full text-left text-xs px-2 py-2 rounded text-white hover:opacity-80 transition-opacity ${
-                            getAppointmentColor(apt)
-                          }`}
+                          title={getAppointmentTooltip(apt)}
+                          className="relative overflow-hidden w-full flex gap-2 text-left rounded-md border border-slate-200 bg-white p-2 hover:border-slate-300 hover:shadow-sm transition"
                         >
-                          <div className="font-semibold">{apt.appointment_time}</div>
-                          <div className="truncate">{getProfessionalName(apt.professional_id)}</div>
-                          <span
-                            onClick={(e) => { e.stopPropagation(); openPatientDialog(apt.patient_id); }}
-                            className="truncate text-[10px] opacity-80 cursor-pointer"
-                          >
-                            {getPatientName(apt.patient_id)}
+                          <span className={`absolute inset-0 opacity-[0.08] ${getProfessionalColor(apt.professional_id)}`} />
+                          <span className={`relative w-1.5 self-stretch rounded-full flex-shrink-0 ${getProfessionalColor(apt.professional_id)}`} />
+                          <span className="relative min-w-0">
+                            <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 tabular-nums">
+                              <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${getStatusDot(apt)}`} />
+                              {apt.appointment_time}
+                            </span>
+                            <span className={`block text-xs truncate ${apt.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                              {getPatientName(apt.patient_id)}
+                            </span>
+                            <span className="block text-[11px] text-slate-500 truncate">{getProfessionalName(apt.professional_id)}</span>
                           </span>
                         </button>
                       ))}
+                      <button
+                        onClick={() => handleDayDoubleClick(dayObj.date)}
+                        className="w-full opacity-0 group-hover:opacity-100 focus:opacity-100 py-1 inline-flex items-center justify-center gap-1 rounded-md text-xs font-medium text-slate-400 hover:bg-slate-100 hover:text-blue-600 transition-opacity"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Agendar
+                      </button>
                     </div>
                   </div>
-                ))}
-              </div>
-            </>
+                );
+              })}
+            </div>
           )}
 
           {viewMode === "day" && (
             <>
-              {/* Visualização de Dia */}
-              <div className="space-y-3">
-                {getAppointmentsForDay(toYMD(currentDate))
-                  .sort((a, b) => a.appointment_time.localeCompare(b.appointment_time))
-                  .map((apt, index) => (
-                    <button
-                      key={index}
-                      onClick={() => openAppointmentDetails(apt)}
-                      className={`w-full text-left p-4 rounded-xl text-white hover:opacity-90 transition-opacity shadow-sm ${
-                        getAppointmentColor(apt)
-                      }`}
-                    >
-                      <div>
-                        <div className="text-2xl font-bold mb-2">{apt.appointment_time}</div>
-                        <span
-                          onClick={(e) => { e.stopPropagation(); openPatientDialog(apt.patient_id); }}
-                          className="text-2xl font-bold text-left cursor-pointer hover:underline block mb-1"
-                        >
-                          {getPatientName(apt.patient_id)}
-                        </span>
-                        <div className="text-base opacity-95 font-medium">{getProfessionalName(apt.professional_id)}</div>
-                        <div className="text-sm opacity-80">
-                          {Array.isArray(apt.service_names) && apt.service_names.length > 0
-                            ? apt.service_names.join(", ")
-                            : getServiceName(apt.service_id)}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                
-                {getAppointmentsForDay(toYMD(currentDate)).length === 0 && (
-                  <div className="text-center py-12 text-gray-500">
-                    <p>Nenhum agendamento para este dia</p>
-                  </div>
-                )}
+              <div className="flex items-center justify-between gap-2 mb-3 md:mb-0 md:px-4 md:py-3 md:border-b md:border-slate-200">
+                <h3 className="text-sm font-semibold text-slate-900 first-letter:uppercase">
+                  {currentDate.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                  <span className="ml-2 font-normal text-slate-500">
+                    {dayAppointments.length} {dayAppointments.length === 1 ? 'agendamento' : 'agendamentos'}
+                  </span>
+                </h3>
+                <button
+                  onClick={() => handleDayDoubleClick(toYMD(currentDate))}
+                  className="flex items-center gap-1 text-xs md:text-sm font-medium text-blue-600 hover:text-blue-700 flex-shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  Agendar
+                </button>
               </div>
+              {dayAppointments.length > 0 ? (
+                <>
+                  <div className="md:hidden space-y-2">{dayAppointments.map(renderMobileAppointment)}</div>
+                  <div className="hidden md:block divide-y divide-slate-100">{dayAppointments.map(renderDayRow)}</div>
+                </>
+              ) : (
+                <p className="text-sm text-slate-500 text-center py-12">Nenhum agendamento para este dia</p>
+              )}
             </>
           )}
         </div>
 
-        {/* Legenda de Profissionais */}
-        <div className="mt-6 bg-white rounded-2xl shadow-lg p-6">
-          <h3 className="font-bold text-gray-900 mb-4">Profissionais</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {professionals.map((prof, index) => (
-              <div key={prof.id} className="flex items-center gap-2">
-                <div className={`w-4 h-4 rounded ${prof.color || professionalColors[index % professionalColors.length]}`}></div>
-                <span className="text-sm text-gray-700">{prof.name}</span>
-              </div>
-            ))}
+        {/* Legenda */}
+        <div className="mt-4 bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3 flex flex-col gap-3 md:flex-row md:items-start md:gap-8">
+          <div className="min-w-0">
+            <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-2">
+              Profissionais <span className="normal-case tracking-normal text-slate-400">· cor da barra</span>
+            </h3>
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+              {professionals.map((prof, index) => (
+                <div key={prof.id} className="flex items-center gap-1.5">
+                  <span className={`w-3 h-3 rounded-sm ${prof.color || professionalColors[index % professionalColors.length]}`} />
+                  <span className="text-sm text-slate-700">{prof.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="md:ml-auto md:border-l md:border-slate-200 md:pl-8 flex-shrink-0">
+            <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-2">
+              Status <span className="normal-case tracking-normal text-slate-400">· cor da bolinha</span>
+            </h3>
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+              {Object.values(STATUS_META).map((item) => (
+                <div key={item.label} className="flex items-center gap-1.5">
+                  <span className={`w-3 h-3 rounded-full ${item.dot}`} />
+                  <span className="text-sm text-slate-700">{item.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
