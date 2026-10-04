@@ -4,13 +4,52 @@ import api, { API_BASE } from "../services/api";
 import io from "socket.io-client";
 import { useAuth } from "../contexts/AuthContext";
 import { 
-  MessageSquare, Send, UserCheck, UserX, X, Check, 
-  CheckCheck, Phone, Mail, User, Clock, AlertCircle, FileText, Download,
-  Paperclip, Mic, StopCircle, Search, ArrowLeft
+  MessageSquare, Send, UserCheck, X, Check, 
+  CheckCheck, Phone, Mail, AlertCircle, FileText, Download,
+  Paperclip, Mic, StopCircle, Search, ArrowLeft, RotateCcw, Lock
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import ContactAvatar from "../components/ContactAvatar";
+import { formatPhone } from "../lib/contact";
+
+const FILTERS = [
+  { id: "all", label: "Todos" },
+  { id: "mine", label: "Meus" },
+  { id: "unassigned", label: "Não atribuídos" },
+];
+
+const DAY_MS = 86400000;
+const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+const daysAgo = (d) => Math.round((startOfDay(new Date()) - startOfDay(d)) / DAY_MS);
+const toDate = (value) => {
+  const d = value ? new Date(value) : null;
+  return d && !Number.isNaN(d.getTime()) ? d : null;
+};
+
+const formatListTime = (value) => {
+  const d = toDate(value);
+  if (!d) return "";
+  const diff = daysAgo(d);
+  if (diff === 0) return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  if (diff === 1) return "Ontem";
+  if (diff < 7) return d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", ...(sameYear ? {} : { year: "2-digit" }) });
+};
+
+const formatDayLabel = (value) => {
+  const d = toDate(value);
+  if (!d) return "";
+  const diff = daysAgo(d);
+  if (diff === 0) return "Hoje";
+  if (diff === 1) return "Ontem";
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString("pt-BR", { day: "numeric", month: "long", ...(sameYear ? {} : { year: "numeric" }) });
+};
+
+const dayKey = (value) => toDate(value)?.toDateString() || "";
 
 const AudioMessage = ({ content, messageId }) => {
   const [error, setError] = useState(false);
@@ -368,6 +407,7 @@ export default function OmnichannelPageV2() {
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [listLoaded, setListLoaded] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [filter, setFilter] = useState("all"); // all, mine, unassigned
   const [searchTerm, setSearchTerm] = useState("");
@@ -544,7 +584,6 @@ export default function OmnichannelPageV2() {
 
   const loadData = async () => {
     try {
-      setLoading(true);
       const convRes = await api.get("/conversations");
       const list = Array.isArray(convRes.data) ? convRes.data : [];
       setConversations(list);
@@ -557,7 +596,7 @@ export default function OmnichannelPageV2() {
       console.error("Erro ao carregar conversas:", error);
       toast.error("Erro ao carregar conversas");
     } finally {
-      setLoading(false);
+      setListLoaded(true);
     }
   };
 
@@ -653,24 +692,6 @@ export default function OmnichannelPageV2() {
     if (fromList) return { name: fromList.name || "Contato", phone: fromList.phone || "", email: fromList.email || "" };
     if (fromConv) return fromConv;
     return { name: "Contato", phone: id ? String(leadId) : "", email: "" };
-  };
-
-  const getChannelIcon = (channel) => {
-    switch(channel) {
-      case "whatsapp": return "💬";
-      case "instagram": return "📷";
-      case "messenger": return "💌";
-      default: return "💬";
-    }
-  };
-
-  const getChannelColor = (channel) => {
-    switch(channel) {
-      case "whatsapp": return "bg-green-500";
-      case "instagram": return "bg-pink-500";
-      case "messenger": return "bg-blue-500";
-      default: return "bg-gray-500";
-    }
   };
 
   const renderMessageContent = (content, messageId) => {
@@ -772,357 +793,359 @@ export default function OmnichannelPageV2() {
     return true;
   });
 
+  const filterCounts = {
+    all: conversations.length,
+    mine: conversations.filter(c => c.assigned_to === user?.id).length,
+    unassigned: conversations.filter(c => !c.assigned_to).length,
+  };
+
+  const selectedLead = selectedConversation
+    ? getLeadInfo(selectedConversation.lead_id, selectedConversation)
+    : null;
+  const isConversationOpen = selectedConversation
+    && (selectedConversation.status === "active" || !selectedConversation.status);
+
   return (
-    <Layout>
-      <div className="h-[calc(100vh-4rem)] flex flex-col">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200 p-4">
-          <div className="flex items-center justify-between">
+    <Layout fullHeight>
+      <div className="relative flex h-full overflow-hidden bg-white">
+        {/* Lista de conversas */}
+        <aside className={`absolute inset-0 z-10 flex w-full flex-col bg-white transition-transform duration-300 md:static md:w-[22rem] md:flex-shrink-0 md:translate-x-0 md:border-r md:border-slate-200 xl:w-96 ${selectedConversation ? "-translate-x-full" : "translate-x-0"}`}>
+          <div className="space-y-3 border-b border-slate-200 px-4 pb-3 pt-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Omnichannel</h1>
-              <p className="text-sm text-gray-600">Atendimento integrado multi-canal</p>
+              <h1 className="text-lg text-slate-900">Omnichannel</h1>
+              <p className="text-xs text-slate-500">Atendimento integrado multicanal</p>
             </div>
-            
-            {/* Filtros */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setFilter("all")}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  filter === "all" 
-                    ? "bg-blue-500 text-white" 
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                Todos ({conversations.length})
-              </button>
-              <button
-                onClick={() => setFilter("mine")}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  filter === "mine" 
-                    ? "bg-blue-500 text-white" 
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                Meus ({conversations.filter(c => c.assigned_to === user?.id).length})
-              </button>
-              <button
-                onClick={() => setFilter("unassigned")}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  filter === "unassigned" 
-                    ? "bg-blue-500 text-white" 
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                Não Atribuídos ({conversations.filter(c => !c.assigned_to).length})
-              </button>
+
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Buscar por nome, telefone ou e-mail"
+                className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/10"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+              {FILTERS.map(({ id, label }) => {
+                const active = filter === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setFilter(id)}
+                    className={`flex flex-auto items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium transition ${
+                      active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    {label}
+                    <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${active ? "bg-blue-50 text-blue-700" : "bg-slate-200/70 text-slate-500"}`}>
+                      {filterCounts[id]}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
-        </div>
 
-        {/* Main Content */}
-        <div className="flex-1 flex overflow-hidden relative">
-          {/* Conversas List */}
-          <div className={`w-full md:w-96 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 absolute md:static inset-0 z-10 transition-transform duration-300 ${selectedConversation ? '-translate-x-full md:translate-x-0' : 'translate-x-0'}`}>
-            {/* Search Input */}
-            <div className="p-4 border-b border-gray-100">
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input 
-                        type="text" 
-                        placeholder="Buscar conversa..." 
-                        className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
+          <div className="flex-1 overflow-y-auto">
+            {!listLoaded ? (
+              <ul aria-hidden="true">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <li key={i} className="flex items-center gap-3 border-b border-slate-100 px-4 py-3">
+                    <div className="h-11 w-11 animate-pulse rounded-full bg-slate-100" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 w-2/3 animate-pulse rounded bg-slate-100" />
+                      <div className="h-2.5 w-1/3 animate-pulse rounded bg-slate-100" />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : filteredConversations.length === 0 ? (
+              <div className="flex flex-col items-center px-6 py-12 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                  <MessageSquare className="h-6 w-6" />
                 </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto">
-            {filteredConversations.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
-                <MessageSquare className="w-16 h-16 mx-auto mb-4 opacity-30" />
-                <p>Nenhuma conversa encontrada</p>
+                <p className="mt-3 text-sm font-medium text-slate-700">Nenhuma conversa encontrada</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {searchTerm ? "Tente buscar por outro termo." : "As novas conversas aparecem aqui automaticamente."}
+                </p>
               </div>
             ) : (
               filteredConversations.map((conv) => {
                 const lead = getLeadInfo(conv.lead_id, conv);
                 const isSelected = selectedConversation?.id === conv.id;
                 const isAssignedToMe = conv.assigned_to === user?.id;
-                
+
                 return (
-                  <div
+                  <button
                     key={conv.id}
+                    type="button"
                     onClick={() => {
                       if (conv.id === selectedConversation?.id) return;
                       setSelectedConversation(conv);
                     }}
-                    className={`p-4 border-b border-gray-100 cursor-pointer transition-all hover:bg-gray-50 ${
-                      isSelected ? "bg-blue-50 border-l-4 border-l-blue-500" : ""
+                    className={`relative flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-left transition-colors ${
+                      isSelected ? "bg-blue-50/70" : "hover:bg-slate-50"
                     }`}
                   >
-                    <div className="flex items-start gap-3">
-                      <div className={`w-12 h-12 rounded-full ${getChannelColor(conv.channel)} flex items-center justify-center text-white text-xl flex-shrink-0`}>
-                        {getChannelIcon(conv.channel)}
+                    {isSelected && <span className="absolute inset-y-0 left-0 w-0.5 bg-blue-600" />}
+                    <ContactAvatar name={lead.name} seed={conv.lead_id || conv.id} channel={conv.channel} />
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className={`truncate text-sm font-semibold ${isSelected ? "text-blue-700" : "text-slate-900"}`}>
+                          {formatPhone(lead.name)}
+                        </span>
+                        <span className="flex-shrink-0 text-[11px] tabular-nums text-slate-400">
+                          {formatListTime(conv.last_message_at || conv.created_at)}
+                        </span>
                       </div>
-                      
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold text-gray-900 truncate">{lead.name}</h3>
-                          {conv.status === "closed" && (
-                            <span className="px-2 py-0.5 bg-gray-200 text-gray-700 text-xs rounded-full">
-                              Encerrado
-                            </span>
-                          )}
-                        </div>
-                        
-                        {conv.assigned_to ? (
-                          <div className="flex items-center gap-1 text-xs text-gray-600 mb-1">
-                            <UserCheck className="w-3 h-3" />
-                            <span>{isAssignedToMe ? "Você" : conv.assigned_to_name}</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1 text-xs text-orange-600 mb-1">
-                            <AlertCircle className="w-3 h-3" />
-                            <span>Não atribuído</span>
-                          </div>
+                      <div className="mt-1 flex min-w-0 items-center gap-2 text-xs">
+                        {conv.status === "closed" && (
+                          <span className="flex-shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                            Encerrado
+                          </span>
                         )}
-                        
-                        <p className="text-xs text-gray-500 flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {new Date(conv.last_message_at || conv.created_at).toLocaleString('pt-BR')}
-                        </p>
+                        {conv.assigned_to ? (
+                          <span className="flex min-w-0 items-center gap-1 text-slate-500">
+                            <UserCheck className="h-3.5 w-3.5 flex-shrink-0" />
+                            <span className="truncate">{isAssignedToMe ? "Você" : conv.assigned_to_name || "Atribuído"}</span>
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 font-medium text-amber-600">
+                            <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                            Não atribuído
+                          </span>
+                        )}
                       </div>
                     </div>
-                  </div>
+                  </button>
                 );
               })
             )}
           </div>
-          </div>
+        </aside>
 
-          {/* Chat Area */}
-          <div className={`flex-1 flex flex-col bg-gray-50 min-w-0 absolute md:static inset-0 z-20 transition-transform duration-300 ${selectedConversation ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
-            {selectedConversation ? (
-              <>
-              {/* Chat Header */}
-              <div className="bg-white border-b border-gray-200 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="md:hidden mr-1"
-                      onClick={() => setSelectedConversation(null)}
-                    >
-                      <ArrowLeft className="w-5 h-5" />
-                    </Button>
-                    <div className={`w-10 h-10 rounded-full ${getChannelColor(selectedConversation.channel)} flex items-center justify-center text-white`}>
-                      {getChannelIcon(selectedConversation.channel)}
-                    </div>
-                    <div>
-                      <h2 className="font-semibold text-gray-900">
-                        {getLeadInfo(selectedConversation.lead_id, selectedConversation).name}
-                      </h2>
-                      <div className="flex items-center gap-3 text-sm text-gray-600">
-                        {getLeadInfo(selectedConversation.lead_id, selectedConversation).phone && (
-                          <span className="flex items-center gap-1">
-                            <Phone className="w-3 h-3" />
-                            {getLeadInfo(selectedConversation.lead_id, selectedConversation).phone}
-                          </span>
-                        )}
-                        {getLeadInfo(selectedConversation.lead_id, selectedConversation).email && (
-                          <span className="flex items-center gap-1">
-                            <Mail className="w-3 h-3" />
-                            {getLeadInfo(selectedConversation.lead_id, selectedConversation).email}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    {!selectedConversation.assigned_to && (
-                      <Button
-                        onClick={() => handleAssignToMe(selectedConversation.id)}
-                        className="bg-green-600 hover:bg-green-700 text-white"
-                      >
-                        <UserCheck className="w-4 h-4 mr-2" />
-                        Assumir Atendimento
-                      </Button>
+        {/* Área do chat */}
+        <section className={`absolute inset-0 z-20 flex min-w-0 flex-1 flex-col bg-slate-50 transition-transform duration-300 md:static md:translate-x-0 ${selectedConversation ? "translate-x-0" : "translate-x-full"}`}>
+          {selectedConversation ? (
+            <>
+              <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-3 py-2.5 md:px-5 md:py-3">
+                <button
+                  type="button"
+                  className="-ml-1 rounded-lg p-2 text-slate-600 hover:bg-slate-100 md:hidden"
+                  onClick={() => setSelectedConversation(null)}
+                  aria-label="Voltar para conversas"
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                </button>
+                <ContactAvatar
+                  size="sm"
+                  name={selectedLead.name}
+                  seed={selectedConversation.lead_id || selectedConversation.id}
+                  channel={selectedConversation.channel}
+                />
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate text-sm font-semibold text-slate-900 md:text-base">{formatPhone(selectedLead.name)}</h2>
+                  <div className="flex min-w-0 items-center gap-3 text-xs text-slate-500">
+                    {selectedLead.phone && (
+                      <span className="flex min-w-0 items-center gap-1">
+                        <Phone className="h-3 w-3 flex-shrink-0" />
+                        <span className="truncate">{formatPhone(selectedLead.phone)}</span>
+                      </span>
                     )}
-                    
-                    {selectedConversation.assigned_to === user?.id && selectedConversation.status === "active" && (
-                      <Button
-                        onClick={() => handleCloseConversation(selectedConversation.id)}
-                        variant="outline"
-                        className="border-red-300 text-red-600 hover:bg-red-50"
-                      >
-                        <X className="w-4 h-4 mr-2" />
-                        Encerrar
-                      </Button>
-                    )}
-                    
-                    {selectedConversation.status === "closed" && (
-                      <Button
-                        onClick={() => handleReopenConversation(selectedConversation.id)}
-                        className="bg-blue-600 hover:bg-blue-700 text-white"
-                      >
-                        Reabrir
-                      </Button>
+                    {selectedLead.email && (
+                      <span className="hidden min-w-0 items-center gap-1 xl:flex">
+                        <Mail className="h-3 w-3 flex-shrink-0" />
+                        <span className="truncate">{selectedLead.email}</span>
+                      </span>
                     )}
                   </div>
                 </div>
-              </div>
 
-              {/* Messages */}
-              <div 
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  {!selectedConversation.assigned_to && (
+                    <Button
+                      size="sm"
+                      onClick={() => handleAssignToMe(selectedConversation.id)}
+                      className="bg-emerald-600 text-white hover:bg-emerald-700"
+                      title="Assumir atendimento"
+                    >
+                      <UserCheck className="mr-1.5 h-4 w-4" />
+                      Assumir
+                    </Button>
+                  )}
+
+                  {selectedConversation.assigned_to === user?.id && selectedConversation.status === "active" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleCloseConversation(selectedConversation.id)}
+                      className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                      title="Encerrar atendimento"
+                    >
+                      <X className="mr-1.5 h-4 w-4" />
+                      Encerrar
+                    </Button>
+                  )}
+
+                  {selectedConversation.status === "closed" && (
+                    <Button
+                      size="sm"
+                      onClick={() => handleReopenConversation(selectedConversation.id)}
+                      className="bg-blue-600 text-white hover:bg-blue-700"
+                      title="Reabrir atendimento"
+                    >
+                      <RotateCcw className="mr-1.5 h-4 w-4" />
+                      Reabrir
+                    </Button>
+                  )}
+                </div>
+              </header>
+
+              <div
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
-                className="flex-1 overflow-y-auto p-4 space-y-4"
+                className="flex-1 space-y-1.5 overflow-y-auto px-3 py-4 md:px-6"
               >
                 {loadingMessages ? (
                   <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-500 border-t-transparent" />
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
                   </div>
+                ) : messages.length === 0 ? (
+                  <div className="py-12 text-center text-sm text-slate-400">Nenhuma mensagem nesta conversa ainda.</div>
                 ) : (
-                messages.map((msg) => {
-                  const isFromConsultant = msg.sender_type === "consultant";
-                  const isFromMe = msg.sender_id === user?.id;
-                  
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex ${isFromConsultant ? "justify-end" : "justify-start"}`}
-                    >
-                      <div className={`max-w-[70%] ${isFromConsultant ? "order-2" : "order-1"}`}>
-                        <div className={`rounded-2xl px-4 py-2 ${
-                          isFromConsultant
-                            ? isFromMe
-                              ? "bg-blue-500 text-white"
-                              : "bg-purple-500 text-white"
-                            : "bg-white text-gray-900 border border-gray-200"
-                        }`}>
-                          {!isFromMe && (
-                            <p className="text-xs opacity-75 mb-1">
-                              {isFromConsultant ? msg.sender_name : getLeadInfo(selectedConversation.lead_id, selectedConversation).name}
-                            </p>
-                          )}
-                          <div className="break-all">{renderMessageContent(msg.content, msg.id)}</div>
-                          <p className={`text-xs mt-1 flex items-center gap-1 ${
-                            isFromConsultant ? "opacity-75" : "text-gray-500"
-                          }`}>
-                            {new Date(msg.created_at).toLocaleTimeString('pt-BR', { 
-                              hour: '2-digit', 
-                              minute: '2-digit' 
-                            })}
-                            {isFromMe && (
-                              msg.read ? <CheckCheck className="w-3 h-3" /> : <Check className="w-3 h-3" />
+                  messages.map((msg, index) => {
+                    const isFromConsultant = msg.sender_type === "consultant";
+                    const isFromMe = msg.sender_id === user?.id;
+                    const showDay = index === 0 || dayKey(messages[index - 1].created_at) !== dayKey(msg.created_at);
+                    const bubbleClass = isFromConsultant
+                      ? isFromMe
+                        ? "bg-blue-600 text-white rounded-br-md"
+                        : "bg-violet-600 text-white rounded-br-md"
+                      : "bg-white text-slate-900 ring-1 ring-slate-200 rounded-bl-md";
+
+                    return (
+                      <React.Fragment key={msg.id}>
+                        {showDay && (
+                          <div className="flex justify-center py-2">
+                            <span className="rounded-full bg-white px-3 py-1 text-[11px] font-medium text-slate-500 shadow-sm ring-1 ring-slate-200">
+                              {formatDayLabel(msg.created_at)}
+                            </span>
+                          </div>
+                        )}
+                        <div className={`flex ${isFromConsultant ? "justify-end" : "justify-start"}`}>
+                          <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 shadow-sm md:max-w-[70%] ${bubbleClass}`}>
+                            {isFromConsultant && !isFromMe && (
+                              <p className="mb-0.5 text-[11px] font-semibold text-white/80">{msg.sender_name}</p>
                             )}
-                          </p>
+                            <div className="whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere]">
+                              {renderMessageContent(msg.content, msg.id)}
+                            </div>
+                            <p className={`mt-1 flex items-center justify-end gap-1 text-[10px] tabular-nums ${isFromConsultant ? "text-white/70" : "text-slate-400"}`}>
+                              {toDate(msg.created_at)?.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                              {isFromMe && (msg.read ? <CheckCheck className="h-3 w-3" /> : <Check className="h-3 w-3" />)}
+                            </p>
+                          </div>
                         </div>
-                    </div>
-                  </div>
-                );
-                }) ) }
+                      </React.Fragment>
+                    );
+                  })
+                )}
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Message Input */}
-              {(selectedConversation.status === "active" || !selectedConversation.status) && (
-                <div className="bg-white border-t border-gray-200 p-4">
-                  <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
-                    {/* File Upload */}
+              {isConversationOpen && selectedConversation.assigned_to && selectedConversation.assigned_to !== user?.id && (
+                <div className="flex items-start gap-2 border-t border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+                  <Lock className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+                  <p>
+                    <span className="font-medium">
+                      Em atendimento por {selectedConversation.assigned_to_name || "outro consultor"}.
+                    </span>{" "}
+                    Você pode visualizar as mensagens, mas não pode responder.
+                  </p>
+                </div>
+              )}
+
+              {isConversationOpen && (
+                <div className="border-t border-slate-200 bg-white px-3 py-2.5 md:px-4 md:py-3">
+                  <form onSubmit={handleSendMessage} className="flex items-center gap-1 md:gap-2">
                     <input
-                        type="file"
-                        ref={fileInputRef}
-                        className="hidden"
-                        onChange={handleFileSelect}
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      onChange={handleFileSelect}
                     />
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="text-gray-500 hover:text-blue-600"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={loading}
+                    <button
+                      type="button"
+                      className="rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-blue-600 disabled:opacity-50"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={loading}
+                      title="Anexar arquivo"
+                      aria-label="Anexar arquivo"
                     >
-                        <Paperclip className="w-5 h-5" />
-                    </Button>
-
-                    {/* Voice Recording */}
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className={`${isRecording ? "text-red-600 animate-pulse" : "text-gray-500 hover:text-red-600"}`}
-                        onClick={isRecording ? stopRecording : startRecording}
-                        disabled={loading}
+                      <Paperclip className="h-5 w-5" />
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded-full p-2 transition-colors disabled:opacity-50 ${
+                        isRecording ? "animate-pulse bg-red-50 text-red-600" : "text-slate-500 hover:bg-slate-100 hover:text-red-600"
+                      }`}
+                      onClick={isRecording ? stopRecording : startRecording}
+                      disabled={loading}
+                      title={isRecording ? "Parar gravação" : "Gravar áudio"}
+                      aria-label={isRecording ? "Parar gravação" : "Gravar áudio"}
                     >
-                        {isRecording ? <StopCircle className="w-6 h-6" /> : <Mic className="w-5 h-5" />}
-                    </Button>
-
+                      {isRecording ? <StopCircle className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+                    </button>
                     <Input
                       type="text"
                       placeholder={isRecording ? "Gravando áudio..." : "Digite sua mensagem..."}
                       value={messageText}
                       onChange={(e) => setMessageText(e.target.value)}
                       disabled={loading || isRecording}
-                      className="flex-1"
+                      className="h-10 flex-1 rounded-full border-slate-200 bg-slate-50 px-4 focus-visible:bg-white"
                     />
-                    <Button 
-                      type="submit" 
+                    <button
+                      type="submit"
                       disabled={loading || !messageText.trim() || isRecording}
-                      className="btn-primary"
+                      className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-white transition-colors hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400"
+                      aria-label="Enviar mensagem"
                     >
-                      <Send className="w-5 h-5" />
-                    </Button>
+                      <Send className="h-4 w-4" />
+                    </button>
                   </form>
                   {!selectedConversation.assigned_to && (
-                    <p className="text-xs text-gray-500 mt-2">
-                      💡 Esta conversa não está atribuída. Assuma o atendimento para garantir que você é o responsável.
+                    <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
+                      <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
+                      Esta conversa não está atribuída. Assuma o atendimento para ser o responsável.
                     </p>
                   )}
                 </div>
               )}
-              
-              {/* Debug Info for Assignment Mismatch */}
-              {(selectedConversation.status === "active" || !selectedConversation.status) && selectedConversation.assigned_to && String(selectedConversation.assigned_to) !== String(user?.id) && (
-                 <div className="bg-red-50 border-t border-red-200 p-4 text-center">
-                    <p className="text-red-800 font-medium">Debug: ID Mismatch</p>
-                    <p className="text-xs text-red-600">
-                        Conversation Assigned To: {selectedConversation.assigned_to} <br/>
-                        Current User ID: {user?.id}
-                    </p>
-                 </div>
-              )}
-              
+
               {selectedConversation.status === "closed" && (
-                <div className="bg-gray-100 border-t border-gray-200 p-4 text-center text-gray-600">
+                <div className="border-t border-slate-200 bg-white px-4 py-3 text-center text-sm text-slate-500">
                   Atendimento encerrado. Reabra para continuar conversando.
                 </div>
               )}
-              
-              {selectedConversation.status === "active" && selectedConversation.assigned_to && selectedConversation.assigned_to !== user?.id && (
-                <div className="bg-yellow-50 border-t border-yellow-200 p-4 text-center">
-                  <AlertCircle className="w-5 h-5 inline-block mr-2 text-yellow-600" />
-                  <span className="text-yellow-800 font-medium">
-                    Este atendimento está sendo realizado por {selectedConversation.assigned_to_name || "outro consultor"}
-                  </span>
-                  <p className="text-sm text-yellow-700 mt-1">
-                    Você pode visualizar as mensagens mas não pode responder.
-                  </p>
-                </div>
-              )}
-              </>
+            </>
           ) : (
-            <div className="hidden md:flex flex-1 items-center justify-center text-gray-400 flex-col">
-              <MessageSquare className="w-16 h-16 mb-4 opacity-20" />
-              <p>Selecione uma conversa para iniciar o atendimento</p>
+            <div className="hidden flex-1 flex-col items-center justify-center p-8 text-center md:flex">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                <MessageSquare className="h-8 w-8" />
+              </div>
+              <h3 className="mt-4 text-base text-slate-900">Nenhuma conversa selecionada</h3>
+              <p className="mt-1 max-w-xs text-sm text-slate-500">
+                Escolha uma conversa na lista para ver as mensagens e responder.
+              </p>
             </div>
           )}
-        </div>
-      </div>
+        </section>
       </div>
     </Layout>
   );
 }
+

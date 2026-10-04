@@ -2,12 +2,74 @@ import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
 import * as XLSX from "xlsx";
-import { Plus, Edit, Trash2, Filter, UserPlus, ChevronLeft, ChevronRight, X, Download } from "lucide-react";
+import {
+  Plus, Pencil, Trash2, UserPlus, ChevronLeft, ChevronRight, X, Download, Search, Eraser, Users, Phone,
+} from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import ContactAvatar from "../components/ContactAvatar";
+import { CHANNEL_META, formatPhone } from "../lib/contact";
+
+const LEAD_STATUS = {
+  new: { label: "Novo", plural: "Novos", className: "bg-blue-50 text-blue-700 ring-blue-600/20" },
+  contacted: { label: "Contatado", plural: "Contatados", className: "bg-amber-50 text-amber-700 ring-amber-600/20" },
+  hot: { label: "Quente", plural: "Quentes", className: "bg-red-50 text-red-700 ring-red-600/20" },
+  cold: { label: "Frio", plural: "Frios", className: "bg-slate-50 text-slate-600 ring-slate-500/20" },
+  converted: { label: "Convertido", plural: "Convertidos", className: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" },
+};
+
+const STATUS_FILTERS = ["new", "contacted", "hot", "cold"];
+
+const EMPTY_FORM = { name: "", phone: "", email: "", source: "whatsapp", status: "new", notes: "" };
+
+const SEARCH_DEBOUNCE_MS = 400;
+
+const formatDate = (value) => {
+  const d = value ? new Date(value) : null;
+  return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString("pt-BR") : "";
+};
+
+function StatusBadge({ status }) {
+  const meta = LEAD_STATUS[status];
+  return (
+    <span className={`status-badge whitespace-nowrap ${meta ? meta.className : "bg-slate-50 text-slate-600 ring-slate-500/20"}`}>
+      {meta ? meta.label : status || "—"}
+    </span>
+  );
+}
+
+function SourceLabel({ source }) {
+  const meta = CHANNEL_META[source];
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-slate-600">
+      <span className={`h-2 w-2 rounded-full ${meta ? meta.dot : "bg-slate-300"}`} />
+      {meta ? meta.label : source || "—"}
+    </span>
+  );
+}
+
+function IconAction({ onClick, title, tone = "default", children }) {
+  const tones = {
+    default: "text-slate-400 hover:bg-slate-100 hover:text-slate-700",
+    success: "text-slate-400 hover:bg-emerald-50 hover:text-emerald-600",
+    danger: "text-slate-400 hover:bg-red-50 hover:text-red-600",
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className={`rounded-lg p-2 transition-colors ${tones[tone]}`}
+    >
+      {children}
+    </button>
+  );
+}
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState([]);
@@ -18,17 +80,11 @@ export default function LeadsPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [filterSource, setFilterSource] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalLeads, setTotalLeads] = useState(0);
   const pageSize = 50;
-  const [formData, setFormData] = useState({ 
-    name: "", 
-    phone: "", 
-    email: "", 
-    source: "whatsapp", 
-    status: "new", 
-    notes: "" 
-  });
+  const [formData, setFormData] = useState(EMPTY_FORM);
   const [convertData, setConvertData] = useState({
     birthdate: "",
     address: ""
@@ -36,19 +92,31 @@ export default function LeadsPage() {
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [leadToDelete, setLeadToDelete] = useState(null);
   const [loadingLeads, setLoadingLeads] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (term === appliedSearch) return;
+    const timer = setTimeout(() => setAppliedSearch(term), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchTerm, appliedSearch]);
 
   useEffect(() => {
     loadLeads(1);
-  }, [filterStatus, filterSource]);
+  }, [filterStatus, filterSource, appliedSearch]);
+
+  const buildParams = (extra) => {
+    const params = { ...extra };
+    if (filterStatus) params.status = filterStatus;
+    if (filterSource) params.source = filterSource;
+    if (appliedSearch) params.search = appliedSearch;
+    return params;
+  };
 
   const loadLeads = async (page = currentPage) => {
     setLoadingLeads(true);
     try {
-      const params = { page, page_size: pageSize };
-      if (filterStatus) params.status = filterStatus;
-      if (filterSource) params.source = filterSource;
-      if (searchTerm.trim()) params.search = searchTerm.trim();
-      const response = await api.get("/leads", { params });
+      const response = await api.get("/leads", { params: buildParams({ page, page_size: pageSize }) });
       const data = response.data?.items ?? (Array.isArray(response.data) ? response.data : []);
       const total = response.data?.total ?? data.length;
       setLeads(data);
@@ -58,35 +126,32 @@ export default function LeadsPage() {
       toast.error("Erro ao carregar leads");
     } finally {
       setLoadingLeads(false);
+      setLoaded(true);
     }
   };
 
   const exportToExcel = async () => {
     try {
-      const params = { page: 1, page_size: 5000 };
-      if (filterStatus) params.status = filterStatus;
-      if (filterSource) params.source = filterSource;
-      if (searchTerm.trim()) params.search = searchTerm.trim();
-      const response = await api.get("/leads", { params });
+      const response = await api.get("/leads", { params: buildParams({ page: 1, page_size: 5000 }) });
       const data = response.data?.items ?? (Array.isArray(response.data) ? response.data : []);
       if (!data.length) {
         toast.error("Nenhum lead para exportar");
         return;
       }
-    const rows = data.map((l) => ({
-      Nome: l.name || "",
-      Telefone: l.phone || "",
-      Email: l.email || "",
-      Origem: l.source || "",
-      Status: l.status || "",
-      Observações: l.notes || "",
-      Data: l.created_at ? new Date(l.created_at).toLocaleString("pt-BR") : "",
-    }));
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Leads");
-    XLSX.writeFile(wb, `leads_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    toast.success("Planilha exportada!");
+      const rows = data.map((l) => ({
+        Nome: l.name || "",
+        Telefone: l.phone || "",
+        Email: l.email || "",
+        Origem: l.source || "",
+        Status: l.status || "",
+        Observações: l.notes || "",
+        Data: l.created_at ? new Date(l.created_at).toLocaleString("pt-BR") : "",
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Leads");
+      XLSX.writeFile(wb, `leads_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success("Planilha exportada!");
     } catch (e) {
       toast.error("Erro ao exportar");
     }
@@ -105,7 +170,7 @@ export default function LeadsPage() {
       
       setShowDialog(false);
       setEditingId(null);
-      setFormData({ name: "", phone: "", email: "", source: "whatsapp", status: "new", notes: "" });
+      setFormData(EMPTY_FORM);
       loadLeads();
     } catch (error) {
       toast.error(editingId ? "Erro ao atualizar lead" : "Erro ao cadastrar lead");
@@ -125,7 +190,7 @@ export default function LeadsPage() {
     setShowDialog(true);
   };
 
-  const handleDelete = async (lead) => {
+  const handleDelete = (lead) => {
     setLeadToDelete(lead);
     setDeleteDialog(true);
   };
@@ -157,7 +222,9 @@ export default function LeadsPage() {
   const handleConvertSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.post(`/leads/${convertingLead.id}/convert-to-patient?birthdate=${convertData.birthdate}&address=${convertData.address || ""}`);
+      await api.post(`/leads/${convertingLead.id}/convert-to-patient`, null, {
+        params: { birthdate: convertData.birthdate, address: convertData.address || "" },
+      });
       toast.success("Lead convertido em paciente com sucesso!");
       setShowConvertDialog(false);
       setConvertingLead(null);
@@ -170,32 +237,26 @@ export default function LeadsPage() {
   const handleCloseDialog = () => {
     setShowDialog(false);
     setEditingId(null);
-    setFormData({ name: "", phone: "", email: "", source: "whatsapp", status: "new", notes: "" });
+    setFormData(EMPTY_FORM);
   };
 
-  const getStatusBadge = (status) => {
-    const styles = {
-      new: "bg-blue-100 text-blue-700",
-      contacted: "bg-yellow-100 text-yellow-700",
-      hot: "bg-red-100 text-red-700",
-      cold: "bg-gray-100 text-gray-700",
-      converted: "bg-green-100 text-green-700"
-    };
-    const labels = {
-      new: "Novo",
-      contacted: "Contatado",
-      hot: "Quente",
-      cold: "Frio",
-      converted: "Convertido"
-    };
-    return <span className={`status-badge ${styles[status]}`}>{labels[status]}</span>;
+  const openNewLead = () => {
+    setEditingId(null);
+    setFormData(EMPTY_FORM);
+    setShowDialog(true);
   };
 
-  // Busca e filtros já aplicados no servidor; lista atual é a página atual
-  const currentLeads = leads;
   const totalPages = Math.max(1, Math.ceil(totalLeads / pageSize));
+  const hasFilters = Boolean(appliedSearch || filterStatus || filterSource);
+  const rangeStart = totalLeads === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(currentPage * pageSize, totalLeads);
 
-  const onSearch = () => loadLeads(1);
+  const clearFilters = () => {
+    setSearchTerm("");
+    setAppliedSearch("");
+    setFilterStatus("");
+    setFilterSource("");
+  };
 
   const paginate = (pageNumber) => {
     if (pageNumber < 1 || pageNumber > totalPages) return;
@@ -214,193 +275,296 @@ export default function LeadsPage() {
     }
   };
 
+  const renderActions = (lead) => (
+    <div className="flex items-center justify-end gap-0.5">
+      {lead.status !== "converted" && (
+        <IconAction onClick={() => handleConvertToPatient(lead)} title="Converter em paciente" tone="success">
+          <UserPlus className="h-4 w-4" />
+        </IconAction>
+      )}
+      <IconAction onClick={() => handleEdit(lead)} title="Editar lead">
+        <Pencil className="h-4 w-4" />
+      </IconAction>
+      <IconAction onClick={() => handleDelete(lead)} title="Excluir lead" tone="danger">
+        <Trash2 className="h-4 w-4" />
+      </IconAction>
+    </div>
+  );
+
+  const showSkeleton = loadingLeads && (!loaded || leads.length === 0);
+
   return (
     <Layout>
       <div>
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900" data-testid="leads-page-title">Leads</h1>
-          <div className="flex gap-3">
-            <Button onClick={exportToExcel} variant="outline" className="btn-secondary">
-              <Download className="w-5 h-5 mr-2" />
-              Exportar Excel
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-2xl text-slate-900 md:text-3xl" data-testid="leads-page-title">Leads</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {loaded
+                ? `${totalLeads.toLocaleString("pt-BR")} ${totalLeads === 1 ? "lead" : "leads"}${hasFilters ? (totalLeads === 1 ? " encontrado" : " encontrados") : ""}`
+                : "Carregando..."}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={exportToExcel} className="gap-2 border-slate-200" title="Exportar Excel">
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">Exportar</span>
             </Button>
-            <Button onClick={handleCleanupDuplicates} variant="outline" className="btn-secondary">
-              <Trash2 className="w-5 h-5 mr-2" />
-              Limpar Duplicados
+            <Button variant="outline" onClick={handleCleanupDuplicates} className="gap-2 border-slate-200" title="Remover leads que já são pacientes">
+              <Eraser className="h-4 w-4" />
+              <span className="hidden sm:inline">Limpar duplicados</span>
             </Button>
-            <Button onClick={() => setShowDialog(true)} className="btn-primary">
-              <Plus className="w-5 h-5 mr-2" />
-              Adicionar Lead
+            <Button onClick={openNewLead} className="ml-auto gap-2 sm:ml-0">
+              <Plus className="h-4 w-4" />
+              Novo lead
             </Button>
           </div>
         </div>
 
-        {/* Barra de Pesquisa e Filtros */}
-        <div className="bg-white rounded-2xl p-6 shadow-lg mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="md:col-span-1">
-              <Label className="text-sm font-semibold mb-2 block">Pesquisar</Label>
-              <Input
-                placeholder="Nome, telefone ou email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), onSearch())}
-                className="w-full"
-              />
-            </div>
-            <div>
-              <Label className="text-sm font-semibold mb-2 block">Status</Label>
-              <select 
-                className="input-field" 
-                value={filterStatus} 
-                onChange={(e) => setFilterStatus(e.target.value)}
-              >
-                <option value="">Todos</option>
-                <option value="new">Novos</option>
-                <option value="contacted">Contatados</option>
-                <option value="hot">Quentes</option>
-                <option value="cold">Frios</option>
-              </select>
-            </div>
-            <div>
-              <Label className="text-sm font-semibold mb-2 block">Origem</Label>
-              <select 
-                className="input-field" 
-                value={filterSource} 
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          {/* Busca e filtros */}
+          <div className="space-y-3 border-b border-slate-200 p-3 md:p-4">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar por nome, telefone ou e-mail"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      setAppliedSearch(searchTerm.trim());
+                    }
+                  }}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-9 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => { setSearchTerm(""); setAppliedSearch(""); }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-600"
+                    aria-label="Limpar busca"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              <select
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 sm:w-48"
+                value={filterSource}
                 onChange={(e) => setFilterSource(e.target.value)}
+                aria-label="Origem"
               >
-                <option value="">Todas</option>
+                <option value="">Todas as origens</option>
                 <option value="whatsapp">WhatsApp</option>
                 <option value="instagram">Instagram</option>
                 <option value="messenger">Messenger</option>
               </select>
             </div>
-          </div>
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Button onClick={onSearch} variant="secondary" className="btn-secondary text-sm">
-              Buscar
-            </Button>
-            {(searchTerm || filterStatus || filterSource) && (
-              <>
-                <Button
-                  onClick={() => {
-                    setSearchTerm("");
-                    setFilterStatus("");
-                    setFilterSource("");
-                  }}
-                  variant="outline"
-                  className="btn-secondary text-sm"
+
+            <div className="flex items-center gap-3">
+              <div className="-mx-1 flex flex-1 gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {["", ...STATUS_FILTERS].map((status) => {
+                  const active = filterStatus === status;
+                  return (
+                    <button
+                      key={status || "all"}
+                      type="button"
+                      onClick={() => setFilterStatus(status)}
+                      className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                        active
+                          ? "bg-slate-900 text-white"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      {status ? LEAD_STATUS[status].plural : "Todos"}
+                    </button>
+                  );
+                })}
+              </div>
+              {hasFilters && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="flex flex-shrink-0 items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800"
                 >
-                  <X className="w-4 h-4 mr-2" />
-                  Limpar Filtros
-                </Button>
-                <span className="text-sm text-gray-600">
-                  {totalLeads} resultado(s)
-                </span>
+                  <X className="h-3.5 w-3.5" />
+                  Limpar filtros
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Lista */}
+          <div className={`relative transition-opacity ${loadingLeads && !showSkeleton ? "opacity-60" : ""}`}>
+            {showSkeleton ? (
+              <ul aria-hidden="true">
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <li key={i} className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-0">
+                    <div className="h-9 w-9 animate-pulse rounded-full bg-slate-100" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 w-1/3 animate-pulse rounded bg-slate-100" />
+                      <div className="h-2.5 w-1/5 animate-pulse rounded bg-slate-100" />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : leads.length === 0 ? (
+              <div className="flex flex-col items-center px-6 py-14 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                  <Users className="h-6 w-6" />
+                </div>
+                <p className="mt-3 text-sm font-medium text-slate-700">
+                  {hasFilters ? "Nenhum lead encontrado" : "Nenhum lead cadastrado"}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {hasFilters ? "Ajuste a busca ou limpe os filtros." : "Os novos contatos aparecem aqui."}
+                </p>
+                {hasFilters ? (
+                  <Button variant="outline" size="sm" onClick={clearFilters} className="mt-4 border-slate-200">
+                    Limpar filtros
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={openNewLead} className="mt-4 gap-2">
+                    <Plus className="h-4 w-4" />
+                    Novo lead
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <>
+                {/* Tabela (desktop) */}
+                <table className="hidden w-full text-sm md:table">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/60 text-left text-xs font-medium text-slate-500">
+                      <th className="w-full px-4 py-2.5 font-medium">Lead</th>
+                      <th className="px-4 py-2.5 font-medium">Telefone</th>
+                      <th className="px-4 py-2.5 font-medium">Origem</th>
+                      <th className="px-4 py-2.5 font-medium">Status</th>
+                      <th className="hidden px-4 py-2.5 font-medium xl:table-cell">Cadastro</th>
+                      <th className="px-4 py-2.5"><span className="sr-only">Ações</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leads.map((lead) => (
+                      <tr key={lead.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
+                        <td className="w-full max-w-0 px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <ContactAvatar size="sm" name={lead.name} seed={lead.id} />
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-slate-900">{lead.name}</p>
+                              {(lead.email || lead.notes) && (
+                                <p className="truncate text-xs text-slate-500" title={lead.notes || undefined}>
+                                  {lead.email || lead.notes}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-600">{formatPhone(lead.phone)}</td>
+                        <td className="px-4 py-3"><SourceLabel source={lead.source} /></td>
+                        <td className="px-4 py-3"><StatusBadge status={lead.status} /></td>
+                        <td className="hidden whitespace-nowrap px-4 py-3 tabular-nums text-slate-500 xl:table-cell">{formatDate(lead.created_at)}</td>
+                        <td className="w-px whitespace-nowrap px-2 py-3">{renderActions(lead)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Cards (mobile) */}
+                <ul className="md:hidden">
+                  {leads.map((lead) => (
+                    <li key={lead.id} className="border-b border-slate-100 px-3 py-3 last:border-0">
+                      <div className="flex items-start gap-3">
+                        <ContactAvatar size="sm" name={lead.name} seed={lead.id} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="truncate text-sm font-medium text-slate-900">{lead.name}</p>
+                            <StatusBadge status={lead.status} />
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                            <span className="inline-flex items-center gap-1 tabular-nums">
+                              <Phone className="h-3 w-3" />
+                              {formatPhone(lead.phone)}
+                            </span>
+                            <SourceLabel source={lead.source} />
+                          </div>
+                          {lead.email && <p className="mt-1 truncate text-xs text-slate-500">{lead.email}</p>}
+                          {lead.notes && <p className="mt-1 line-clamp-2 text-xs text-slate-400">{lead.notes}</p>}
+                        </div>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between pl-12">
+                        <span className="text-[11px] tabular-nums text-slate-400">{formatDate(lead.created_at)}</span>
+                        {renderActions(lead)}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               </>
             )}
           </div>
-        </div>
 
-        {loadingLeads ? (
-          <div className="flex items-center justify-center min-h-[300px]">
-            <div className="animate-spin rounded-full h-12 w-12 border-2 border-blue-500 border-t-transparent" />
-          </div>
-        ) : (
-        <>
-        <div className="grid gap-6">
-          {currentLeads.map((lead) => (
-            <div key={lead.id} className="bg-white rounded-2xl p-6 shadow-lg">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-xl font-bold text-gray-900">{lead.name}</h3>
-                    {getStatusBadge(lead.status)}
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-gray-600">{lead.phone}</p>
-                    {lead.email && <p className="text-gray-600">{lead.email}</p>}
-                    <p className="text-sm text-gray-500">Origem: {lead.source}</p>
-                    {lead.notes && <p className="text-gray-600 mt-2">{lead.notes}</p>}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  {lead.status !== "converted" && (
-                    <button
-                      onClick={() => handleConvertToPatient(lead)}
-                      className="text-green-500 hover:text-green-700 p-2"
-                      title="Converter em Paciente"
-                    >
-                      <UserPlus className="w-5 h-5" />
-                    </button>
-                  )}
+          {/* Paginação */}
+          {loaded && totalLeads > 0 && (
+            <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-3 py-2.5 text-xs text-slate-500 md:px-4">
+              <span className="tabular-nums">
+                {rangeStart}–{rangeEnd} de {totalLeads.toLocaleString("pt-BR")}
+              </span>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
                   <button
-                    onClick={() => handleEdit(lead)}
-                    className="text-blue-500 hover:text-blue-700"
+                    type="button"
+                    onClick={() => paginate(currentPage - 1)}
+                    disabled={currentPage === 1 || loadingLeads}
+                    className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                    aria-label="Página anterior"
                   >
-                    <Edit className="w-5 h-5" />
+                    <ChevronLeft className="h-4 w-4" />
                   </button>
+                  <span className="px-1 tabular-nums">Página {currentPage} de {totalPages}</span>
                   <button
-                    onClick={() => handleDelete(lead)}
-                    className="text-red-500 hover:text-red-700"
+                    type="button"
+                    onClick={() => paginate(currentPage + 1)}
+                    disabled={currentPage === totalPages || loadingLeads}
+                    className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+                    aria-label="Próxima página"
                   >
-                    <Trash2 className="w-5 h-5" />
+                    <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
-              </div>
+              )}
             </div>
-          ))}
+          )}
         </div>
-
-        {/* Paginação */}
-        {totalPages > 1 && (
-          <div className="flex justify-center items-center gap-4 mt-8">
-            <Button
-              onClick={() => paginate(currentPage - 1)}
-              disabled={currentPage === 1}
-              variant="outline"
-              className="btn-secondary"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </Button>
-            <span className="text-gray-700">
-              Página {currentPage} de {totalPages} ({totalLeads} lead{totalLeads !== 1 ? "s" : ""})
-            </span>
-            <Button
-              onClick={() => paginate(currentPage + 1)}
-              disabled={currentPage === totalPages}
-              variant="outline"
-              className="btn-secondary"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </Button>
-          </div>
-        )}
-        </>
-        )}
 
         {/* Modal de Editar/Adicionar Lead */}
         <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>{editingId ? "Editar Lead" : "Adicionar Lead"}</DialogTitle>
+              <DialogTitle>{editingId ? "Editar lead" : "Novo lead"}</DialogTitle>
+              <DialogDescription>
+                {editingId ? "Atualize os dados do contato." : "Cadastre um novo contato interessado."}
+              </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label>Nome *</Label>
-                <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="lead-name">Nome *</Label>
+                <Input id="lead-name" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
               </div>
-              <div>
-                <Label>Telefone *</Label>
-                <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
+              <div className="space-y-1.5">
+                <Label htmlFor="lead-phone">Telefone *</Label>
+                <Input id="lead-phone" type="tel" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
               </div>
-              <div>
-                <Label>Email</Label>
-                <Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
+              <div className="space-y-1.5">
+                <Label htmlFor="lead-email">E-mail</Label>
+                <Input id="lead-email" type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
               </div>
-              <div>
-                <Label>Origem</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="lead-source">Origem</Label>
                 <select
+                  id="lead-source"
                   className="input-field"
                   value={formData.source}
                   onChange={(e) => setFormData({...formData, source: e.target.value})}
@@ -410,84 +574,90 @@ export default function LeadsPage() {
                   <option value="messenger">Messenger</option>
                 </select>
               </div>
-              <div>
-                <Label>Status</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="lead-status">Status</Label>
                 <select
+                  id="lead-status"
                   className="input-field"
                   value={formData.status}
                   onChange={(e) => setFormData({...formData, status: e.target.value})}
                 >
-                  <option value="new">Novo</option>
-                  <option value="contacted">Contatado</option>
-                  <option value="hot">Quente</option>
-                  <option value="cold">Frio</option>
-                  <option value="converted">Convertido</option>
+                  {Object.entries(LEAD_STATUS).map(([value, { label }]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
                 </select>
               </div>
-              <div>
-                <Label>Observações</Label>
-                <Input value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} />
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="lead-notes">Observações</Label>
+                <Textarea id="lead-notes" rows={3} value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} />
               </div>
-              <Button type="submit" className="w-full btn-primary">
-                {editingId ? "Atualizar" : "Cadastrar"}
-              </Button>
+              <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
+                <Button type="button" variant="outline" onClick={handleCloseDialog}>Cancelar</Button>
+                <Button type="submit">{editingId ? "Salvar alterações" : "Cadastrar lead"}</Button>
+              </div>
             </form>
           </DialogContent>
         </Dialog>
 
         {/* Modal de Converter Lead em Paciente */}
         <Dialog open={showConvertDialog} onOpenChange={setShowConvertDialog}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Converter Lead em Paciente</DialogTitle>
+              <DialogTitle>Converter em paciente</DialogTitle>
+              <DialogDescription>Complete os dados para criar o cadastro do paciente.</DialogDescription>
             </DialogHeader>
             {convertingLead && (
-              <div className="mb-4 p-4 bg-blue-50 rounded-lg">
-                <p className="font-semibold">{convertingLead.name}</p>
-                <p className="text-sm text-gray-600">{convertingLead.phone}</p>
-                <p className="text-sm text-gray-600">{convertingLead.email}</p>
+              <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <ContactAvatar size="sm" name={convertingLead.name} seed={convertingLead.id} />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-900">{convertingLead.name}</p>
+                  <p className="truncate text-xs text-slate-500">
+                    {[formatPhone(convertingLead.phone), convertingLead.email].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
               </div>
             )}
             <form onSubmit={handleConvertSubmit} className="space-y-4">
-              <div>
-                <Label>Data de Nascimento *</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="convert-birthdate">Data de nascimento *</Label>
                 <Input 
+                  id="convert-birthdate"
                   type="date" 
                   value={convertData.birthdate} 
                   onChange={(e) => setConvertData({...convertData, birthdate: e.target.value})} 
                   required 
                 />
               </div>
-              <div>
-                <Label>Endereço (opcional)</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="convert-address">Endereço (opcional)</Label>
                 <Input 
+                  id="convert-address"
                   value={convertData.address} 
                   onChange={(e) => setConvertData({...convertData, address: e.target.value})} 
-                  placeholder="Rua, Número, Cidade, Estado"
+                  placeholder="Rua, número, cidade, estado"
                 />
               </div>
-              <Button type="submit" className="w-full btn-primary">
-                Converter em Paciente
-              </Button>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setShowConvertDialog(false)}>Cancelar</Button>
+                <Button type="submit" className="gap-2 bg-emerald-600 hover:bg-emerald-700">
+                  <UserPlus className="h-4 w-4" />
+                  Converter
+                </Button>
+              </div>
             </form>
           </DialogContent>
         </Dialog>
 
-        {/* Delete Confirmation Dialog */}
+        {/* Confirmação de exclusão */}
         <Dialog open={deleteDialog} onOpenChange={setDeleteDialog}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Confirmar Exclusão</DialogTitle>
+              <DialogTitle>Excluir lead</DialogTitle>
+              <DialogDescription>
+                Tem certeza que deseja excluir <strong className="text-slate-900">{leadToDelete?.name}</strong>? Esta ação não pode ser desfeita.
+              </DialogDescription>
             </DialogHeader>
-            <div className="py-4">
-              <p className="text-gray-700">
-                Tem certeza que deseja excluir o lead <strong>{leadToDelete?.name}</strong>?
-              </p>
-              <p className="text-sm text-gray-500 mt-2">
-                Esta ação não pode ser desfeita.
-              </p>
-            </div>
-            <div className="flex gap-3 justify-end">
+            <div className="flex justify-end gap-2 pt-2">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -499,9 +669,9 @@ export default function LeadsPage() {
               </Button>
               <Button
                 onClick={confirmDelete}
-                className="bg-red-600 hover:bg-red-700 text-white"
+                className="bg-red-600 text-white hover:bg-red-700"
               >
-                Excluir Lead
+                Excluir lead
               </Button>
             </div>
           </DialogContent>

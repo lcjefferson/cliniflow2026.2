@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Layout from "../components/Layout";
 import api, { MEDIA_BASE } from "../services/api";
-import { Plus, Edit, Trash2, Settings, ChevronLeft, ChevronRight, CheckCircle, Users, History, MessageSquare, BarChart, ImagePlus, Video, Smile, ChevronDown, X, Eye } from "lucide-react";
+import { Plus, Trash2, ChevronLeft, ChevronRight, CheckCircle, History, MessageSquare, ImagePlus, Video, Smile, ChevronDown, X, Eye, Pencil, Phone, Mail, Megaphone, Zap, Power, CalendarClock, AlertTriangle, Check, CalendarDays } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -90,6 +90,114 @@ function compareFollowUpByContactDate(a, b) {
   return da.localeCompare(db);
 }
 
+const MONTHS_SHORT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+const CONTACT_TYPES = {
+  whatsapp: { label: "WhatsApp", icon: MessageSquare },
+  phone: { label: "Telefone", icon: Phone },
+  email: { label: "E-mail", icon: Mail },
+};
+
+const REASON_BADGES = {
+  comercial: { label: "Comercial", className: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" },
+  informativo: { label: "Informativo", className: "bg-blue-50 text-blue-700 ring-blue-600/20" },
+};
+
+const FOLLOWUP_STATUS = {
+  pending: { label: "Pendente", className: "bg-amber-50 text-amber-700 ring-amber-600/20" },
+  completed: { label: "Concluído", className: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" },
+  cancelled: { label: "Cancelado", className: "bg-red-50 text-red-700 ring-red-600/20" },
+};
+
+const DUE_TONES = {
+  overdue: { block: "bg-red-50 text-red-700 ring-red-200", label: "text-red-600" },
+  today: { block: "bg-amber-50 text-amber-700 ring-amber-200", label: "text-amber-600" },
+  soon: { block: "bg-blue-50 text-blue-700 ring-blue-200", label: "text-blue-600" },
+  later: { block: "bg-slate-50 text-slate-600 ring-slate-200", label: "text-slate-500" },
+  done: { block: "bg-slate-50 text-slate-400 ring-slate-200", label: "text-slate-400" },
+};
+
+// scheduled_date vem como "AAAA-MM-DD"; new Date() leria como UTC e mostraria o dia anterior no Brasil.
+function parseLocalDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value || "");
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+}
+
+function getDueInfo(followUp) {
+  const date = parseLocalDate(followUp.scheduled_date);
+  if (!date) return { day: "—", month: "", label: "Sem data", tone: "later", diff: null };
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.round((date - today) / 86400000);
+  const base = {
+    day: String(date.getDate()).padStart(2, "0"),
+    month: MONTHS_SHORT[date.getMonth()],
+    full: date.toLocaleDateString("pt-BR"),
+    diff,
+  };
+  if (followUp.status === "completed") return { ...base, label: base.full, tone: "done" };
+  if (diff < 0) return { ...base, label: diff === -1 ? "Atrasado há 1 dia" : `Atrasado há ${-diff} dias`, tone: "overdue" };
+  if (diff === 0) return { ...base, label: "Hoje", tone: "today" };
+  if (diff === 1) return { ...base, label: "Amanhã", tone: "soon" };
+  return { ...base, label: `Em ${diff} dias`, tone: diff <= 7 ? "soon" : "later" };
+}
+
+function RingBadge({ className, children }) {
+  return <span className={`status-badge whitespace-nowrap ${className}`}>{children}</span>;
+}
+
+function Pager({ page, totalPages, onChange }) {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-end gap-1 border-t border-slate-200 px-3 py-2.5 text-xs text-slate-500 md:px-4">
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(1, page - 1))}
+        disabled={page === 1}
+        className="rounded-lg p-1.5 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+        aria-label="Página anterior"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+      <span className="px-1 tabular-nums">Página {page} de {totalPages}</span>
+      <button
+        type="button"
+        onClick={() => onChange(Math.min(totalPages, page + 1))}
+        disabled={page === totalPages}
+        className="rounded-lg p-1.5 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
+        aria-label="Próxima página"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+function IconAction({ onClick, title, tone = "default", children }) {
+  const tones = {
+    default: "text-slate-400 hover:bg-slate-100 hover:text-slate-700",
+    danger: "text-slate-400 hover:bg-red-50 hover:text-red-600",
+  };
+  return (
+    <button type="button" onClick={onClick} title={title} aria-label={title} className={`rounded-lg p-2 transition-colors ${tones[tone]}`}>
+      {children}
+    </button>
+  );
+}
+
+function EmptyState({ icon: Icon, title, text, action }) {
+  return (
+    <div className="flex flex-col items-center px-6 py-14 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+        <Icon className="h-6 w-6" />
+      </div>
+      <p className="mt-3 text-sm font-medium text-slate-700">{title}</p>
+      {text && <p className="mt-1 max-w-sm text-xs text-slate-500">{text}</p>}
+      {action}
+    </div>
+  );
+}
+
 export default function FollowUpPage() {
   const { user } = useAuth();
   const isAdmin = user?.role?.is_admin || user?.user_type === "admin" || user?.user_type === "superuser";
@@ -118,6 +226,7 @@ export default function FollowUpPage() {
     contact_reason: ""
   });
   
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [formData, setFormData] = useState(() => getEmptyFollowUpForm());
 
   const [ruleFormData, setRuleFormData] = useState(() => getEmptyRuleForm());
@@ -661,22 +770,6 @@ export default function FollowUpPage() {
     return s ? s.name : serviceId;
   };
 
-  const getStatusBadge = (status) => {
-    const styles = {
-      pending: "bg-yellow-100 text-yellow-700",
-      completed: "bg-green-100 text-green-700",
-      cancelled: "bg-red-100 text-red-700"
-    };
-    const labels = {
-      pending: "Pendente",
-      completed: "Concluído",
-      cancelled: "Cancelado"
-    };
-    return <span className={`px-3 py-1 rounded-full text-xs font-semibold ${styles[status]}`}>
-      {labels[status]}
-    </span>;
-  };
-
   // Paginação e Filtros
   const hasActivePendingFilters =
     pendingFilters.dateFrom ||
@@ -741,443 +834,506 @@ export default function FollowUpPage() {
     rulesHistoryPage * RULES_HISTORY_PER_PAGE
   );
 
-  return (
-    <Layout>
-      <div>
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900">Follow-up</h1>
-          <div className="flex gap-3">
-            {isAdmin && (
-              <Button onClick={handleOpenNewRule} variant="outline" className="btn-secondary">
-                <Settings className="w-5 h-5 mr-2" />
-                Nova regra
-              </Button>
-            )}
-            <Button onClick={() => setShowCampaignDialog(true)} variant="outline" className="btn-secondary border-green-200 text-green-700 bg-green-50 hover:bg-green-100">
-              <Users className="w-5 h-5 mr-2" />
-              Campanha em Massa
-            </Button>
-            <Button onClick={handleOpenNewFollowUp} className="btn-primary">
-              <Plus className="w-5 h-5 mr-2" />
-              Novo Follow-up
-            </Button>
-          </div>
+  const pendingSummary = activeTab === "list"
+    ? followUps.reduce(
+        (acc, f) => {
+          if (f.status === "completed") return acc;
+          const { diff } = getDueInfo(f);
+          if (diff == null) return acc;
+          if (diff < 0) acc.overdue += 1;
+          else if (diff === 0) acc.today += 1;
+          else if (diff <= 7) acc.week += 1;
+          return acc;
+        },
+        { overdue: 0, today: 0, week: 0 }
+      )
+    : null;
+
+  const activeRules = rules.filter((r) => r.active);
+
+  const TABS = [
+    { id: "list", label: "Pendentes" },
+    { id: "completed", label: "Concluídos" },
+    { id: "history", label: "Campanhas" },
+    ...(isAdmin ? [{ id: "rules_history", label: "Regras" }] : []),
+  ];
+
+  const selectTab = (id) => {
+    setActiveTab(id);
+    setCurrentPage(1);
+    if (id === "rules_history") {
+      setRulesHistoryPage(1);
+      loadRules();
+    }
+  };
+
+  const filterControlClass =
+    "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10";
+
+  const renderFollowUpRow = (followUp) => {
+    const due = getDueInfo(followUp);
+    const tone = DUE_TONES[due.tone];
+    const contact = CONTACT_TYPES[followUp.contact_type];
+    const ContactIcon = contact?.icon;
+    const reason = REASON_BADGES[followUp.contact_reason];
+    const status = FOLLOWUP_STATUS[followUp.status];
+    const name = followUp.lead_id
+      ? (followUp.lead_name || getLeadName(followUp.lead_id) || "—")
+      : (followUp.patient_name || getPatientName(followUp.patient_id) || "—");
+
+    return (
+      <li key={followUp.id} className="flex items-start gap-3 border-b border-slate-100 px-3 py-3 last:border-0 md:gap-4 md:px-4">
+        <div className={`flex w-12 flex-shrink-0 flex-col items-center rounded-lg py-1.5 ring-1 ring-inset ${tone.block}`}>
+          <span className="text-lg font-semibold leading-none tabular-nums">{due.day}</span>
+          <span className="mt-0.5 text-[10px] font-medium uppercase tracking-wide">{due.month}</span>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-4 mb-6 border-b border-gray-200">
-          <button
-            className={`pb-2 px-4 font-medium ${activeTab === 'list' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500 hover:text-gray-700'}`}
-            onClick={() => { setActiveTab('list'); setCurrentPage(1); }}
-          >
-            Pendentes
-          </button>
-          <button
-            className={`pb-2 px-4 font-medium ${activeTab === 'completed' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500 hover:text-gray-700'}`}
-            onClick={() => { setActiveTab('completed'); setCurrentPage(1); }}
-          >
-            Concluídos
-          </button>
-          <button
-            className={`pb-2 px-4 font-medium ${activeTab === 'history' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500 hover:text-gray-700'}`}
-            onClick={() => { setActiveTab('history'); setCurrentPage(1); }}
-          >
-            Histórico de Campanhas
-          </button>
-          {isAdmin && (
-            <button
-              className={`pb-2 px-4 font-medium ${activeTab === "rules_history" ? "text-green-600 border-b-2 border-green-600" : "text-gray-500 hover:text-gray-700"}`}
-              onClick={() => {
-                setActiveTab("rules_history");
-                setRulesHistoryPage(1);
-                loadRules();
-              }}
-            >
-              Histórico de Regras
-            </button>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="truncate text-sm font-semibold text-slate-900">{name}</p>
+            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              {followUp.lead_id ? "Lead" : "Paciente"}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <span className={`font-medium ${tone.label}`}>{due.label}</span>
+            {contact && (
+              <span className="inline-flex items-center gap-1 text-slate-500">
+                <ContactIcon className="h-3.5 w-3.5" />
+                {contact.label}
+              </span>
+            )}
+            {reason && <RingBadge className={reason.className}>{reason.label}</RingBadge>}
+            {activeTab === "completed" && status && <RingBadge className={status.className}>{status.label}</RingBadge>}
+          </div>
+          {followUp.notes && (
+            <p className="mt-1.5 line-clamp-2 whitespace-pre-wrap text-xs text-slate-500" title={followUp.notes}>
+              {followUp.notes}
+            </p>
           )}
         </div>
 
-        {/* Regras Ativas (apenas para admin e aba lista) */}
-        {isAdmin && rules.length > 0 && activeTab === 'list' && (
-          <div className="bg-blue-50 rounded-2xl p-6 mb-8 border border-blue-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Regras Automáticas Ativas</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {rules.filter(r => r.active).map((rule) => (
-                <div key={rule.id} className="bg-white p-4 rounded-lg border border-blue-200">
-                  <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-semibold text-gray-900">{rule.name}</h4>
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      rule.type === "comercial" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
-                    }`}>
-                      {rule.type === "comercial" ? "Comercial" : "Informativo"}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-600">{getTriggerLabel(rule.trigger)} · {formatRuleDaysAfter(rule.days_after)}</p>
-                  <div className="flex gap-2 mt-3">
-                    <button
-                      onClick={() => handleEditRule(rule)}
-                      className="text-blue-500 hover:text-blue-700 text-sm"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => toggleRuleActive(rule.id)}
-                      className="text-gray-500 hover:text-gray-700 text-sm"
-                    >
-                      {rule.active ? "Desativar" : "Ativar"}
-                    </button>
-                    <button
-                      onClick={() => handleDeleteRule(rule)}
-                      className="text-red-500 hover:text-red-700 text-sm"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+        <div className="flex flex-shrink-0 items-center gap-0.5">
+          {followUp.status === "pending" && (
+            <button
+              type="button"
+              onClick={() => handleComplete(followUp.id)}
+              title="Marcar como concluído"
+              aria-label="Marcar como concluído"
+              className="mr-1 inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+            >
+              <Check className="h-4 w-4" />
+              <span className="hidden sm:inline">Concluir</span>
+            </button>
+          )}
+          <IconAction onClick={() => handleEdit(followUp)} title="Editar">
+            <Pencil className="h-4 w-4" />
+          </IconAction>
+          <IconAction
+            onClick={() => {
+              setFollowUpToDelete(followUp);
+              setDeleteDialog(true);
+            }}
+            title="Excluir"
+            tone="danger"
+          >
+            <Trash2 className="h-4 w-4" />
+          </IconAction>
+        </div>
+      </li>
+    );
+  };
+
+  return (
+    <Layout>
+      <div>
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-2xl text-slate-900 md:text-3xl">Follow-up</h1>
+            <p className="mt-1 text-sm text-slate-500">Retornos, lembretes e campanhas</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Button onClick={handleOpenNewRule} variant="outline" className="gap-2 border-slate-200" title="Nova regra automática">
+                <Zap className="h-4 w-4" />
+                <span className="hidden sm:inline">Nova regra</span>
+              </Button>
+            )}
+            <Button onClick={() => setShowCampaignDialog(true)} variant="outline" className="gap-2 border-slate-200" title="Campanha em massa">
+              <Megaphone className="h-4 w-4" />
+              <span className="hidden sm:inline">Campanha</span>
+            </Button>
+            <Button onClick={handleOpenNewFollowUp} className="ml-auto gap-2 sm:ml-0">
+              <Plus className="h-4 w-4" />
+              Novo follow-up
+            </Button>
+          </div>
+        </div>
+
+        {/* Abas */}
+        <div className="-mx-4 mb-5 overflow-x-auto border-b border-slate-200 px-4 [scrollbar-width:none] md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden">
+          <div className="flex gap-1">
+            {TABS.map(({ id, label }) => {
+              const active = activeTab === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => selectTab(id)}
+                  className={`-mb-px whitespace-nowrap border-b-2 px-3 pb-2.5 pt-1 text-sm font-medium transition-colors ${
+                    active ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Resumo de pendentes */}
+        {activeTab === "list" && !loadingFollowUps && pendingSummary && (
+          <div className="mb-4 grid grid-cols-3 gap-2 md:gap-3">
+            {[
+              { key: "overdue", label: "Atrasados", icon: AlertTriangle, tone: "text-red-600 bg-red-50" },
+              { key: "today", label: "Para hoje", icon: CalendarClock, tone: "text-amber-600 bg-amber-50" },
+              { key: "week", label: "Próximos 7 dias", icon: CalendarDays, tone: "text-blue-600 bg-blue-50" },
+            ].map(({ key, label, icon: Icon, tone }) => (
+              <div key={key} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                <span className={`hidden h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg sm:flex ${tone}`}>
+                  <Icon className="h-[18px] w-[18px]" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xl font-semibold tabular-nums text-slate-900">{pendingSummary[key]}</p>
+                  <p className="text-xs leading-tight text-slate-500">{label}</p>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
         )}
 
-        {/* Filtros — aba Pendentes */}
-        {activeTab === "list" && !loadingFollowUps && (
-          <div className="bg-white rounded-2xl p-4 mb-6 shadow-md border border-gray-100">
-            <div className="flex flex-wrap items-end gap-4">
-              <div className="min-w-[140px]">
-                <Label className="text-xs text-gray-500">Data de</Label>
-                <Input
-                  type="date"
-                  value={pendingFilters.dateFrom}
-                  onChange={(e) => setPendingFilters({ ...pendingFilters, dateFrom: e.target.value })}
-                  className="mt-1"
-                />
+        {/* Regras automáticas ativas (admin, aba Pendentes) */}
+        {isAdmin && activeRules.length > 0 && activeTab === "list" && (
+          <div className="mb-4 hidden rounded-xl border border-slate-200 bg-white shadow-sm md:block">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-blue-600" />
+                <h2 className="text-sm font-semibold text-slate-900">Regras automáticas ativas</h2>
+                <span className="rounded-full bg-slate-100 px-1.5 text-[11px] font-medium tabular-nums text-slate-500">{activeRules.length}</span>
               </div>
-              <div className="min-w-[140px]">
-                <Label className="text-xs text-gray-500">Data até</Label>
-                <Input
-                  type="date"
-                  value={pendingFilters.dateTo}
-                  min={pendingFilters.dateFrom || undefined}
-                  onChange={(e) => setPendingFilters({ ...pendingFilters, dateTo: e.target.value })}
-                  className="mt-1"
-                />
-              </div>
-              <div className="min-w-[160px]">
-                <Label className="text-xs text-gray-500">Tipo de contato</Label>
-                <select
-                  className="input-field mt-1"
-                  value={pendingFilters.contact_type}
-                  onChange={(e) => setPendingFilters({ ...pendingFilters, contact_type: e.target.value })}
-                >
-                  <option value="">Todos</option>
-                  <option value="whatsapp">WhatsApp</option>
-                  <option value="phone">Telefone</option>
-                  <option value="email">Email</option>
-                </select>
-              </div>
-              <div className="min-w-[160px]">
-                <Label className="text-xs text-gray-500">Motivo do contato</Label>
-                <select
-                  className="input-field mt-1"
-                  value={pendingFilters.contact_reason}
-                  onChange={(e) => setPendingFilters({ ...pendingFilters, contact_reason: e.target.value })}
-                >
-                  <option value="">Todos</option>
-                  <option value="comercial">Comercial</option>
-                  <option value="informativo">Informativo</option>
-                </select>
-              </div>
-              {hasActivePendingFilters && (
-                <Button type="button" variant="outline" onClick={clearPendingFilters} className="mb-0.5">
-                  Limpar filtros
-                </Button>
-              )}
+              <button type="button" onClick={() => selectTab("rules_history")} className="text-xs font-medium text-blue-600 hover:text-blue-700">
+                Ver todas
+              </button>
             </div>
-            {hasActivePendingFilters && (
-              <p className="text-xs text-gray-500 mt-3">
-                {filteredList.length} follow-up(s) encontrado(s)
-              </p>
-            )}
+            <ul className="-mt-px grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+              {activeRules.map((rule) => {
+                const reason = REASON_BADGES[rule.type] || REASON_BADGES.informativo;
+                return (
+                  <li key={rule.id} className="flex items-start gap-2 border-t border-slate-100 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-900" title={rule.name}>{rule.name}</p>
+                      <div className="mt-1 flex min-w-0 items-center gap-2">
+                        <RingBadge className={reason.className}>{reason.label}</RingBadge>
+                        <span className="truncate text-xs text-slate-500">
+                          {getTriggerLabel(rule.trigger)} · {formatRuleDaysAfter(rule.days_after)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-shrink-0 items-center">
+                      <IconAction onClick={() => handleEditRule(rule)} title="Editar regra">
+                        <Pencil className="h-4 w-4" />
+                      </IconAction>
+                      <IconAction onClick={() => toggleRuleActive(rule.id)} title="Desativar regra">
+                        <Power className="h-4 w-4" />
+                      </IconAction>
+                      <IconAction onClick={() => handleDeleteRule(rule)} title="Excluir regra" tone="danger">
+                        <Trash2 className="h-4 w-4" />
+                      </IconAction>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
 
         {/* Lista de Follow-ups (Pendentes e Concluídos) */}
-        {(activeTab === 'list' || activeTab === 'completed') && (
-        <div className="grid gap-6">
-          {loadingFollowUps ? (
-            <div className="text-center py-10 text-gray-500">Carregando follow-ups...</div>
-          ) : (
-          <>
-          {currentFollowUps.map((followUp) => (
-            <div key={followUp.id} className="bg-white rounded-2xl p-6 shadow-lg">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-xl font-bold text-gray-900">
-                      {followUp.lead_id
-                        ? (followUp.lead_name || getLeadName(followUp.lead_id) || "—")
-                        : (followUp.patient_name || getPatientName(followUp.patient_id) || "—")}
-                    </h3>
-                    {getStatusBadge(followUp.status)}
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      followUp.contact_reason === "comercial" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
-                    }`}>
-                      {followUp.contact_reason === "comercial" ? "Comercial" : "Informativo"}
-                    </span>
-                  </div>
-                  <p className="text-gray-600">
-                    Contato: {followUp.contact_type === "whatsapp" ? "WhatsApp" : 
-                             followUp.contact_type === "phone" ? "Telefone" : "Email"}
-                  </p>
-                  <p className="text-gray-600">
-                    Data agendada: {new Date(followUp.scheduled_date).toLocaleDateString('pt-BR')}
-                  </p>
-                  {followUp.notes && <p className="text-gray-600 mt-2">{followUp.notes}</p>}
-                </div>
-                <div className="flex gap-2">
-                  {followUp.status === "pending" && (
-                    <button
-                      onClick={() => handleComplete(followUp.id)}
-                      className="text-green-500 hover:text-green-700"
-                      title="Marcar como concluído"
+        {(activeTab === "list" || activeTab === "completed") && (
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            {activeTab === "list" && !loadingFollowUps && (
+              <div className="border-b border-slate-200 p-3 md:p-4">
+                <button
+                  type="button"
+                  onClick={() => setShowMobileFilters((v) => !v)}
+                  className="flex w-full items-center justify-between text-sm font-medium text-slate-700 md:hidden"
+                  aria-expanded={showMobileFilters}
+                >
+                  <span>
+                    Filtros
+                    {hasActivePendingFilters && (
+                      <span className="ml-1.5 rounded-full bg-blue-50 px-1.5 text-[11px] text-blue-700">ativos</span>
+                    )}
+                  </span>
+                  <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${showMobileFilters ? "rotate-180" : ""}`} />
+                </button>
+                <div className={`${showMobileFilters ? "mt-3 grid" : "hidden"} grid-cols-2 gap-2 md:mt-0 md:grid md:grid-cols-[repeat(4,minmax(0,1fr))_auto] md:items-end`}>
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] font-medium text-slate-500">De</span>
+                    <input
+                      type="date"
+                      value={pendingFilters.dateFrom}
+                      onChange={(e) => setPendingFilters({ ...pendingFilters, dateFrom: e.target.value })}
+                      className={filterControlClass}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] font-medium text-slate-500">Até</span>
+                    <input
+                      type="date"
+                      value={pendingFilters.dateTo}
+                      min={pendingFilters.dateFrom || undefined}
+                      onChange={(e) => setPendingFilters({ ...pendingFilters, dateTo: e.target.value })}
+                      className={filterControlClass}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] font-medium text-slate-500">Contato</span>
+                    <select
+                      className={filterControlClass}
+                      value={pendingFilters.contact_type}
+                      onChange={(e) => setPendingFilters({ ...pendingFilters, contact_type: e.target.value })}
                     >
-                      <CheckCircle className="w-5 h-5" />
+                      <option value="">Todos</option>
+                      <option value="whatsapp">WhatsApp</option>
+                      <option value="phone">Telefone</option>
+                      <option value="email">E-mail</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] font-medium text-slate-500">Motivo</span>
+                    <select
+                      className={filterControlClass}
+                      value={pendingFilters.contact_reason}
+                      onChange={(e) => setPendingFilters({ ...pendingFilters, contact_reason: e.target.value })}
+                    >
+                      <option value="">Todos</option>
+                      <option value="comercial">Comercial</option>
+                      <option value="informativo">Informativo</option>
+                    </select>
+                  </label>
+                  {hasActivePendingFilters && (
+                    <button
+                      type="button"
+                      onClick={clearPendingFilters}
+                      className="col-span-2 flex h-9 items-center justify-center gap-1 rounded-lg px-3 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 md:col-span-1"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Limpar
                     </button>
                   )}
-                  <button
-                    onClick={() => handleEdit(followUp)}
-                    className="text-blue-500 hover:text-blue-700"
-                    title="Editar"
-                  >
-                    <Edit className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setFollowUpToDelete(followUp);
-                      setDeleteDialog(true);
-                    }}
-                    className="text-red-500 hover:text-red-700"
-                    title="Excluir"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
                 </div>
               </div>
-            </div>
-          ))}
-          
-          {filteredList.length === 0 && (
-            <div className="text-center py-10 text-gray-500">
-              {activeTab === "list"
-                ? hasActivePendingFilters
-                  ? "Nenhum follow-up pendente encontrado com os filtros selecionados."
-                  : "Nenhum follow-up pendente."
-                : "Nenhum follow-up concluído."}
-            </div>
-          )}
+            )}
 
-          {/* Paginação */}
-          {totalPages > 1 && (
-            <div className="flex justify-center items-center gap-4 mt-6">
-              <Button
-                variant="outline"
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <span className="text-sm text-gray-600">
-                Página {currentPage} de {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-          )}
-          </>
-          )}
-        </div>
+            {loadingFollowUps ? (
+              <ul aria-hidden="true">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <li key={i} className="flex items-center gap-4 border-b border-slate-100 px-4 py-3 last:border-0">
+                    <div className="h-12 w-12 animate-pulse rounded-lg bg-slate-100" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 w-1/3 animate-pulse rounded bg-slate-100" />
+                      <div className="h-2.5 w-1/4 animate-pulse rounded bg-slate-100" />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : filteredList.length === 0 ? (
+              <EmptyState
+                icon={activeTab === "list" ? CheckCircle : History}
+                title={
+                  activeTab === "list"
+                    ? hasActivePendingFilters
+                      ? "Nenhum follow-up pendente com esses filtros"
+                      : "Tudo em dia!"
+                    : "Nenhum follow-up concluído"
+                }
+                text={activeTab === "list" && !hasActivePendingFilters ? "Não há follow-ups pendentes no momento." : undefined}
+              />
+            ) : (
+              <>
+                <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 text-xs text-slate-500 md:px-4">
+                  <span>
+                    {filteredList.length} {filteredList.length === 1 ? "follow-up" : "follow-ups"}
+                    {activeTab === "list" ? (filteredList.length === 1 ? " pendente" : " pendentes") : (filteredList.length === 1 ? " concluído" : " concluídos")}
+                  </span>
+                  <span className="hidden sm:inline">Ordenados pela data de contato</span>
+                </div>
+                <ul>{currentFollowUps.map(renderFollowUpRow)}</ul>
+              </>
+            )}
+            <Pager page={currentPage} totalPages={totalPages} onChange={setCurrentPage} />
+          </div>
         )}
 
         {/* Histórico de Campanhas */}
-        {activeTab === 'history' && (
-          <div className="space-y-6">
-            {currentCampaigns.map(campaign => (
-              <div key={campaign.id} className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900">{campaign.title || "Campanha sem título"}</h3>
-                    <p className="text-sm text-gray-500">
-                      Enviada em {new Date(campaign.created_at).toLocaleString('pt-BR')}
-                    </p>
-                  </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                    campaign.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                  }`}>
-                    {campaign.status === 'completed' ? 'Concluída' : 'Processando'}
-                  </span>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                  <div className="bg-gray-50 p-3 rounded-lg">
-                    <span className="text-gray-500 text-sm block">Público Alvo</span>
-                    <span className="font-medium">
-                      {campaign.target_type === 'patients' ? 'Pacientes' : 'Leads'}
-                      {(campaign.service_id || (campaign.service_ids && campaign.service_ids.length > 0)) && ' (Por serviços agendados)'}
-                      {(campaign.cities && campaign.cities.length > 0) && ` (Por cidades: ${campaign.cities.join(", ")})`}
-                    </span>
-                  </div>
-                  <div className="bg-gray-50 p-3 rounded-lg">
-                    <span className="text-gray-500 text-sm block">Total de Destinatários</span>
-                    <span className="font-medium">{campaign.total_targets}</span>
-                  </div>
-                  <div className="bg-gray-50 p-3 rounded-lg">
-                    <span className="text-gray-500 text-sm block">Entrega</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-green-600 font-medium">{campaign.stats?.delivered || 0} enviadas</span>
-                      <span className="text-gray-300">|</span>
-                      <span className="text-red-500 font-medium">{campaign.stats?.failed || 0} falhas</span>
-                    </div>
-                  </div>
-                </div>
+        {activeTab === "history" && (
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            {campaigns.length === 0 ? (
+              <EmptyState
+                icon={Megaphone}
+                title="Nenhuma campanha enviada ainda"
+                text="Use o botão Campanha para enviar uma mensagem em massa para pacientes ou leads."
+              />
+            ) : (
+              <ul>
+                {currentCampaigns.map((campaign) => {
+                  const done = campaign.status === "completed";
+                  const hasServices = campaign.service_id || (campaign.service_ids && campaign.service_ids.length > 0);
+                  const hasCities = campaign.cities && campaign.cities.length > 0;
+                  return (
+                    <li key={campaign.id} className="border-b border-slate-100 px-3 py-4 last:border-0 md:px-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-900">{campaign.title || "Campanha sem título"}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            Enviada em {new Date(campaign.created_at).toLocaleString("pt-BR")}
+                          </p>
+                        </div>
+                        <RingBadge
+                          className={done ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20" : "bg-amber-50 text-amber-700 ring-amber-600/20"}
+                        >
+                          {done ? "Concluída" : "Processando"}
+                        </RingBadge>
+                      </div>
 
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-sm text-gray-500 mb-1">Mensagem Enviada:</p>
-                  <p className="text-gray-700 whitespace-pre-wrap">{campaign.message}</p>
-                </div>
-              </div>
-            ))}
-            {campaigns.length === 0 && (
-              <div className="text-center py-10 text-gray-500">
-                Nenhuma campanha enviada ainda.
-              </div>
-            )}
+                      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+                        <div className="rounded-lg bg-slate-50 px-3 py-2">
+                          <dt className="text-slate-500">Público</dt>
+                          <dd className="mt-0.5 font-medium text-slate-800">
+                            {campaign.target_type === "patients" ? "Pacientes" : "Leads"}
+                          </dd>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 px-3 py-2">
+                          <dt className="text-slate-500">Destinatários</dt>
+                          <dd className="mt-0.5 font-medium tabular-nums text-slate-800">{campaign.total_targets}</dd>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 px-3 py-2">
+                          <dt className="text-slate-500">Enviadas</dt>
+                          <dd className="mt-0.5 font-medium tabular-nums text-emerald-600">{campaign.stats?.delivered || 0}</dd>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 px-3 py-2">
+                          <dt className="text-slate-500">Falhas</dt>
+                          <dd className={`mt-0.5 font-medium tabular-nums ${campaign.stats?.failed ? "text-red-600" : "text-slate-800"}`}>
+                            {campaign.stats?.failed || 0}
+                          </dd>
+                        </div>
+                      </dl>
 
-            {/* Paginação de Campanhas */}
-            {totalCampaignPages > 1 && (
-              <div className="flex justify-center items-center gap-4 mt-6">
-                <Button
-                  variant="outline"
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                <span className="text-sm text-gray-600">
-                  Página {currentPage} de {totalCampaignPages}
-                </span>
-                <Button
-                  variant="outline"
-                  onClick={() => setCurrentPage(p => Math.min(totalCampaignPages, p + 1))}
-                  disabled={currentPage === totalCampaignPages}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
+                      {(hasServices || hasCities) && (
+                        <p className="mt-2 text-xs text-slate-500">
+                          {hasServices && "Filtrado por serviços agendados"}
+                          {hasServices && hasCities && " · "}
+                          {hasCities && `Cidades: ${campaign.cities.join(", ")}`}
+                        </p>
+                      )}
+
+                      <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
+                        <p className="line-clamp-3 whitespace-pre-wrap text-sm text-slate-700" title={campaign.message}>
+                          {campaign.message}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
+            <Pager page={currentPage} totalPages={totalCampaignPages} onChange={setCurrentPage} />
           </div>
         )}
 
         {/* Histórico de regras automáticas (admin) */}
         {isAdmin && activeTab === "rules_history" && (
-          <div className="space-y-6">
-            <p className="text-sm text-gray-600">
-              Todas as regras criadas (ativas e inativas). Visualize detalhes, edite ou exclua quando necessário.
-            </p>
-            {pagedRulesHistory.map((rule) => (
-              <div key={rule.id} className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-2">
-                      <h3 className="text-xl font-bold text-gray-900">{rule.name || "Sem nome"}</h3>
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-semibold ${
-                          rule.active ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"
-                        }`}
-                      >
-                        {rule.active ? "Ativa" : "Inativa"}
-                      </span>
-                      <span
-                        className={`px-2 py-1 rounded text-xs ${
-                          rule.type === "comercial" ? "bg-green-50 text-green-700" : "bg-blue-50 text-blue-700"
-                        }`}
-                      >
-                        {rule.type === "comercial" ? "Comercial" : "Informativo"}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      <span className="font-medium text-gray-800">{getTriggerLabel(rule.trigger)}</span>
-                      {" · "}
-                      {formatRuleDaysAfter(rule.days_after)}
-                      {rule.trigger === "service_maintenance" && rule.service_id && (
-                        <> · Serviço: {getServiceName(rule.service_id)}</>
-                      )}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-2">
-                      Criada em{" "}
-                      {rule.created_at
-                        ? new Date(rule.created_at).toLocaleString("pt-BR")
-                        : "—"}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <Button type="button" variant="outline" size="sm" onClick={() => setViewingRule(rule)} title="Visualizar">
-                      <Eye className="w-4 h-4 mr-1" />
-                      Ver
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => handleEditRule(rule)} title="Editar">
-                      <Edit className="w-4 h-4 mr-1" />
-                      Editar
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => toggleRuleActive(rule.id)} title="Ativar ou desativar">
-                      {rule.active ? "Desativar" : "Ativar"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="text-red-600 border-red-200 hover:bg-red-50"
-                      onClick={() => handleDeleteRule(rule)}
-                      title="Excluir"
-                    >
-                      <Trash2 className="w-4 h-4 mr-1" />
-                      Excluir
-                    </Button>
-                  </div>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            {sortedRulesHistory.length === 0 ? (
+              <EmptyState
+                icon={Zap}
+                title="Nenhuma regra cadastrada"
+                text="Regras enviam mensagens automáticas após eventos como novo lead, agendamento ou aniversário."
+                action={
+                  <Button size="sm" onClick={handleOpenNewRule} className="mt-4 gap-2">
+                    <Plus className="h-4 w-4" />
+                    Nova regra
+                  </Button>
+                }
+              />
+            ) : (
+              <>
+                <div className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500 md:px-4">
+                  {sortedRulesHistory.length} {sortedRulesHistory.length === 1 ? "regra" : "regras"} · ativas e inativas
                 </div>
-              </div>
-            ))}
-            {sortedRulesHistory.length === 0 && (
-              <div className="text-center py-10 text-gray-500">
-                Nenhuma regra cadastrada. Use <strong>Nova regra</strong> para criar a primeira.
-              </div>
+                <ul>
+                  {pagedRulesHistory.map((rule) => {
+                    const reason = REASON_BADGES[rule.type] || REASON_BADGES.informativo;
+                    return (
+                      <li key={rule.id} className="flex flex-col gap-3 border-b border-slate-100 px-3 py-3 last:border-0 sm:flex-row sm:items-center md:px-4">
+                        <div className="flex min-w-0 flex-1 items-start gap-3">
+                          <span
+                            className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${rule.active ? "bg-emerald-500" : "bg-slate-300"}`}
+                            title={rule.active ? "Ativa" : "Inativa"}
+                          />
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className={`truncate text-sm font-medium ${rule.active ? "text-slate-900" : "text-slate-500"}`}>
+                                {rule.name || "Sem nome"}
+                              </p>
+                              <RingBadge className={reason.className}>{reason.label}</RingBadge>
+                              {!rule.active && (
+                                <RingBadge className="bg-slate-50 text-slate-500 ring-slate-500/20">Inativa</RingBadge>
+                              )}
+                            </div>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              <span className="font-medium text-slate-700">{getTriggerLabel(rule.trigger)}</span>
+                              {" · "}
+                              {formatRuleDaysAfter(rule.days_after)}
+                              {rule.trigger === "service_maintenance" && rule.service_id && (
+                                <> · Serviço: {getServiceName(rule.service_id)}</>
+                              )}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-slate-400">
+                              Criada em {rule.created_at ? new Date(rule.created_at).toLocaleString("pt-BR") : "—"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-shrink-0 items-center gap-1 pl-5 sm:pl-0">
+                          <IconAction onClick={() => setViewingRule(rule)} title="Visualizar">
+                            <Eye className="h-4 w-4" />
+                          </IconAction>
+                          <IconAction onClick={() => handleEditRule(rule)} title="Editar">
+                            <Pencil className="h-4 w-4" />
+                          </IconAction>
+                          <button
+                            type="button"
+                            onClick={() => toggleRuleActive(rule.id)}
+                            className={`ml-1 inline-flex w-[6.5rem] items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
+                              rule.active
+                                ? "border-slate-200 text-slate-600 hover:bg-slate-50"
+                                : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                            }`}
+                          >
+                            <Power className="h-3.5 w-3.5" />
+                            {rule.active ? "Desativar" : "Ativar"}
+                          </button>
+                          <IconAction onClick={() => handleDeleteRule(rule)} title="Excluir" tone="danger">
+                            <Trash2 className="h-4 w-4" />
+                          </IconAction>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
             )}
-            {sortedRulesHistory.length > RULES_HISTORY_PER_PAGE && (
-              <div className="flex justify-center items-center gap-4 mt-6">
-                <Button
-                  variant="outline"
-                  onClick={() => setRulesHistoryPage((p) => Math.max(1, p - 1))}
-                  disabled={rulesHistoryPage === 1}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                <span className="text-sm text-gray-600">
-                  Página {rulesHistoryPage} de {totalRuleHistoryPages}
-                </span>
-                <Button
-                  variant="outline"
-                  onClick={() => setRulesHistoryPage((p) => Math.min(totalRuleHistoryPages, p + 1))}
-                  disabled={rulesHistoryPage === totalRuleHistoryPages}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
+            <Pager page={rulesHistoryPage} totalPages={totalRuleHistoryPages} onChange={setRulesHistoryPage} />
           </div>
         )}
 

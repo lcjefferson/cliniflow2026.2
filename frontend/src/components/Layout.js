@@ -9,7 +9,7 @@ import {
 
 const MOBILE_QUERY = "(max-width: 1023px)";
 
-export default function Layout({ children }) {
+export default function Layout({ children, fullHeight = false }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -64,7 +64,7 @@ export default function Layout({ children }) {
   const menuItems = allMenuItems.filter(item => item.roles.includes(userType));
 
   return (
-    <div className="flex min-h-screen">
+    <div className={`flex ${fullHeight ? "h-dvh" : "min-h-screen"}`}>
       {/* Sidebar */}
       <aside className={`bg-white border-r border-slate-200 flex flex-col transition-all duration-300 ease-in-out fixed inset-y-0 left-0 z-40 w-64 ${mobileOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full'} lg:relative lg:inset-auto lg:translate-x-0 lg:shadow-none ${collapsed ? 'lg:w-20' : 'lg:w-64'}`}>
         <div className={`border-b border-slate-200 transition-all duration-300 ${collapsed ? 'px-3 py-4' : 'px-5 py-5'}`}>
@@ -164,10 +164,14 @@ export default function Layout({ children }) {
           </span>
         </header>
 
-        <main className="flex-1 overflow-y-auto bg-slate-50">
-          <div className="w-full px-4 py-6 md:px-6 md:py-8 lg:px-8 short:py-3">
-            {children}
-          </div>
+        <main className={`flex-1 bg-slate-50 ${fullHeight ? "overflow-hidden" : "overflow-y-auto"}`}>
+          {fullHeight ? (
+            <div className="h-[calc(100dvh-3.5rem)] lg:h-dvh">{children}</div>
+          ) : (
+            <div className="w-full px-4 py-6 md:px-6 md:py-8 lg:px-8 short:py-3">
+              {children}
+            </div>
+          )}
         </main>
       </div>
     </div>
