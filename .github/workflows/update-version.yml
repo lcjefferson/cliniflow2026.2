@@ -19,10 +19,9 @@ jobs:
       - name: Generate version file
         run: |
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          SHORT_SHA=${GITHUB_SHA::7}
-          BRANCH=${GITHUB_REF_NAME}
           mkdir -p backend
-          echo "{\"version\": \"${BRANCH}-${SHORT_SHA}\", \"commit\": \"${GITHUB_SHA}\", \"date\": \"${DATE}\"}" > backend/version.json
+          VERSION=$(jq -r '.version // "3.0"' backend/version.json 2>/dev/null || echo "3.0")
+          echo "{\"version\": \"${VERSION}\", \"commit\": \"${GITHUB_SHA}\", \"date\": \"${DATE}\"}" > backend/version.json
 
       - name: Commit version file
         env:
