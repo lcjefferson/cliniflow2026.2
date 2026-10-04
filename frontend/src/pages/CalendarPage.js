@@ -13,6 +13,7 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@
 import PatientCombobox from "../components/PatientCombobox";
 import PatientDetailDialog from "../components/PatientDetailDialog";
 import { useAuth } from "../contexts/AuthContext";
+import { STATUS_META, getStatusDot } from "../lib/appointmentStatus";
 
 /** Data local YYYY-MM-DD (igual às células do calendário). */
 function toYMD(d) {
@@ -28,16 +29,6 @@ function appointmentDateKey(raw) {
   const s = String(raw);
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
-
-const STATUS_META = {
-  scheduled: { label: "Agendado", className: "status-scheduled", dot: "bg-slate-400" },
-  waiting: { label: "Em espera", className: "status-waiting", dot: "bg-violet-500" },
-  in_progress: { label: "Em andamento", className: "status-in-progress", dot: "bg-orange-500" },
-  completed: { label: "Concluído", className: "status-completed", dot: "bg-green-600" },
-  cancelled: { label: "Cancelado", className: "status-cancelled", dot: "bg-red-600" },
-};
-
-const getStatusDot = (apt) => (STATUS_META[apt.status] || STATUS_META.scheduled).dot;
 
 const MONTH_CELL_LIMIT = 3;
 

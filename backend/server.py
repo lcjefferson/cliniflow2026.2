@@ -1546,7 +1546,7 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
     """Estatísticas leves para o dashboard. Todas as consultas em paralelo."""
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(timezone(timedelta(hours=-3))).date().isoformat()
     query_prof = {}
     if current_user.get("user_type") in ["profissional", "profissional_admin"] and current_user.get("professional_id"):
         query_prof["professional_id"] = current_user.get("professional_id")

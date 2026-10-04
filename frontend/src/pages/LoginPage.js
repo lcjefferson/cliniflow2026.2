@@ -55,7 +55,7 @@ export default function LoginPage() {
 
   const versionLabel = appVersion
     ? [
-        `Versão ${appVersion.version}`,
+        `Versão ${appVersion.version || "3.0"}`,
         appVersion.commit ? String(appVersion.commit).slice(0, 7) : null,
         appVersion.date ? new Date(appVersion.date).toLocaleDateString('pt-BR') : null,
       ].filter(Boolean).join(" · ")
