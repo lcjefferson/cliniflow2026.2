@@ -47,11 +47,22 @@ function getTriggerLabel(trigger) {
     lead_created: "Lead criado",
     appointment_created: "Agendamento criado",
     appointment_completed: "Consulta concluída",
+    appointment_cancelled: "Agendamento cancelado",
     patient_birthday: "Pacientes aniversariantes",
     service_maintenance: "Manutenção de serviço"
   };
   return labels[trigger] || trigger || "—";
 }
+
+const TRIGGERS_ALLOWING_DAYS_BEFORE = ["appointment_created", "patient_birthday"];
+
+const TRIGGER_HELP = {
+  lead_created: "Enviada ao lead cadastrado na tela de leads ou que chegou pelo WhatsApp. \"No dia\" envia no momento do cadastro.",
+  appointment_created: "Enviada ao paciente do agendamento. \"No dia\" envia ao criar o agendamento; \"dias antes\" funciona como lembrete antes da data da consulta; \"dias depois\" conta a partir da criação.",
+  appointment_completed: "Enviada ao paciente quando o agendamento é marcado como \"Concluído\" na agenda. \"No dia\" envia no momento da conclusão.",
+  appointment_cancelled: "Enviada ao paciente quando o agendamento é marcado como \"Cancelado\" na agenda. \"No dia\" envia no momento do cancelamento.",
+  patient_birthday: "Enviada aos pacientes no aniversário (ou X dias antes/depois), todo dia às 9h."
+};
 
 function formatRuleDaysAfter(days) {
   const n = Number(days);
@@ -802,7 +813,7 @@ export default function FollowUpPage() {
                       {rule.type === "comercial" ? "Comercial" : "Informativo"}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-600">Dispara {rule.days_after} dia(s) após {rule.trigger === "lead_created" ? "lead criado" : "agendamento"}</p>
+                  <p className="text-sm text-gray-600">{getTriggerLabel(rule.trigger)} · {formatRuleDaysAfter(rule.days_after)}</p>
                   <div className="flex gap-2 mt-3">
                     <button
                       onClick={() => handleEditRule(rule)}
@@ -1389,16 +1400,31 @@ export default function FollowUpPage() {
                   <select
                     className="input-field"
                     value={ruleFormData.trigger}
-                    onChange={(e) => setRuleFormData({...ruleFormData, trigger: e.target.value, service_id: e.target.value === "service_maintenance" ? ruleFormData.service_id : ""})}
+                    onChange={(e) => {
+                      const trigger = e.target.value;
+                      setRuleFormData({
+                        ...ruleFormData,
+                        trigger,
+                        service_id: trigger === "service_maintenance" ? ruleFormData.service_id : "",
+                        days_after:
+                          !TRIGGERS_ALLOWING_DAYS_BEFORE.includes(trigger) && ruleFormData.days_after < 0
+                            ? 0
+                            : ruleFormData.days_after
+                      });
+                    }}
                   >
                     <option value="lead_created">Lead Criado</option>
                     <option value="appointment_created">Agendamento Criado</option>
                     <option value="appointment_completed">Consulta Concluída</option>
+                    <option value="appointment_cancelled">Agendamento Cancelado</option>
                     <option value="patient_birthday">Pacientes Aniversariantes</option>
                     <option value="service_maintenance">Serviços</option>
                   </select>
                 </div>
               </div>
+              {TRIGGER_HELP[ruleFormData.trigger] && (
+                <p className="text-xs text-gray-500 -mt-2">{TRIGGER_HELP[ruleFormData.trigger]}</p>
+              )}
               {ruleFormData.trigger === "service_maintenance" && (
                 <div>
                   <Label>Serviço (manutenção) *</Label>
@@ -1428,8 +1454,12 @@ export default function FollowUpPage() {
                   <option value={0}>No dia</option>
                   <option value={1}>1 dia depois</option>
                   <option value={2}>2 dias depois</option>
-                  <option value={-1}>1 dia antes</option>
-                  <option value={-2}>2 dias antes</option>
+                  {TRIGGERS_ALLOWING_DAYS_BEFORE.includes(ruleFormData.trigger) && (
+                    <>
+                      <option value={-1}>1 dia antes</option>
+                      <option value={-2}>2 dias antes</option>
+                    </>
+                  )}
                   <option value={15}>15 dias</option>
                   <option value={30}>1 mês</option>
                   <option value={60}>2 meses</option>

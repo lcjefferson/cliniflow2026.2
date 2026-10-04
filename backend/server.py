@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
 import os
 import re
 import logging
@@ -21,6 +22,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
 from typing import List, Optional, Union, Dict, Any
 import uuid
+import hashlib
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 import jwt
@@ -268,48 +270,278 @@ def _is_birthday_with_offset(birthdate_str, days_offset):
     except (ValueError, TypeError):
         return False
 
-async def check_and_send_birthday_greetings():
+async def check_and_send_birthday_greetings() -> dict:
     if db is None:
         logging.warning("Database unavailable, skipping birthday check.")
-        return
-    
+        return {"created": 0, "sent": 0}
+
     logging.info("Checking for birthday greetings...")
-    
+    created = sent = 0
+    today = datetime.now(timezone.utc).date().isoformat()
     try:
-        rules = await db.follow_up_rules.find({"trigger": "patient_birthday", "active": True}).to_list(100)
+        rules = await db.follow_up_rules.find({"trigger": "patient_birthday", "active": True}, {"_id": 0}).to_list(100)
         if not rules:
             logging.info("No active birthday follow-up rules found.")
-            return
+            return {"created": 0, "sent": 0}
 
         patients_cursor = db.patients.find({}, {"_id": 0, "id": 1, "name": 1, "birthdate": 1, "phone": 1})
-        
         async for patient in patients_cursor:
             for rule in rules:
-                days_offset = rule.get('days_after', 0)
-                
-                if _is_birthday_with_offset(patient.get('birthdate'), days_offset):
-                    message = rule['message_template'].format(patient_name=patient['name'])
-                    
-                    # Send via WhatsApp
-                    logging.info(f"Sending birthday greeting to {patient['name']} (phone: {patient['phone']}): {message}")
-                    if patient.get("phone"):
-                        await send_whatsapp_message(patient['phone'], message)
-                    
-                    # Optional: Create a follow-up record for tracking
-                    follow_up = FollowUp(
-                        patient_id=patient['id'],
-                        scheduled_date=datetime.now(timezone.utc).isoformat(),
-                        notes=f"Mensagem de aniversário enviada: {message}",
-                        status="completed",
-                        contact_type="whatsapp", # Assuming WhatsApp
-                        contact_reason="informativo"
+                if not _is_birthday_with_offset(patient.get("birthdate"), rule.get("days_after", 0)):
+                    continue
+                try:
+                    contact = _normalize_phone(patient.get("phone")) or patient.get("id")
+                    if not await _reserve_dispatch(f"{rule.get('id')}:birthday:{contact}:{today}"):
+                        continue
+                    ok = await _deliver_rule_followup(
+                        rule,
+                        name=patient.get("name") or "Cliente",
+                        phone=patient.get("phone"),
+                        note="Aniversário",
+                        patient_id=patient.get("id"),
                     )
-                    doc = follow_up.model_dump()
-                    doc['created_at'] = doc['created_at'].isoformat()
-                    await db.follow_ups.insert_one(doc)
-
+                    if ok is None:
+                        continue
+                    created += 1
+                    sent += ok
+                except Exception as e:
+                    logging.error(f"Error sending birthday greeting to patient {patient.get('id')}: {e}")
     except Exception as e:
         logging.error(f"Error during birthday check: {e}")
+    return {"created": created, "sent": sent}
+
+# trigger -> (campo com a data do evento, filtro de status exigido no agendamento)
+APPOINTMENT_RULE_TRIGGERS = {
+    "appointment_created": ("created_at", {"status": {"$ne": "cancelled"}}),
+    "appointment_completed": ("completed_at", {"status": "completed"}),
+    "appointment_cancelled": ("cancelled_at", {"status": "cancelled"}),
+}
+APPOINTMENT_RULE_NOTES = {
+    "appointment_created": "Agendamento de {data} criado",
+    "appointment_completed": "Consulta de {data} concluída",
+    "appointment_cancelled": "Agendamento de {data} cancelado",
+    "service_maintenance": "Manutenção (consulta de {data})",
+}
+SCHEDULED_RULE_TRIGGERS = ["lead_created", "service_maintenance", *APPOINTMENT_RULE_TRIGGERS.keys()]
+
+def _format_date_br(value: Optional[str]) -> str:
+    parts = (value or "")[:10].split("-")
+    return f"{parts[2]}/{parts[1]}/{parts[0]}" if len(parts) == 3 else (value or "")
+
+def _render_rule_message(rule: dict, name: str, appointment: Optional[dict] = None) -> str:
+    apt = appointment or {}
+    return (
+        (rule.get("message_template") or "Olá {nome}!")
+        .replace("{nome}", name)
+        .replace("{name}", name)
+        .replace("{patient_name}", name)
+        .replace("{data}", _format_date_br(apt.get("appointment_date")))
+        .replace("{horario}", apt.get("appointment_time") or "")
+    )
+
+def _normalize_phone(phone: Optional[str]) -> str:
+    """Mesmo formato usado no envio do WhatsApp: só dígitos, com DDI 55."""
+    digits = "".join(c for c in (phone or "") if c.isdigit())
+    if digits and not digits.startswith("55") and len(digits) <= 11:
+        digits = "55" + digits
+    return digits
+
+async def _reserve_dispatch(key: str) -> bool:
+    """Reserva um envio pela chave única; False se já foi enviado (por outro processo, reinício ou registro duplicado)."""
+    try:
+        await db.followup_dispatches.insert_one({"_id": key, "created_at": datetime.now(timezone.utc).isoformat()})
+        return True
+    except DuplicateKeyError:
+        return False
+
+async def _claim_rule_for(collection: str, entity_id: str, rule_id: str, extra_filter: Optional[dict] = None) -> bool:
+    """Marca a regra como processada para o registro; garante um único envio por regra mesmo com execuções concorrentes."""
+    flt = {"id": entity_id, "followup_rule_ids": {"$ne": rule_id}}
+    if extra_filter:
+        flt.update(extra_filter)
+    res = await db[collection].update_one(flt, {"$addToSet": {"followup_rule_ids": rule_id}})
+    return res.modified_count > 0
+
+async def _deliver_rule_followup(
+    rule: dict,
+    *,
+    name: str,
+    phone: Optional[str],
+    note: str,
+    patient_id: Optional[str] = None,
+    lead_id: Optional[str] = None,
+    appointment: Optional[dict] = None,
+) -> Optional[bool]:
+    """Retorna se o WhatsApp foi enviado, ou None se o mesmo texto já foi para este número hoje."""
+    sent = False
+    if phone:
+        message = _render_rule_message(rule, name, appointment)
+        today = datetime.now(timezone.utc).date().isoformat()
+        text_hash = hashlib.sha1(message.strip().encode("utf-8")).hexdigest()
+        if not await _reserve_dispatch(f"text:{_normalize_phone(phone)}:{text_hash}:{today}"):
+            return None
+        sent = await send_whatsapp_message(phone, message)
+    follow_up = FollowUp(
+        patient_id=patient_id,
+        lead_id=lead_id,
+        scheduled_date=datetime.now(timezone.utc).date().isoformat(),
+        notes=f"{note} (regra: {rule.get('name', '')})",
+        status="completed" if sent else "pending",
+        contact_type="whatsapp",
+        contact_reason=rule.get("type") or "informativo",
+    )
+    doc = follow_up.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.follow_ups.insert_one(doc)
+    return sent
+
+async def _run_appointment_rule(rule: dict, appointment: dict) -> tuple:
+    """Retorna (follow-up criado, WhatsApp enviado)."""
+    trigger = rule.get("trigger")
+    status_filter = APPOINTMENT_RULE_TRIGGERS.get(trigger, (None, {"status": {"$ne": "cancelled"}}))[1]
+    if not await _claim_rule_for("appointments", appointment.get("id"), rule.get("id"), status_filter):
+        return False, False
+    patient = await db.patients.find_one(
+        {"id": appointment.get("patient_id")}, {"_id": 0, "id": 1, "name": 1, "phone": 1}
+    )
+    if not patient:
+        return False, False
+    today = datetime.now(timezone.utc).date().isoformat()
+    contact = _normalize_phone(patient.get("phone")) or patient["id"]
+    if not await _reserve_dispatch(f"{rule.get('id')}:contact:{contact}:{today}"):
+        return False, False
+    note = APPOINTMENT_RULE_NOTES.get(trigger, "Agendamento de {data}").replace(
+        "{data}", _format_date_br(appointment.get("appointment_date"))
+    )
+    sent = await _deliver_rule_followup(
+        rule,
+        name=patient.get("name") or "Cliente",
+        phone=patient.get("phone"),
+        note=note,
+        patient_id=patient["id"],
+        appointment=appointment,
+    )
+    if sent is None:
+        return False, False
+    return True, sent
+
+async def _run_lead_rule(rule: dict, lead: dict) -> tuple:
+    if not await _claim_rule_for("leads", lead.get("id"), rule.get("id")):
+        return False, False
+    contact = _normalize_phone(lead.get("phone")) or lead.get("id")
+    if not await _reserve_dispatch(f"{rule.get('id')}:lead:{contact}"):
+        return False, False
+    sent = await _deliver_rule_followup(
+        rule,
+        name=lead.get("name") or "Cliente",
+        phone=lead.get("phone"),
+        note="Lead criado",
+        lead_id=lead.get("id"),
+    )
+    if sent is None:
+        return False, False
+    return True, sent
+
+async def trigger_appointment_rules_now(appointment_id: str, trigger: str):
+    """Regras 'No dia' (days_after = 0) disparam no momento do evento."""
+    if db is None:
+        return
+    try:
+        apt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+        if not apt:
+            return
+        rules = await db.follow_up_rules.find(
+            {"trigger": trigger, "active": True, "days_after": 0}, {"_id": 0}
+        ).to_list(100)
+        for rule in rules:
+            await _run_appointment_rule(rule, apt)
+    except Exception as e:
+        logging.error(f"Error running '{trigger}' follow-up rules for appointment {appointment_id}: {e}")
+
+async def trigger_lead_rules_now(lead_id: str):
+    if db is None:
+        return
+    try:
+        lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+        if not lead:
+            return
+        rules = await db.follow_up_rules.find(
+            {"trigger": "lead_created", "active": True, "days_after": 0}, {"_id": 0}
+        ).to_list(100)
+        for rule in rules:
+            await _run_lead_rule(rule, lead)
+    except Exception as e:
+        logging.error(f"Error running 'lead_created' follow-up rules for lead {lead_id}: {e}")
+
+async def _process_scheduled_rule(rule: dict, today) -> tuple:
+    """Processa uma regra com prazo para o dia de hoje. Retorna (follow-ups criados, mensagens enviadas)."""
+    trigger = rule.get("trigger")
+    rule_id = rule.get("id")
+    days = int(rule.get("days_after") or 0)
+    not_done = {"followup_rule_ids": {"$ne": rule_id}}
+    created = sent = 0
+
+    if trigger in APPOINTMENT_RULE_TRIGGERS:
+        field, status_filter = APPOINTMENT_RULE_TRIGGERS[trigger]
+        if trigger == "appointment_created" and days < 0:
+            # dias antes = lembrete antes da data da consulta
+            query = {"appointment_date": (today - timedelta(days=days)).isoformat()}
+        elif days > 0:
+            query = {field: {"$regex": f"^{(today - timedelta(days=days)).isoformat()}"}}
+        else:
+            return 0, 0
+        query.update(status_filter)
+        query.update(not_done)
+        async for apt in db.appointments.find(query, {"_id": 0}):
+            c, s = await _run_appointment_rule(rule, apt)
+            created += c
+            sent += s
+
+    elif trigger == "lead_created" and days > 0:
+        query = {"created_at": {"$regex": f"^{(today - timedelta(days=days)).isoformat()}"}, **not_done}
+        async for lead in db.leads.find(query, {"_id": 0}):
+            c, s = await _run_lead_rule(rule, lead)
+            created += c
+            sent += s
+
+    elif trigger == "service_maintenance" and rule.get("service_id") and days >= 0:
+        service_id = rule["service_id"]
+        query = {
+            "appointment_date": (today - timedelta(days=days)).isoformat(),
+            "status": {"$ne": "cancelled"},
+            "$or": [{"service_id": service_id}, {"service_ids": service_id}],
+            **not_done,
+        }
+        seen_patients = set()
+        async for apt in db.appointments.find(query, {"_id": 0}):
+            if apt.get("patient_id") in seen_patients:
+                await _claim_rule_for("appointments", apt.get("id"), rule_id)
+                continue
+            seen_patients.add(apt.get("patient_id"))
+            c, s = await _run_appointment_rule(rule, apt)
+            created += c
+            sent += s
+
+    return created, sent
+
+async def run_scheduled_followup_rules(triggers: Optional[List[str]] = None) -> dict:
+    """Rotina diária das regras automáticas de follow-up (exceto aniversário, que tem rotina própria)."""
+    if db is None:
+        return {"created": 0, "sent": 0}
+    created = sent = 0
+    today = datetime.now(timezone.utc).date()
+    rules = await db.follow_up_rules.find(
+        {"active": True, "trigger": {"$in": triggers or SCHEDULED_RULE_TRIGGERS}}, {"_id": 0}
+    ).to_list(500)
+    for rule in rules:
+        try:
+            c, s = await _process_scheduled_rule(rule, today)
+            created += c
+            sent += s
+        except Exception as e:
+            logging.error(f"Error processing follow-up rule {rule.get('id')} ({rule.get('trigger')}): {e}")
+    logging.info(f"Scheduled follow-up rules: {created} follow-ups created, {sent} messages sent")
+    return {"created": created, "sent": sent}
 
 async def normalize_all_thumbnails():
     if db is None:
@@ -436,6 +668,7 @@ async def lifespan(app: FastAPI):
         try:
             scheduler.start()
             scheduler.add_job(check_and_send_birthday_greetings, CronTrigger(hour=9, minute=0), id="birthday_check")
+            scheduler.add_job(run_scheduled_followup_rules, CronTrigger(hour=9, minute=5), id="followup_rules_check")
         except Exception:
             pass
     if db is not None:
@@ -1210,7 +1443,7 @@ class FollowUpRule(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     type: str  # comercial, informativo
-    trigger: str  # lead_created, appointment_created, appointment_completed, patient_birthday, service_maintenance
+    trigger: str  # lead_created, appointment_created, appointment_completed, appointment_cancelled, patient_birthday, service_maintenance
     service_id: Optional[str] = None  # quando trigger = service_maintenance
     days_after: int
     message_template: str
@@ -2521,7 +2754,11 @@ def _appointment_service_names(appointment: dict, services_list: list) -> list:
 
 # Appointment Routes
 @api_router.post("/appointments", response_model=Appointment)
-async def create_appointment(data: AppointmentCreate, current_user: dict = Depends(get_current_user)):
+async def create_appointment(
+    data: AppointmentCreate,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+):
     payload = data.model_dump(exclude_none=True)
     if "status" not in payload:
         payload["status"] = "scheduled"
@@ -2590,6 +2827,9 @@ async def create_appointment(data: AppointmentCreate, current_user: dict = Depen
         except Exception:
             pass
         raise HTTPException(status_code=409, detail="Já existe um agendamento para esta data e horário")
+    background_tasks.add_task(trigger_appointment_rules_now, appointment.id, "appointment_created")
+    if appointment.status == "completed":
+        background_tasks.add_task(trigger_appointment_rules_now, appointment.id, "appointment_completed")
     return appointment
 
 @api_router.get("/appointments", response_model=List[dict])
@@ -2659,16 +2899,36 @@ async def get_appointments(
     return appointments
 
 @api_router.put("/appointments/{appointment_id}")
-async def update_appointment(appointment_id: str, data: AppointmentUpdate, current_user: dict = Depends(get_current_user)):
+async def update_appointment(
+    appointment_id: str,
+    data: AppointmentUpdate,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+):
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
+    status_trigger = None
     try:
         current = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
         if not current:
             raise HTTPException(status_code=404, detail="Appointment not found")
+        new_status = update_data.get("status")
+        old_status = current.get("status")
+        if new_status and new_status != old_status:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            if new_status == "cancelled":
+                update_data["cancelled_at"] = now_iso
+                status_trigger = "appointment_cancelled"
+            elif new_status == "completed":
+                update_data["completed_at"] = now_iso
+                status_trigger = "appointment_completed"
+            if old_status == "cancelled":
+                update_data["cancelled_at"] = None
+            elif old_status == "completed":
+                update_data["completed_at"] = None
         target_date = update_data.get("appointment_date", current.get("appointment_date"))
         target_time = update_data.get("appointment_time", current.get("appointment_time"))
         target_room = update_data.get("room_id", current.get("room_id"))
@@ -2727,6 +2987,8 @@ async def update_appointment(appointment_id: str, data: AppointmentUpdate, curre
     result = await db.appointments.update_one({"id": appointment_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Appointment not found")
+    if status_trigger:
+        background_tasks.add_task(trigger_appointment_rules_now, appointment_id, status_trigger)
     return {"message": "Appointment updated successfully"}
 
 @api_router.get("/appointments/check-conflicts")
@@ -3327,11 +3589,16 @@ async def update_medical_record(record_id: str, data: MedicalRecordCreate, curre
 
 # Lead Routes
 @api_router.post("/leads", response_model=Lead)
-async def create_lead(data: LeadCreate, current_user: dict = Depends(get_current_user)):
+async def create_lead(
+    data: LeadCreate,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+):
     lead = Lead(**data.model_dump())
     doc = lead.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.leads.insert_one(doc)
+    background_tasks.add_task(trigger_lead_rules_now, lead.id)
     return lead
 
 @api_router.get("/leads")
@@ -4946,6 +5213,45 @@ async def download_document_proxy(message_id: str):
 
 
 
+SYSTEM_ECHO_WINDOW_SECONDS = 180
+
+def _is_same_message_body(saved, echoed) -> bool:
+    if isinstance(saved, str) and isinstance(echoed, str):
+        return saved.strip() == echoed.strip()
+    if isinstance(saved, dict) and isinstance(echoed, dict):
+        kind_saved = (saved.get("mimetype") or "").split("/")[0]
+        kind_echoed = (echoed.get("mimetype") or "").split("/")[0]
+        if kind_saved != kind_echoed:
+            return False
+        caption_saved = (saved.get("caption") or "").strip()
+        caption_echoed = (echoed.get("caption") or "").strip()
+        return not caption_saved or not caption_echoed or caption_saved == caption_echoed
+    return False
+
+async def _absorb_system_message_echo(conversation_id: str, body, external_id: Optional[str]) -> bool:
+    """Se o eco corresponde a uma mensagem enviada pelo sistema há pouco, grava o external_id nela e retorna True."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=SYSTEM_ECHO_WINDOW_SECONDS)).isoformat()
+    candidates = await db.messages.find(
+        {
+            "conversation_id": conversation_id,
+            "sender_type": "consultant",
+            "sender_id": {"$ne": None},
+            "external_id": None,
+            "created_at": {"$gte": cutoff},
+        },
+        {"_id": 0, "id": 1, "content": 1},
+    ).sort("created_at", 1).to_list(20)
+    for cand in candidates:
+        if not _is_same_message_body(cand.get("content"), body):
+            continue
+        claimed = await db.messages.update_one(
+            {"id": cand["id"], "external_id": None},
+            {"$set": {"external_id": external_id or f"echo:{uuid.uuid4()}"}},
+        )
+        if claimed.modified_count:
+            return True
+    return False
+
 # Webhook for UazApi (Evolution/WPPConnect)
 @api_router.post("/webhook/uazapi")
 async def uazapi_webhook(request: Request):
@@ -5312,6 +5618,9 @@ async def uazapi_webhook(request: Request):
                 "created_at": datetime.now(timezone.utc).isoformat()
             }
             await db.leads.insert_one(lead)
+            # Mensagens enviadas pelo próprio sistema (fromMe) também criam lead; só contato que nos escreveu dispara a regra.
+            if not is_from_me:
+                asyncio.create_task(trigger_lead_rules_now(lead_id))
         else:
             # Update lead name if we have a better name now and the current one is generic
             current_name = lead.get("name", "")
@@ -5410,6 +5719,11 @@ async def uazapi_webhook(request: Request):
             if existing:
                  logging.info(f"Duplicate message {external_id} ignored.")
                  return {"status": "ignored", "reason": "duplicate"}
+
+        # Mensagem enviada pelo sistema volta como eco (fromMe): vincula à já gravada em vez de duplicar
+        if is_from_me and await _absorb_system_message_echo(conversation["id"], body, external_id):
+            logging.info(f"[WEBHOOK] Echo of system-sent message ignored (conversation {conversation['id']}).")
+            return {"status": "ignored", "reason": "echo_of_system_message"}
 
         # Determine sender info (is_from_me was already detected above to fix from_number)
         sender_type = "lead"
@@ -5666,105 +5980,12 @@ def _is_birthday_with_offset(birthdate_str, days_offset):
 # Automation Routes
 @api_router.post("/automations/birthday-followup")
 async def run_birthday_followup_automation(current_user: dict = Depends(get_current_user)):
-    created = 0
-    sent = 0
-    rule = await db.follow_up_rules.find_one({"trigger": "patient_birthday", "active": True}, {"_id": 0})
-    if not rule:
-        return {"created": 0, "sent": 0}
-    
-    days_offset = rule.get("days_after", 0)
-    msg = rule.get("message_template")
-    # Processar em lotes para não carregar todos os pacientes na memória
-    batch_size = 500
-    cursor = db.patients.find({}, {"_id": 0, "id": 1, "name": 1, "phone": 1, "birthdate": 1})
-    batch = []
-    async for p in cursor:
-        batch.append(p)
-        if len(batch) >= batch_size:
-            for p in batch:
-                if _is_birthday_with_offset(p.get("birthdate"), days_offset):
-                    name = p.get("name")
-                    follow_up = FollowUp(
-                        patient_id=p.get("id"),
-                        scheduled_date=datetime.now(timezone.utc).isoformat(),
-                        notes=f"Aniversário de {name}",
-                        status="completed",
-                        contact_type="whatsapp",
-                        contact_reason="informativo"
-                    )
-                    doc = follow_up.model_dump()
-                    doc['created_at'] = doc['created_at'].isoformat()
-                    await db.follow_ups.insert_one(doc)
-                    created += 1
-                    if p.get("phone") and await send_whatsapp_message(p.get("phone"), msg or f"Parabéns {name}!"):
-                        sent += 1
-            batch = []
-    for p in batch:
-        if _is_birthday_with_offset(p.get("birthdate"), days_offset):
-            name = p.get("name")
-            follow_up = FollowUp(
-                patient_id=p.get("id"),
-                scheduled_date=datetime.now(timezone.utc).isoformat(),
-                notes=f"Aniversário de {name}",
-                status="completed",
-                contact_type="whatsapp",
-                contact_reason="informativo"
-            )
-            doc = follow_up.model_dump()
-            doc['created_at'] = doc['created_at'].isoformat()
-            await db.follow_ups.insert_one(doc)
-            created += 1
-            if p.get("phone") and await send_whatsapp_message(p.get("phone"), msg or f"Parabéns {name}!"):
-                sent += 1
-    return {"created": created, "sent": sent}
+    return await check_and_send_birthday_greetings()
 
 @api_router.post("/automations/service-maintenance-followup")
 async def run_service_maintenance_followup(current_user: dict = Depends(get_current_user)):
     """Dispara follow-ups de manutenção: pacientes que tiveram consulta com o serviço X há exatamente N dias."""
-    created = 0
-    sent = 0
-    if db is None:
-        return {"created": 0, "sent": 0}
-    rules = await db.follow_up_rules.find(
-        {"trigger": "service_maintenance", "active": True, "service_id": {"$exists": True, "$ne": None}},
-        {"_id": 0}
-    ).to_list(100)
-    for rule in rules:
-        service_id = rule.get("service_id")
-        days = rule.get("days_after", 30)
-        target_date = (datetime.now(timezone.utc).date() - timedelta(days=days)).strftime("%Y-%m-%d")
-        query = {
-            "appointment_date": target_date,
-            "$or": [{"service_id": service_id}, {"service_ids": service_id}]
-        }
-        cursor = db.appointments.find(query, {"_id": 0, "patient_id": 1})
-        seen_patients = set()
-        async for apt in cursor:
-            pid = apt.get("patient_id")
-            if not pid or pid in seen_patients:
-                continue
-            seen_patients.add(pid)
-            patient = await db.patients.find_one({"id": pid}, {"_id": 0, "name": 1, "phone": 1})
-            if not patient:
-                continue
-            name = patient.get("name", "Cliente")
-            msg = (rule.get("message_template") or "Olá {nome}, lembrete de manutenção.").replace("{nome}", name).replace("{name}", name)
-            follow_up = FollowUp(
-                patient_id=pid,
-                scheduled_date=datetime.now(timezone.utc).date().isoformat(),
-                notes=f"Manutenção (regra: {rule.get('name', '')})",
-                status="pending",
-                contact_type="whatsapp",
-                contact_reason=rule.get("type", "informativo")
-            )
-            doc = follow_up.model_dump()
-            doc["created_at"] = doc["created_at"].isoformat()
-            await db.follow_ups.insert_one(doc)
-            created += 1
-            if patient.get("phone"):
-                if await send_whatsapp_message(patient["phone"], msg):
-                    sent += 1
-    return {"created": created, "sent": sent}
+    return await run_scheduled_followup_rules(["service_maintenance"])
 
 @api_router.post("/automations/auto-message")
 async def send_auto_message(req: AutoMessageRequest, current_user: dict = Depends(get_current_user)):
