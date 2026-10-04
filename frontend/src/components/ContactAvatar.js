@@ -16,10 +16,10 @@ const SIZES = {
   md: "h-11 w-11 text-sm",
 };
 
-export default function ContactAvatar({ name, seed, channel, size = "md" }) {
+export default function ContactAvatar({ name, seed, channel, size = "md", tone: toneOverride }) {
   let hash = 0;
   for (const ch of String(seed || name || "")) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  const tone = AVATAR_TONES[hash % AVATAR_TONES.length];
+  const tone = toneOverride || AVATAR_TONES[hash % AVATAR_TONES.length];
   const initials = getInitials(name);
   const channelMeta = CHANNEL_META[channel];
   return (

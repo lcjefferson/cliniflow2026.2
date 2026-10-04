@@ -12,8 +12,14 @@ export const formatPhone = (value) => {
   return m ? `${m[1] ? "+55 " : ""}${m[2]} ${m[3]}-${m[4]}` : raw;
 };
 
+const NAME_PREFIXES = new Set(["dr", "dra", "sr", "sra", "srta"]);
+
 export const getInitials = (name) => {
-  const parts = (name || "").replace(/[^\p{L}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
+  const parts = (name || "")
+    .replace(/[^\p{L}\s]/gu, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((part, i, all) => part && !(i === 0 && all.length > 1 && NAME_PREFIXES.has(part.toLowerCase())));
   if (!parts.length) return "";
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
 };

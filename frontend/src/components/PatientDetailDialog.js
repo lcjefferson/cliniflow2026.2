@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { formatDate } from "../utils/dateUtils";
+import { toYMD } from "../lib/finance";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,7 +79,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   const [showTreatmentDialog, setShowTreatmentDialog] = useState(false);
   const [treatmentForm, setTreatmentForm] = useState({
     name: "",
-    start_date: new Date().toISOString().split('T')[0],
+    start_date: toYMD(new Date()),
     description: "",
     prescribed_medications: "",
     frequency: "",
@@ -134,7 +135,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   const [showBudgetDialog, setShowBudgetDialog] = useState(false);
   const [budgetForm, setBudgetForm] = useState({
     description: "",
-    date: new Date().toISOString().split('T')[0],
+    date: toYMD(new Date()),
     treatments: [],
     total_value: "",
     professional_id: "",
@@ -240,7 +241,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       setEditingTreatment(null);
       setTreatmentForm({
         name: "",
-        start_date: new Date().toISOString().split('T')[0],
+        start_date: toYMD(new Date()),
         description: "",
         prescribed_medications: "",
         frequency: "",
@@ -325,7 +326,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     setEditingTreatment(treatment);
     setTreatmentForm({
       name: treatment.name || "",
-      start_date: treatment.start_date || new Date().toISOString().split('T')[0],
+      start_date: treatment.start_date || toYMD(new Date()),
       description: treatment.description || "",
       prescribed_medications: treatment.prescribed_medications || "",
       frequency: treatment.frequency || "",
@@ -632,7 +633,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       setEditingBudget(null);
       setBudgetForm({
         description: "",
-        date: new Date().toISOString().split('T')[0],
+        date: toYMD(new Date()),
         treatments: [],
         total_value: "",
         professional_id: "",
@@ -657,7 +658,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
     setBudgetForm({
       description: budget.description || "",
-      date: budget.date || new Date().toISOString().split('T')[0],
+      date: budget.date || toYMD(new Date()),
       treatments: treatments,
       total_value: budget.total_value || "",
       professional_id: budget.professional_id || "",
@@ -726,7 +727,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       toast.success("Tratamento adicionado!");
       setTreatmentForm({
         name: "",
-        start_date: new Date().toISOString().split('T')[0],
+        start_date: toYMD(new Date()),
         description: "",
         prescribed_medications: "",
         frequency: "",
@@ -878,7 +879,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `documento_${detailedPatient.name}_${new Date().toISOString().split('T')[0]}.pdf`);
+      link.setAttribute('download', `documento_${detailedPatient.name}_${toYMD(new Date())}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -944,24 +945,22 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   return (
     <>
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-5xl h-[90vh] w-[95vw] md:w-full flex flex-col p-0 overflow-hidden rounded-2xl">
-        <div className="flex-shrink-0 p-6 pb-0">
+      <DialogContent className="flex h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:h-[90dvh] sm:w-[95vw]">
+        <div className="flex-shrink-0 border-b border-slate-100 px-4 pt-4 sm:px-6 sm:pt-6">
       <DialogHeader>
-        <DialogTitle className="flex items-center justify-between">
-          <div>
-            <span className="text-2xl font-bold text-gray-900">{detailedPatient.name}</span>
-            {debts.total_debt > 0 && (
-              <span className="ml-4 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">
-                Débito: R$ {debts.total_debt.toFixed(2)}
-              </span>
-            )}
-          </div>
+        <DialogTitle className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <span className="min-w-0 break-words text-xl font-bold text-gray-900 sm:text-2xl">{detailedPatient.name}</span>
+          {debts.total_debt > 0 && (
+            <span className="whitespace-nowrap rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700 sm:text-sm">
+              Débito: R$ {debts.total_debt.toFixed(2)}
+            </span>
+          )}
         </DialogTitle>
         <DialogDescription>Visualize e gerencie os dados do paciente</DialogDescription>
       </DialogHeader>
 
           {/* Tabs */}
-          <div className="flex gap-2 overflow-x-auto mt-6 pb-2 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
+          <div className="-mx-4 mt-4 flex gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none] after:w-2 after:flex-shrink-0 after:content-[''] sm:-mx-6 sm:mt-5 sm:gap-2 sm:px-6 lg:flex-wrap lg:after:hidden [&::-webkit-scrollbar]:hidden">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -969,10 +968,10 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-2.5 font-medium text-sm whitespace-nowrap transition-all rounded-xl ${
+                  className={`flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors sm:gap-2 sm:px-4 sm:py-2.5 lg:px-3.5 ${
                     isActive
-                      ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-md transform scale-[1.02]"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 bg-white border border-transparent hover:border-gray-200"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "border border-slate-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                   }`}
                 >
                   <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-gray-500"}`} />
@@ -984,17 +983,17 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         </div>
 
         {/* Tab Content */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-6 pt-4 w-full" style={{minHeight: 0}}>          {loading ? (
+        <div ref={scrollRef} className="w-full flex-1 overflow-y-auto px-4 pb-6 pt-4 sm:px-6" style={{minHeight: 0}}>          {loading ? (
             <div className="text-center py-8 text-gray-500">Carregando...</div>
           ) : (
             <>
               {/* Info Tab */}
               {activeTab === "info" && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <Label className="text-sm font-semibold text-gray-700">Email</Label>
-                      <p className="text-gray-900">{detailedPatient.email}</p>
+                      <p className="break-all text-gray-900">{detailedPatient.email || "Não informado"}</p>
                     </div>
                     <div>
                       <Label className="text-sm font-semibold text-gray-700">Telefone</Label>
@@ -1002,7 +1001,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                     </div>
                     <div>
                       <Label className="text-sm font-semibold text-gray-700">Data de Nascimento</Label>
-                      <p className="text-gray-900">{detailedPatient.birthdate}</p>
+                      <p className="text-gray-900">{detailedPatient.birthdate ? formatDate(detailedPatient.birthdate.split("T")[0]) : "Não informado"}</p>
                     </div>
                     <div>
                       <Label className="text-sm font-semibold text-gray-700">Endereço</Label>
@@ -1016,7 +1015,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                       <Label className="text-sm font-semibold text-gray-700">Profissão</Label>
                       <p className="text-gray-900">{detailedPatient.profession || "Não informado"}</p>
                     </div>
-                    <div className="col-span-2">
+                    <div className="sm:col-span-2">
                       <Label className="text-sm font-semibold text-gray-700">Autorização uso de imagem e voz</Label>
                       <p className="text-gray-900">
                         {(() => {
@@ -1058,13 +1057,13 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
               {/* Budgets Tab */}
               {activeTab === "budgets" && (
                 <div className="space-y-4">
-                  <div className="flex justify-between items-center mb-4">
+                  <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
                     <h3 className="text-lg font-semibold">Orçamentos</h3>
                     <Button onClick={() => {
                       setEditingBudget(null);
                       setBudgetForm({
                         description: "",
-                        date: new Date().toISOString().split('T')[0],
+                        date: toYMD(new Date()),
                         treatments: [],
                         total_value: "",
                         professional_id: "",
@@ -1081,9 +1080,9 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                     <div className="space-y-3">
                       {budgets.map((budget) => (
                         <div key={budget.id} className="border rounded-lg p-4 hover:bg-gray-50">
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3 mb-2">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
                                 <h4 className="font-semibold text-gray-900">{budget.description}</h4>
                                 <span className="text-sm text-gray-500">{formatDate(budget.date)}</span>
                               </div>
@@ -1111,7 +1110,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                                 <p className="text-sm text-gray-500 mt-2 italic">{budget.observations}</p>
                               )}
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex flex-shrink-0 flex-wrap gap-2">
                               <button
                                 onClick={() => handleDownloadBudgetPDF(budget)}
                                 className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
@@ -1150,7 +1149,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
               {/* Revenue Tab */}
               {activeTab === "revenue" && (
                 <div className="space-y-4">
-                  <div className="flex justify-between items-center mb-4">
+                  <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
                     <h3 className="text-lg font-semibold">Faturamento do Paciente</h3>
                     <Button onClick={() => { 
                       setEditingTransaction(null); 
@@ -1173,9 +1172,9 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                     <div className="space-y-3">
                       {transactions.map((t) => (
                         <div key={t.id} className="border rounded-lg p-4 hover:bg-gray-50">
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3 mb-2">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
                                 <span className="text-xl font-bold text-gray-900">R$ {Number(t.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                                 <span className={`px-2 py-1 rounded-full text-xs font-semibold ${t.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                                   {t.status === 'paid' ? 'Pago' : 'Pendente'}
@@ -1187,7 +1186,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                                 <p className="text-xs text-gray-500">Vinculado ao agendamento: {t.appointment_id}</p>
                               )}
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex flex-shrink-0 flex-wrap gap-2">
                               <button
                                 onClick={() => {
                                   setEditingTransaction(t);
@@ -1195,7 +1194,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                                     amount: t.amount,
                                     payment_method: t.payment_method || 'cash',
                                     description: t.description || '',
-                                    transaction_date: (t.transaction_date || new Date().toISOString().split('T')[0]).split('T')[0],
+                                    transaction_date: (t.transaction_date || toYMD(new Date())).split('T')[0],
                                     status: t.status || 'paid',
                                     appointment_id: t.appointment_id || ''
                                   });
@@ -1237,9 +1236,9 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
               {/* Attachments Tab */}
               {activeTab === "attachments" && (
                 <div className="space-y-4">
-                  <div className="flex justify-between items-center mb-4">
+                  <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
                     <h3 className="text-lg font-semibold">Anexos</h3>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button onClick={handleCreateFolder} className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">
                         <Plus className="w-4 h-4 mr-1 inline" />
                         Nova pasta
@@ -1301,7 +1300,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                   </div>
 
                   {detailedPatient?.attachments && detailedPatient?.attachments?.length > 0 ? (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
                       {(detailedPatient?.attachments || [])
                         .filter((att) => selectedFolderId === 'ALL' ? true : (selectedFolderId === null ? !att.folder_id : att.folder_id === selectedFolderId))
                         .map((att) => (
@@ -1334,12 +1333,12 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                               </div>
                             )}
                           </div>
-                          <div className="p-3 flex items-center justify-between">
+                          <div className="p-3 flex items-center justify-between gap-2">
                             <div className="min-w-0">
                               <p className="text-sm font-medium truncate">{att.filename}</p>
                               <p className="text-xs text-gray-500">{(att.size_bytes / 1024).toFixed(2)} KB - {new Date(att.upload_date).toLocaleDateString('pt-BR')}</p>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex flex-shrink-0 flex-wrap gap-2">
                               <button onClick={() => handleDownloadAttachment(att)} className="text-blue-500 hover:text-blue-700">
                                 <Download className="w-4 h-4" />
                               </button>
@@ -1363,7 +1362,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
               {/* Medical Records Tab */}
               {activeTab === "records" && (
                 <div className="space-y-4">
-                  <div className="flex justify-between items-center mb-4">
+                  <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
                     <h3 className="text-lg font-semibold">Documentos do Paciente</h3>
                     <Button onClick={() => setShowMedicalRecordDialog(true)} className="btn-primary">
                         <Plus className="w-4 h-4 mr-2" />
@@ -1396,7 +1395,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                           )}
                           
                           {/* Action buttons */}
-                          <div className="flex gap-2 mt-4 pt-3 border-t">
+                          <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t">
                             <button
                               onClick={() => handleDownloadPDF(record)}
                               className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition"
@@ -1456,14 +1455,14 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                       <p className="text-sm text-gray-500">Nenhum agendamento encontrado.</p>
                     )}
                   </div>
-                  <div className="flex justify-between items-center mb-4">
+                  <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
                     <h3 className="text-lg font-semibold">Tratamentos Realizados</h3>
                     <Button 
                       onClick={() => {
                         setEditingTreatment(null);
                         setTreatmentForm({
                           name: "",
-                          start_date: new Date().toISOString().split('T')[0],
+                          start_date: toYMD(new Date()),
                           description: "",
                           prescribed_medications: "",
                           frequency: "",
@@ -1487,9 +1486,9 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                     <div className="space-y-3">
                       {detailedPatient.treatments.map((treatment) => (
                         <div key={treatment.id} className="border rounded-lg p-4 hover:bg-gray-50">
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3 mb-2">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
                                 <h4 className="font-semibold text-gray-900">{treatment.name}</h4>
                                 <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                                   treatment.status === 'completed' 
@@ -1534,7 +1533,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                                 </div>
                               )}
                             </div>
-                          <div className="flex gap-2 mt-4 pt-3 border-t">
+                          <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t">
                             <button
                               onClick={() => handleEditTreatment(treatment)}
                               className="flex items-center gap-1 px-2 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
@@ -1566,7 +1565,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
               {/* Anamnese Tab */}
               {activeTab === "anamnese" && (
                 <div className="space-y-6">
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-wrap justify-between items-center gap-2">
                     <h3 className="text-lg font-semibold">Anamnese</h3>
                     <Button onClick={handleSaveAnamnese} className="btn-primary">
                       <Save className="w-4 h-4 mr-2" />
@@ -1793,7 +1792,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
               required
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label>Data *</Label>
               <Input
@@ -1831,7 +1830,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
             </select>
           </div>
         </div>
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={() => setShowTransactionDialog(false)}>Cancelar</Button>
           <Button onClick={async () => {
             try {
@@ -1865,7 +1864,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     </Dialog>
 
     <Dialog open={imagePreviewOpen} onOpenChange={(open) => { if (!open) handleCloseImage(); }}>
-      <DialogContent className="max-w-5xl w-[95vw] h-[85vh] p-0">
+      <DialogContent className="h-[85dvh] w-[calc(100%-1rem)] max-w-5xl overflow-hidden p-0 sm:w-[95vw]">
         <DialogDescription className="sr-only">Visualização da imagem do anexo</DialogDescription>
         <div className="relative w-full h-full bg-black/80">
           {imageLoading && (
@@ -1911,12 +1910,12 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
     {/* Treatment Dialog - Moved outside main dialog */}
     <Dialog open={showTreatmentDialog} onOpenChange={handleTreatmentDialogOpenChange}>
-      <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl sm:w-[95vw] max-h-[calc(100dvh-1.5rem)] sm:max-h-[90dvh]">
         <DialogHeader>
           <DialogTitle>{editingTreatment ? "Editar Tratamento" : "Adicionar Tratamento"}</DialogTitle>
           <DialogDescription>Preencha os dados do tratamento</DialogDescription>
         </DialogHeader>
-        <div className="p-6 space-y-4">
+        <div className="min-w-0 space-y-4">
           <div className="space-y-4">
             {/* Campos Obrigatórios */}
             <div className="space-y-4">
@@ -2038,24 +2037,24 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
           <div className="space-y-4 pt-4 border-t">
               <h4 className="font-semibold text-md">Regiões do Tratamento</h4>
               
-              <div className="flex justify-center gap-4 bg-gray-50 p-2 rounded-lg">
+              <div className="grid grid-cols-2 gap-1 bg-gray-50 p-1 rounded-lg sm:flex sm:justify-center sm:gap-4 sm:p-2">
                 <button
                   type="button"
                   onClick={() => setTreatmentView('teeth')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${treatmentView === 'teeth' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`px-3 py-2 sm:px-4 rounded-md text-sm font-medium transition-colors ${treatmentView === 'teeth' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   Odontograma
                 </button>
                 <button
                   type="button"
                   onClick={() => setTreatmentView('face')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${treatmentView === 'face' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`px-3 py-2 sm:px-4 rounded-md text-sm font-medium transition-colors ${treatmentView === 'face' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   Harmonização Facial
                 </button>
               </div>
 
-              <div className="border rounded-lg p-4 bg-white min-h-[400px] flex items-center justify-center">
+              <div className="border rounded-lg p-2 sm:p-4 bg-white sm:min-h-[400px] flex items-center justify-center overflow-x-auto">
                 {treatmentView === 'teeth' ? (
                   <div className="animate-in fade-in duration-300 w-full">
                     <p className="text-sm text-gray-500 mb-4 text-center">Selecione os dentes envolvidos no tratamento</p>
@@ -2134,8 +2133,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
             </div>
           </div>
         </div>
-        <div className="flex justify-end p-6 bg-gray-50">
-          <Button variant="outline" onClick={() => setShowTreatmentDialog(false)} className="mr-2">
+        <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setShowTreatmentDialog(false)}>
             Cancelar
           </Button>
           <Button onClick={editingTreatment ? handleUpdateTreatment : handleAddTreatment}>
@@ -2150,7 +2149,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       setShowMedicalRecordDialog(open);
       if (!open) setEditingRecord(null);
     }}>
-      <DialogContent className="max-w-3xl max-h-[90vh] w-[95vw] md:w-auto overflow-y-auto">
+      <DialogContent className="max-w-3xl sm:max-h-[90dvh]">
         <DialogHeader>
           <DialogTitle>{editingRecord ? "Editar Documento" : "Novo Documento"} - {patient?.name}</DialogTitle>
           <DialogDescription>Crie ou edite um documento do paciente</DialogDescription>
@@ -2159,7 +2158,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         {/* Templates Rápidos */}
         <div className="mb-4">
           <Label className="text-sm font-semibold mb-2 block">Templates Disponíveis</Label>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
             <button
               onClick={() => handleUseTemplate("prontuario")}
               className="p-3 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all text-center"
@@ -2241,7 +2240,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <Label>Tipo de Registro</Label>
               <select
@@ -2264,7 +2263,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                 <option value="OUTRO">Outro</option>
               </select>
             </div>
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <Label>Número de Registro</Label>
               <Input
                 value={medicalRecordForm.professional_registration}
@@ -2280,7 +2279,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
             <Button onClick={() => handleAddMedicalRecord(false)} variant="outline">
               <Save className="w-5 h-5 mr-2" />
               Salvar
@@ -2304,13 +2303,13 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     </Dialog>
 
     <Dialog open={showBudgetDialog} onOpenChange={setShowBudgetDialog}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl sm:max-h-[90dvh]">
         <DialogHeader>
           <DialogTitle>{editingBudget ? "Editar Orçamento" : "Novo Orçamento"}</DialogTitle>
           <DialogDescription>{editingBudget ? "Edite os dados do orçamento" : "Preencha os dados do orçamento"}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleCreateBudget} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label>Descrição</Label>
               <Input
@@ -2365,8 +2364,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
             <div className="space-y-4">
                 {budgetForm.treatments.map((t, i) => (
                     <div key={i} className="bg-white p-3 rounded-lg border shadow-sm space-y-3">
-                        <div className="flex items-center gap-3">
-                            <span className="flex-1 font-medium text-gray-800">{t.name || t}</span>
+                        <div className="flex items-center gap-2 sm:gap-3">
+                            <span className="min-w-0 flex-1 break-words font-medium text-gray-800">{t.name || t}</span>
                             
                             <div className="flex items-center gap-2">
                                <span className="text-xs text-gray-500">R$</span>
@@ -2515,7 +2514,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
              <div>
                 <Label>Valor Total (R$)</Label>
                 <Input
@@ -2553,7 +2552,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
              />
           </div>
 
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="outline" onClick={() => setShowBudgetDialog(false)}>
                 Cancelar
             </Button>
