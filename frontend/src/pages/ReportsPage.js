@@ -1,19 +1,18 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
-import { FileDown, FileSpreadsheet, Calendar, Users, DollarSign, Activity, Check, Loader2 } from "lucide-react";
+import { FileDown, FileSpreadsheet, Calendar, Users, DollarSign, Activity, Check, Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import StatCard from "../components/StatCard";
 import { PageHeader } from "../components/ListKit";
-import { PAYMENT_METHODS, formatDay, toYMD } from "../lib/finance";
+import { PAYMENT_METHODS, formatBRL, formatDay, toYMD } from "../lib/finance";
 import { STATUS_META } from "../lib/appointmentStatus";
+import { buildReportPdf } from "../lib/reportPdf";
 
 const REPORT_TYPES = [
-  { id: "appointments", label: "Agendamentos", icon: Calendar, description: "Histórico de atendimentos com status e valores" },
+  { id: "appointments", label: "Agendamentos", icon: Calendar, description: "Atendimentos com serviços, status e valores" },
   { id: "patients", label: "Pacientes", icon: Users, description: "Cadastros com contato e data de entrada" },
   { id: "financial", label: "Financeiro", icon: DollarSign, description: "Pagamentos recebidos e débitos pendentes" },
 ];
@@ -21,7 +20,113 @@ const REPORT_TYPES = [
 const RECORD_LABELS = {
   appointments: ["agendamento", "agendamentos"],
   patients: ["paciente", "pacientes"],
-  financial: ["transação", "transações"],
+  financial: ["lançamento", "lançamentos"],
+};
+
+const APPOINTMENT_STATUS_TONE = { completed: "green", cancelled: "red", in_progress: "amber", waiting: "blue" };
+
+const statusLabel = (status) => STATUS_META[status]?.label || status || "";
+const paymentLabel = (method) => PAYMENT_METHODS[method] || method || "";
+
+// Each report knows how to turn API rows into PDF columns, Excel rows and summary cards.
+const REPORTS = {
+  appointments: {
+    title: "Relatório de Agendamentos",
+    file: "relatorio_agendamentos",
+    sheet: "Agendamentos",
+    landscape: true,
+    columns: [
+      { header: "Data", key: "dateLabel", width: 22 },
+      { header: "Hora", key: "time", width: 15 },
+      { header: "Paciente", key: "patient_name" },
+      { header: "Profissional", key: "professional_name", width: 42 },
+      { header: "Serviços", key: "services" },
+      { header: "Status", key: "statusLabel", width: 26, tone: (r) => APPOINTMENT_STATUS_TONE[r.status] },
+      { header: "Pago", key: "paidLabel", width: 14, align: "center", tone: (r) => (r.paid ? "green" : null) },
+      { header: "Valor", key: "amountLabel", width: 28, align: "right" },
+    ],
+    decorate: (r) => ({
+      ...r,
+      dateLabel: formatDay(r.date),
+      statusLabel: statusLabel(r.status),
+      paidLabel: r.paid ? "Sim" : "Não",
+      amountLabel: formatBRL(r.amount),
+    }),
+    excelRow: (r) => ({
+      Data: formatDay(r.date),
+      Hora: r.time,
+      Paciente: r.patient_name,
+      Profissional: r.professional_name,
+      Serviços: r.services,
+      Status: statusLabel(r.status),
+      Pago: r.paid ? "Sim" : "Não",
+      Valor: r.amount,
+    }),
+    summary: (s) => [
+      { label: "Agendamentos", value: String(s.count) },
+      { label: "Cancelados", value: String(s.cancelled), tone: s.cancelled ? "red" : undefined },
+      { label: "Valor total*", value: formatBRL(s.total), tone: "blue" },
+      { label: "Pago", value: formatBRL(s.paid_total), tone: "green" },
+    ],
+    footnote: "* Exclui cancelados. Sem valor definido no agendamento, usa o preço dos serviços.",
+  },
+  patients: {
+    title: "Relatório de Pacientes",
+    file: "relatorio_pacientes",
+    sheet: "Pacientes",
+    columns: [
+      { header: "Nome", key: "name" },
+      { header: "E-mail", key: "email" },
+      { header: "Telefone", key: "phone", width: 30 },
+      { header: "Nascimento", key: "birthLabel", width: 22 },
+      { header: "Cidade", key: "city", width: 28 },
+      { header: "Cadastro", key: "createdLabel", width: 20 },
+    ],
+    decorate: (r) => ({ ...r, birthLabel: formatDay(r.birthdate), createdLabel: formatDay(r.created_at) }),
+    excelRow: (r) => ({
+      Nome: r.name,
+      "E-mail": r.email || "",
+      Telefone: r.phone || "",
+      Nascimento: formatDay(r.birthdate),
+      Cidade: r.city || "",
+      Cadastro: formatDay(r.created_at),
+    }),
+    summary: (s) => [{ label: "Pacientes cadastrados", value: String(s.count), tone: "blue" }],
+  },
+  financial: {
+    title: "Relatório Financeiro",
+    file: "relatorio_financeiro",
+    sheet: "Financeiro",
+    columns: [
+      { header: "Data", key: "dateLabel", width: 21 },
+      { header: "Paciente", key: "patient_name" },
+      { header: "Descrição", key: "description" },
+      { header: "Forma", key: "methodLabel", width: 24 },
+      { header: "Status", key: "statusLabel", width: 20, tone: (r) => (r.status === "paid" ? "green" : "amber") },
+      { header: "Valor", key: "amountLabel", width: 26, align: "right" },
+    ],
+    decorate: (r) => ({
+      ...r,
+      dateLabel: formatDay(r.date),
+      methodLabel: paymentLabel(r.payment_method),
+      statusLabel: r.status === "paid" ? "Pago" : "Pendente",
+      amountLabel: formatBRL(r.amount),
+    }),
+    excelRow: (r) => ({
+      Data: formatDay(r.date),
+      Paciente: r.patient_name,
+      Descrição: r.description,
+      "Forma de pagamento": paymentLabel(r.payment_method),
+      Status: r.status === "paid" ? "Pago" : "Pendente",
+      Valor: r.amount,
+    }),
+    summary: (s) => [
+      { label: "Lançamentos", value: String(s.count) },
+      { label: "Recebido", value: formatBRL(s.paid_total), tone: "green" },
+      { label: "Pendente", value: formatBRL(s.pending_total), tone: "amber" },
+      { label: "Total", value: formatBRL(s.total), tone: "blue" },
+    ],
+  },
 };
 
 const getPresets = () => {
@@ -56,245 +161,121 @@ function Step({ number, title, children }) {
 }
 
 export default function ReportsPage() {
+  const thisMonth = getPresets()[0];
   const [reportType, setReportType] = useState("appointments");
-  const [dateStart, setDateStart] = useState("");
-  const [dateEnd, setDateEnd] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [dateStart, setDateStart] = useState(thisMonth.start);
+  const [dateEnd, setDateEnd] = useState(thisMonth.end);
+  const [generating, setGenerating] = useState(false);
 
-  const [appointments, setAppointments] = useState([]);
-  const [patients, setPatients] = useState([]);
-  const [transactions, setTransactions] = useState([]);
-  const [professionals, setProfessionals] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [professionalsCount, setProfessionalsCount] = useState(null);
+  const [clinic, setClinic] = useState(null);
+
+  const [report, setReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(true);
+  const [reportError, setReportError] = useState(false);
+
+  const invalidRange = Boolean(dateStart && dateEnd && dateStart > dateEnd);
 
   useEffect(() => {
-    loadData();
+    api.get("/dashboard/stats").then((r) => setStats(r.data)).catch(() => setStats({}));
+    api.get("/professionals").then((r) => setProfessionalsCount((r.data || []).length)).catch(() => setProfessionalsCount(0));
+    api.get("/settings/clinic").then((r) => setClinic(r.data || null)).catch(() => setClinic(null));
   }, []);
 
-  const loadData = async () => {
-    try {
-      const [apptRes, patRes, transRes, profRes] = await Promise.all([
-        api.get("/appointments"),
-        api.get("/patients"),
-        api.get("/transactions"),
-        api.get("/professionals")
-      ]);
-      setAppointments(apptRes.data);
-      setPatients(patRes.data);
-      setTransactions(transRes.data);
-      setProfessionals(profRes.data);
-    } catch (error) {
-      toast.error("Erro ao carregar dados");
-    } finally {
-      setLoaded(true);
-    }
-  };
-
-  const getPatientName = (patientId) => {
-    const patient = patients.find(p => p.id === patientId);
-    return patient ? patient.name : "Desconhecido";
-  };
-
-  const getProfessionalName = (professionalId) => {
-    const professional = professionals.find(p => p.id === professionalId);
-    return professional ? professional.name : "Desconhecido";
-  };
-
-  const filterByDate = (data, dateField) => {
-    return data.filter(item => {
-      const itemDate = item[dateField];
-      if (!itemDate) return false;
-      if (!dateStart && !dateEnd) return true;
-      const normalizedDate = typeof itemDate === 'string' ? itemDate.split('T')[0] : itemDate;
-      if (dateStart && normalizedDate < dateStart) return false;
-      if (dateEnd && normalizedDate > dateEnd) return false;
-      return true;
-    });
-  };
-
-  const getAppointmentRows = () =>
-    filterByDate(appointments, "appointment_date").filter(appt => patients.find(p => p.id === appt.patient_id));
-  const getPatientRows = () => filterByDate(patients, "created_at");
-  const getFinancialRows = () =>
-    filterByDate(transactions, "transaction_date").filter(trans => !trans.patient_id || patients.find(p => p.id === trans.patient_id));
+  useEffect(() => {
+    if (invalidRange) return undefined;
+    let cancelled = false;
+    setReportLoading(true);
+    setReportError(false);
+    const timer = setTimeout(async () => {
+      try {
+        const params = {};
+        if (dateStart) params.date_from = dateStart;
+        if (dateEnd) params.date_to = dateEnd;
+        const res = await api.get(`/reports/${reportType}`, { params });
+        if (!cancelled) setReport({ type: reportType, ...res.data });
+      } catch (error) {
+        if (!cancelled) {
+          setReport(null);
+          setReportError(true);
+          toast.error(error.response?.status === 403 ? "Sem permissão para gerar relatórios" : "Erro ao carregar dados do relatório");
+        }
+      } finally {
+        if (!cancelled) setReportLoading(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [reportType, dateStart, dateEnd, invalidRange]);
 
   const periodLabel = () => {
     if (dateStart && dateEnd) return `Período: ${formatDay(dateStart)} a ${formatDay(dateEnd)}`;
     if (dateStart) return `Período: a partir de ${formatDay(dateStart)}`;
     if (dateEnd) return `Período: até ${formatDay(dateEnd)}`;
-    return "Período: Todos os registros";
+    return "Período: todos os registros";
   };
 
-  const fileStamp = () => toYMD(new Date());
+  const fileName = (base, ext) => `${base}_${dateStart || "inicio"}_a_${dateEnd || toYMD(new Date())}.${ext}`;
 
-  const downloadPdf = (doc, name) => {
-    const link = document.createElement('a');
-    link.href = doc.output('datauristring');
-    link.download = `${name}_${fileStamp()}.pdf`;
+  const triggerDownload = (href, name) => {
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = name;
     link.click();
-  };
-
-  const downloadExcel = (rows, sheetName, name) => {
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
-    const excelBinary = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
-    const link = document.createElement('a');
-    link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${excelBinary}`;
-    link.download = `${name}_${fileStamp()}.xlsx`;
-    link.click();
-  };
-
-  const startPdf = (title) => {
-    const doc = new jsPDF();
-    doc.setFontSize(18);
-    doc.text(title, 14, 20);
-    doc.setFontSize(10);
-    doc.text(periodLabel(), 14, 30);
-    return doc;
-  };
-
-  const statusLabel = (status) => STATUS_META[status]?.label || status || "";
-  const paymentLabel = (method) => PAYMENT_METHODS[method] || method || "";
-
-  const generateAppointmentsReport = (format) => {
-    const filteredData = getAppointmentRows();
-    if (format === "pdf") {
-      const doc = startPdf("Relatório de Agendamentos");
-      autoTable(doc, {
-        startY: 35,
-        head: [["Data", "Hora", "Paciente", "Profissional", "Status", "Pago", "Valor"]],
-        body: filteredData.map(appt => [
-          formatDay(appt.appointment_date),
-          appt.appointment_time,
-          getPatientName(appt.patient_id),
-          getProfessionalName(appt.professional_id),
-          statusLabel(appt.status),
-          appt.paid ? "Sim" : "Não",
-          `R$ ${appt.amount?.toFixed(2) || "0.00"}`
-        ]),
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [37, 99, 235] }
-      });
-      const total = filteredData.reduce((sum, appt) => sum + (appt.amount || 0), 0);
-      const finalY = doc.lastAutoTable?.finalY || 35;
-      doc.setFontSize(12);
-      doc.text(`Total: R$ ${total.toFixed(2)}`, 14, finalY + 10);
-      downloadPdf(doc, "relatorio_agendamentos");
-    } else {
-      downloadExcel(filteredData.map(appt => ({
-        "Data": formatDay(appt.appointment_date),
-        "Hora": appt.appointment_time,
-        "Paciente": getPatientName(appt.patient_id),
-        "Profissional": getProfessionalName(appt.professional_id),
-        "Status": statusLabel(appt.status),
-        "Pago": appt.paid ? "Sim" : "Não",
-        "Valor": appt.amount || 0
-      })), "Agendamentos", "relatorio_agendamentos");
-    }
-  };
-
-  const generatePatientsReport = (format) => {
-    const filteredData = getPatientRows();
-    if (format === "pdf") {
-      const doc = startPdf("Relatório de Pacientes");
-      autoTable(doc, {
-        startY: 35,
-        head: [["Nome", "Email", "Telefone", "Nascimento", "Cadastro"]],
-        body: filteredData.map(patient => [
-          patient.name,
-          patient.email,
-          patient.phone,
-          formatDay(patient.birthdate),
-          formatDay(patient.created_at)
-        ]),
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [37, 99, 235] }
-      });
-      const finalY = doc.lastAutoTable?.finalY || 35;
-      doc.setFontSize(12);
-      doc.text(`Total de Pacientes: ${filteredData.length}`, 14, finalY + 10);
-      downloadPdf(doc, "relatorio_pacientes");
-    } else {
-      downloadExcel(filteredData.map(patient => ({
-        "Nome": patient.name,
-        "Email": patient.email,
-        "Telefone": patient.phone,
-        "Data Nascimento": formatDay(patient.birthdate),
-        "Data Cadastro": formatDay(patient.created_at)
-      })), "Pacientes", "relatorio_pacientes");
-    }
-  };
-
-  const generateFinancialReport = (format) => {
-    const filteredData = getFinancialRows();
-    if (format === "pdf") {
-      const doc = startPdf("Relatório Financeiro");
-      autoTable(doc, {
-        startY: 35,
-        head: [["Data", "Paciente", "Descrição", "Forma Pgto", "Status", "Valor"]],
-        body: filteredData.map(trans => [
-          formatDay(trans.transaction_date),
-          getPatientName(trans.patient_id),
-          trans.description,
-          paymentLabel(trans.payment_method),
-          trans.status === "paid" ? "Pago" : "Pendente",
-          `R$ ${trans.amount.toFixed(2)}`
-        ]),
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [37, 99, 235] }
-      });
-      const totalPaid = filteredData.filter(t => t.status === "paid").reduce((sum, t) => sum + t.amount, 0);
-      const totalPending = filteredData.filter(t => t.status === "pending").reduce((sum, t) => sum + t.amount, 0);
-      const finalY = doc.lastAutoTable?.finalY || 35;
-      doc.setFontSize(12);
-      doc.text(`Total Recebido: R$ ${totalPaid.toFixed(2)}`, 14, finalY + 10);
-      doc.text(`Total Pendente: R$ ${totalPending.toFixed(2)}`, 14, finalY + 17);
-      doc.setFontSize(14);
-      doc.text(`Total Geral: R$ ${(totalPaid + totalPending).toFixed(2)}`, 14, finalY + 27);
-      downloadPdf(doc, "relatorio_financeiro");
-    } else {
-      downloadExcel(filteredData.map(trans => ({
-        "Data": formatDay(trans.transaction_date),
-        "Paciente": getPatientName(trans.patient_id),
-        "Descrição": trans.description,
-        "Forma Pagamento": paymentLabel(trans.payment_method),
-        "Status": trans.status === "paid" ? "Pago" : "Pendente",
-        "Valor": trans.amount
-      })), "Financeiro", "relatorio_financeiro");
-    }
   };
 
   const generateReport = (format) => {
-    setLoading(true);
+    const def = REPORTS[reportType];
+    if (!report || report.type !== reportType) return;
+    setGenerating(true);
     try {
-      if (reportType === "appointments") generateAppointmentsReport(format);
-      else if (reportType === "patients") generatePatientsReport(format);
-      else if (reportType === "financial") generateFinancialReport(format);
+      const truncatedNote = report.truncated ? "Atenção: o período tem mais registros do que o limite exportado. Reduza o período para ver tudo." : null;
+      if (format === "pdf") {
+        const doc = buildReportPdf({
+          title: def.title,
+          period: periodLabel(),
+          clinic,
+          columns: def.columns,
+          rows: report.rows.map(def.decorate),
+          summary: def.summary(report.summary),
+          landscape: def.landscape,
+          truncatedNote,
+          footnote: def.footnote,
+        });
+        triggerDownload(doc.output("datauristring"), fileName(def.file, "pdf"));
+      } else {
+        const ws = XLSX.utils.json_to_sheet(report.rows.map(def.excelRow));
+        const headers = Object.keys(def.excelRow(report.rows[0] || {}));
+        ws["!cols"] = headers.map((h) => ({ wch: Math.max(12, h.length + 2) }));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, def.sheet);
+        const base64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+        triggerDownload(`data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${base64}`, fileName(def.file, "xlsx"));
+      }
       toast.success(format === "pdf" ? "Relatório PDF gerado!" : "Relatório Excel gerado!");
     } catch (error) {
       console.error(error);
       toast.error("Erro ao gerar relatório");
     } finally {
-      setLoading(false);
+      setGenerating(false);
     }
   };
 
-  const rowCount = {
-    appointments: () => getAppointmentRows().length,
-    patients: () => getPatientRows().length,
-    financial: () => getFinancialRows().length,
-  }[reportType]();
+  const ready = !reportLoading && !reportError && report?.type === reportType && !invalidRange;
+  const rowCount = ready ? report.summary?.count ?? report.rows.length : 0;
   const [singular, plural] = RECORD_LABELS[reportType];
   const presets = getPresets();
   const activePreset = presets.find((p) => p.start === dateStart && p.end === dateEnd);
-  const invalidRange = dateStart && dateEnd && dateStart > dateEnd;
 
-  const stats = [
-    { label: "Agendamentos", value: appointments.length, icon: Calendar, tone: "from-blue-500 to-blue-600" },
-    { label: "Pacientes", value: patients.length, icon: Users, tone: "from-purple-500 to-purple-600" },
-    { label: "Transações", value: transactions.length, icon: DollarSign, tone: "from-green-500 to-green-600" },
-    { label: "Profissionais", value: professionals.length, icon: Activity, tone: "from-orange-500 to-orange-600" },
+  const fmtCount = (v) => (v == null ? "—" : Number(v).toLocaleString("pt-BR"));
+  const statCards = [
+    { label: "Agendamentos", value: fmtCount(stats?.appointmentsTotal), icon: Calendar, tone: "from-blue-500 to-blue-600" },
+    { label: "Pacientes", value: fmtCount(stats?.patientsTotal), icon: Users, tone: "from-purple-500 to-purple-600" },
+    { label: "Recebido", value: stats ? formatBRL(stats.revenuePaid) : "—", icon: DollarSign, tone: "from-green-500 to-green-600" },
+    { label: "Profissionais", value: fmtCount(professionalsCount), icon: Activity, tone: "from-orange-500 to-orange-600" },
   ];
 
   return (
@@ -303,8 +284,8 @@ export default function ReportsPage() {
         <PageHeader title="Relatórios" subtitle="Exporte os dados da clínica em PDF ou Excel" />
 
         <div className="mb-6 grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-4">
-          {stats.map((s) => (
-            <StatCard key={s.label} {...s} value={loaded ? s.value.toLocaleString("pt-BR") : "—"} />
+          {statCards.map((s) => (
+            <StatCard key={s.label} {...s} />
           ))}
         </div>
 
@@ -369,28 +350,37 @@ export default function ReportsPage() {
 
           <Step number={3} title="Exportar">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-slate-600">
-                {loaded ? (
+              <div className="text-sm text-slate-600">
+                {invalidRange ? (
+                  <span className="text-slate-400">Ajuste o período para continuar.</span>
+                ) : reportLoading ? (
+                  <span className="inline-flex items-center gap-2 text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Buscando registros...</span>
+                ) : reportError ? (
+                  <span className="text-red-600">Não foi possível carregar os dados.</span>
+                ) : (
                   <>
                     <strong className="font-semibold tabular-nums text-slate-900">{rowCount.toLocaleString("pt-BR")}</strong>{" "}
                     {rowCount === 1 ? singular : plural}
                     <span className="text-slate-400"> · {periodLabel().replace("Período: ", "")}</span>
+                    {report?.truncated && (
+                      <p className="mt-1 flex items-center gap-1 text-xs text-amber-700">
+                        <AlertTriangle className="h-3.5 w-3.5" /> Muitos registros: apenas parte será exportada. Reduza o período.
+                      </p>
+                    )}
                   </>
-                ) : (
-                  "Carregando dados..."
                 )}
-              </p>
+              </div>
               <div className="grid grid-cols-2 gap-2 sm:flex">
-                <Button onClick={() => generateReport("pdf")} disabled={loading || !loaded || invalidRange} className="gap-2">
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                <Button onClick={() => generateReport("pdf")} disabled={!ready || generating} className="gap-2">
+                  {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
                   Baixar PDF
                 </Button>
                 <Button
                   onClick={() => generateReport("excel")}
-                  disabled={loading || !loaded || invalidRange}
+                  disabled={!ready || generating}
                   className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
                 >
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                  {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
                   Baixar Excel
                 </Button>
               </div>

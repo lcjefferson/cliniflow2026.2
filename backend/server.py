@@ -3140,6 +3140,165 @@ async def get_transactions(
         t["patient_name"] = patient_names.get(t.get("patient_id")) or "Paciente"
     return transactions
 
+# Report Routes
+REPORT_ROW_CAP = 20000
+CLINIC_TZ = timezone(timedelta(hours=-3))
+
+
+def _report_day_bounds(date_from: Optional[str], date_to: Optional[str]):
+    """Valida AAAA-MM-DD e devolve (início, fim exclusivo) como strings de data."""
+    parsed = []
+    for value in (date_from, date_to):
+        if not value:
+            parsed.append(None)
+            continue
+        try:
+            parsed.append(datetime.strptime(value, "%Y-%m-%d"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Data inválida, use o formato AAAA-MM-DD")
+    start, end = parsed
+    end_exclusive = end + timedelta(days=1) if end else None
+    return start, end_exclusive
+
+
+def _string_date_filter(start, end_exclusive) -> dict:
+    # appointment_date / transaction_date are stored as "YYYY-MM-DD" (optionally followed by a time),
+    # so lexicographic comparison against day boundaries is exact.
+    f = {}
+    if start:
+        f["$gte"] = start.strftime("%Y-%m-%d")
+    if end_exclusive:
+        f["$lt"] = end_exclusive.strftime("%Y-%m-%d")
+    return f
+
+
+def _created_at_filter(start, end_exclusive) -> Optional[dict]:
+    # created_at may be a BSON datetime or an ISO string depending on when the document was written.
+    if not start and not end_exclusive:
+        return None
+    dt_range, str_range = {}, {}
+    for op, day in (("$gte", start), ("$lt", end_exclusive)):
+        if day:
+            boundary = day.replace(tzinfo=CLINIC_TZ).astimezone(timezone.utc)
+            dt_range[op] = boundary
+            str_range[op] = boundary.isoformat()
+    return {"$or": [{"created_at": dt_range}, {"created_at": str_range}]}
+
+
+def _clinic_iso(value):
+    """ISO timestamp in clinic local time, so its first 10 chars are the local calendar day."""
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return value
+    if not isinstance(value, datetime):
+        return value
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(CLINIC_TZ).isoformat()
+
+
+@api_router.get("/reports/{report_type}")
+async def get_report(
+    report_type: str,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Linhas completas de relatório filtradas por período no banco (sem os limites das listagens)."""
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    is_admin = current_user.get("user_type") in ("admin", "superuser") or (current_user.get("role") or {}).get("is_admin")
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if report_type not in ("appointments", "patients", "financial"):
+        raise HTTPException(status_code=404, detail="Relatório não encontrado")
+
+    start, end_exclusive = _report_day_bounds(date_from, date_to)
+
+    if report_type == "patients":
+        query = _created_at_filter(start, end_exclusive) or {}
+        patients = await db.patients.find(
+            query,
+            {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "birthdate": 1, "city": 1, "created_at": 1},
+        ).sort("name", 1).to_list(REPORT_ROW_CAP + 1)
+        truncated = len(patients) > REPORT_ROW_CAP
+        rows = [{**p, "created_at": _clinic_iso(p.get("created_at"))} for p in patients[:REPORT_ROW_CAP]]
+        return {"rows": rows, "truncated": truncated, "summary": {"count": len(rows)}}
+
+    if report_type == "appointments":
+        query = {}
+        date_filter = _string_date_filter(start, end_exclusive)
+        if date_filter:
+            query["appointment_date"] = date_filter
+        appts = await db.appointments.find(query, {"_id": 0}).sort(
+            [("appointment_date", 1), ("appointment_time", 1)]
+        ).to_list(REPORT_ROW_CAP + 1)
+        truncated = len(appts) > REPORT_ROW_CAP
+        appts = appts[:REPORT_ROW_CAP]
+
+        patient_ids = list({a.get("patient_id") for a in appts if a.get("patient_id")})
+        patients, professionals, services = await asyncio.gather(
+            db.patients.find({"id": {"$in": patient_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(patient_ids) or 1),
+            db.professionals.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(5000),
+            db.services.find({}, {"_id": 0, "id": 1, "name": 1, "price": 1}).to_list(5000),
+        )
+        patient_names = {p["id"]: p.get("name") for p in patients}
+        professional_names = {p["id"]: p.get("name") for p in professionals}
+        service_by_id = {s["id"]: s for s in services if s.get("id")}
+
+        rows = []
+        for a in appts:
+            ids = a.get("service_ids") or ([a["service_id"]] if a.get("service_id") else [])
+            appt_services = [service_by_id[i] for i in ids if i in service_by_id]
+            amount = a.get("amount")
+            if amount is None:
+                amount = sum(float(s.get("price") or 0) for s in appt_services)
+            rows.append({
+                "id": a.get("id"),
+                "date": a.get("appointment_date"),
+                "time": a.get("appointment_time"),
+                "patient_name": patient_names.get(a.get("patient_id")) or "Paciente removido",
+                "professional_name": professional_names.get(a.get("professional_id")) or "—",
+                "services": ", ".join(s.get("name") or "" for s in appt_services),
+                "status": a.get("status") or "scheduled",
+                "paid": bool(a.get("paid")),
+                "amount": float(amount or 0),
+            })
+        billable = [r for r in rows if r["status"] != "cancelled"]
+        summary = {
+            "count": len(rows),
+            "cancelled": len(rows) - len(billable),
+            "total": sum(r["amount"] for r in billable),
+            "paid_total": sum(r["amount"] for r in billable if r["paid"]),
+        }
+        return {"rows": rows, "truncated": truncated, "summary": summary}
+
+    query = {}
+    date_filter = _string_date_filter(start, end_exclusive)
+    if date_filter:
+        query["transaction_date"] = date_filter
+    transactions = await db.transactions.find(query, {"_id": 0}).sort("transaction_date", 1).to_list(REPORT_ROW_CAP + 1)
+    truncated = len(transactions) > REPORT_ROW_CAP
+    transactions = transactions[:REPORT_ROW_CAP]
+    patient_ids = list({t.get("patient_id") for t in transactions if t.get("patient_id")})
+    patients = await db.patients.find({"id": {"$in": patient_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(patient_ids) or 1)
+    patient_names = {p["id"]: p.get("name") for p in patients}
+    rows = [{
+        "id": t.get("id"),
+        "date": t.get("transaction_date"),
+        "patient_name": patient_names.get(t.get("patient_id")) or "—",
+        "description": t.get("description") or "",
+        "payment_method": t.get("payment_method") or "",
+        "status": t.get("status") or "paid",
+        "amount": float(t.get("amount") or 0),
+    } for t in transactions]
+    paid_total = sum(r["amount"] for r in rows if r["status"] == "paid")
+    pending_total = sum(r["amount"] for r in rows if r["status"] == "pending")
+    summary = {"count": len(rows), "paid_total": paid_total, "pending_total": pending_total, "total": paid_total + pending_total}
+    return {"rows": rows, "truncated": truncated, "summary": summary}
+
 # Budget Routes
 @api_router.post("/budgets", response_model=Budget)
 async def create_budget(data: BudgetCreate, current_user: dict = Depends(get_current_user)):
