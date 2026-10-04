@@ -26,6 +26,9 @@ const RECORD_LABELS = {
 const APPOINTMENT_STATUS_TONE = { completed: "green", cancelled: "red", in_progress: "amber", waiting: "blue" };
 
 const statusLabel = (status) => STATUS_META[status]?.label || status || "";
+const paidState = (r) => (r.paid ? "paid" : r.paid_amount > 0 ? "partial" : "none");
+const PAID_LABEL = { paid: "Sim", partial: "Parcial", none: "Não" };
+const PAID_TONE = { paid: "green", partial: "amber" };
 const paymentLabel = (method) => PAYMENT_METHODS[method] || method || "";
 
 // Each report knows how to turn API rows into PDF columns, Excel rows and summary cards.
@@ -42,14 +45,14 @@ const REPORTS = {
       { header: "Profissional", key: "professional_name", width: 42 },
       { header: "Serviços", key: "services" },
       { header: "Status", key: "statusLabel", width: 26, tone: (r) => APPOINTMENT_STATUS_TONE[r.status] },
-      { header: "Pago", key: "paidLabel", width: 14, align: "center", tone: (r) => (r.paid ? "green" : null) },
+      { header: "Pago", key: "paidLabel", width: 16, align: "center", tone: (r) => PAID_TONE[paidState(r)] },
       { header: "Valor", key: "amountLabel", width: 28, align: "right" },
     ],
     decorate: (r) => ({
       ...r,
       dateLabel: formatDay(r.date),
       statusLabel: statusLabel(r.status),
-      paidLabel: r.paid ? "Sim" : "Não",
+      paidLabel: PAID_LABEL[paidState(r)],
       amountLabel: formatBRL(r.amount),
     }),
     excelRow: (r) => ({
@@ -59,8 +62,9 @@ const REPORTS = {
       Profissional: r.professional_name,
       Serviços: r.services,
       Status: statusLabel(r.status),
-      Pago: r.paid ? "Sim" : "Não",
+      Pago: PAID_LABEL[paidState(r)],
       Valor: r.amount,
+      "Valor pago": r.paid_amount ?? 0,
     }),
     summary: (s) => [
       { label: "Agendamentos", value: String(s.count) },
@@ -68,7 +72,7 @@ const REPORTS = {
       { label: "Valor total*", value: formatBRL(s.total), tone: "blue" },
       { label: "Pago", value: formatBRL(s.paid_total), tone: "green" },
     ],
-    footnote: "* Exclui cancelados. Sem valor definido no agendamento, usa o preço dos serviços.",
+    footnote: "* Exclui cancelados. Valores dos lançamentos financeiros vinculados ao agendamento ou do mesmo paciente no mesmo dia.",
   },
   patients: {
     title: "Relatório de Pacientes",

@@ -5,6 +5,7 @@ import io
 import json
 import shutil
 import asyncio
+from collections import defaultdict
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
@@ -3239,22 +3240,55 @@ async def get_report(
         appts = appts[:REPORT_ROW_CAP]
 
         patient_ids = list({a.get("patient_id") for a in appts if a.get("patient_id")})
-        patients, professionals, services = await asyncio.gather(
+        appt_ids = [a["id"] for a in appts if a.get("id")]
+        tx_query = {"$or": [{"appointment_id": {"$in": appt_ids}}, {"patient_id": {"$in": patient_ids}}]}
+        if date_filter:
+            tx_query["$or"][1]["transaction_date"] = date_filter
+        patients, professionals, services, transactions = await asyncio.gather(
             db.patients.find({"id": {"$in": patient_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(patient_ids) or 1),
             db.professionals.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(5000),
             db.services.find({}, {"_id": 0, "id": 1, "name": 1, "price": 1}).to_list(5000),
+            db.transactions.find(tx_query, {"_id": 0, "appointment_id": 1, "patient_id": 1, "transaction_date": 1, "amount": 1, "status": 1}).to_list(None),
         )
         patient_names = {p["id"]: p.get("name") for p in patients}
         professional_names = {p["id"]: p.get("name") for p in professionals}
         service_by_id = {s["id"]: s for s in services if s.get("id")}
 
+        # Appointments carry no price in practice: the money lives in transactions. A transaction counts for
+        # the appointment it is linked to; unlinked ones go to the patient's appointment on the same day
+        # (a single one per day, preferring non-cancelled, so nothing is counted twice).
+        appt_id_set = set(appt_ids)
+        day_owner = {}
+        for a in appts:
+            key = (a.get("patient_id"), (a.get("appointment_date") or "")[:10])
+            current = day_owner.get(key)
+            if current is None or (current.get("status") == "cancelled" and a.get("status") != "cancelled"):
+                day_owner[key] = a
+        tx_total, tx_paid = defaultdict(float), defaultdict(float)
+        for t in transactions:
+            owner_id = t.get("appointment_id") if t.get("appointment_id") in appt_id_set else None
+            if owner_id is None and not t.get("appointment_id"):
+                owner = day_owner.get((t.get("patient_id"), (t.get("transaction_date") or "")[:10]))
+                owner_id = owner.get("id") if owner else None
+            if owner_id is None:
+                continue
+            value = float(t.get("amount") or 0)
+            tx_total[owner_id] += value
+            if t.get("status", "paid") == "paid":
+                tx_paid[owner_id] += value
+
         rows = []
         for a in appts:
             ids = a.get("service_ids") or ([a["service_id"]] if a.get("service_id") else [])
             appt_services = [service_by_id[i] for i in ids if i in service_by_id]
-            amount = a.get("amount")
-            if amount is None:
-                amount = sum(float(s.get("price") or 0) for s in appt_services)
+            if a.get("id") in tx_total:
+                amount, paid_amount = tx_total[a["id"]], tx_paid[a["id"]]
+            else:
+                amount = a.get("amount")
+                if amount is None:
+                    amount = sum(float(s.get("price") or 0) for s in appt_services)
+                amount = float(amount or 0)
+                paid_amount = amount if a.get("paid") else 0.0
             rows.append({
                 "id": a.get("id"),
                 "date": a.get("appointment_date"),
@@ -3263,15 +3297,16 @@ async def get_report(
                 "professional_name": professional_names.get(a.get("professional_id")) or "—",
                 "services": ", ".join(s.get("name") or "" for s in appt_services),
                 "status": a.get("status") or "scheduled",
-                "paid": bool(a.get("paid")),
-                "amount": float(amount or 0),
+                "paid": amount > 0 and paid_amount >= amount,
+                "paid_amount": paid_amount,
+                "amount": amount,
             })
         billable = [r for r in rows if r["status"] != "cancelled"]
         summary = {
             "count": len(rows),
             "cancelled": len(rows) - len(billable),
             "total": sum(r["amount"] for r in billable),
-            "paid_total": sum(r["amount"] for r in billable if r["paid"]),
+            "paid_total": sum(r["paid_amount"] for r in billable),
         }
         return {"rows": rows, "truncated": truncated, "summary": summary}
 
