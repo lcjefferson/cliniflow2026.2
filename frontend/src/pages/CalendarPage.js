@@ -12,8 +12,16 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@/components/ui/command";
 import PatientCombobox from "../components/PatientCombobox";
 import PatientDetailDialog from "../components/PatientDetailDialog";
+import CalendarAppointmentCard from "../components/CalendarAppointmentCard";
 import { useAuth } from "../contexts/AuthContext";
 import { STATUS_META, getStatusDot } from "../lib/appointmentStatus";
+import {
+  CALENDAR_DENSITY_KEY,
+  DENSITY_OPTIONS,
+  readStoredDensity,
+  getMonthCellLimit,
+  getCalendarLayoutClasses,
+} from "../lib/calendarDensity";
 
 /** Data local YYYY-MM-DD (igual às células do calendário). */
 function toYMD(d) {
@@ -30,8 +38,6 @@ function appointmentDateKey(raw) {
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
-const MONTH_CELL_LIMIT = 3;
-
 export default function CalendarPage() {
   const { user } = useAuth();
   const [appointments, setAppointments] = useState([]);
@@ -42,6 +48,7 @@ export default function CalendarPage() {
   const [rooms, setRooms] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState("month"); // month, week, day
+  const [calendarDensity, setCalendarDensity] = useState(() => readStoredDensity());
   const [selectedDay, setSelectedDay] = useState(() => toYMD(new Date()));
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [filterProfessional, setFilterProfessional] = useState("");
@@ -101,6 +108,14 @@ export default function CalendarPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CALENDAR_DENSITY_KEY, calendarDensity);
+    } catch {
+      /* ignore */
+    }
+  }, [calendarDensity]);
 
   useEffect(() => {
     loadMonthAppointments();
@@ -466,6 +481,41 @@ export default function CalendarPage() {
     return "Paciente";
   };
 
+  const getAppointmentPatientName = (apt) => {
+    if (apt?.patient_name) return apt.patient_name;
+    return getPatientName(apt?.patient_id);
+  };
+
+  const calendarLayout = getCalendarLayoutClasses(calendarDensity);
+  const monthCellLimit = getMonthCellLimit(calendarDensity);
+
+  const renderAppointmentCard = (apt, index, variant, extra = {}) => {
+    const status = STATUS_META[apt.status] || STATUS_META.scheduled;
+    const serviceLabel = getServiceLabel(apt);
+    return (
+      <CalendarAppointmentCard
+        key={apt.id || index}
+        variant={variant}
+        density={calendarDensity}
+        appointment={
+          variant === "list"
+            ? { ...apt, roomName: apt.room_id ? getRoomName(apt.room_id) : undefined }
+            : apt
+        }
+        patientName={getAppointmentPatientName(apt)}
+        professionalName={getProfessionalName(apt.professional_id)}
+        serviceLabel={serviceLabel}
+        professionalColorClass={getProfessionalColor(apt.professional_id)}
+        statusDotClass={getStatusDot(apt)}
+        statusLabel={status.label}
+        statusBadgeClassName={status.className}
+        tooltip={getAppointmentTooltip(apt)}
+        onClick={() => openAppointmentDetails(apt)}
+        {...extra}
+      />
+    );
+  };
+
   const getServiceName = (serviceId) => {
     const service = services.find(s => s.id === serviceId);
     return service ? service.name : "Serviço";
@@ -665,58 +715,6 @@ export default function CalendarPage() {
       STATUS_META[apt.status]?.label,
     ].filter(Boolean).join(" · ");
 
-  const renderDayRow = (apt, index) => {
-    const status = STATUS_META[apt.status] || STATUS_META.scheduled;
-    const details = [getProfessionalName(apt.professional_id), getServiceLabel(apt), apt.room_id ? getRoomName(apt.room_id) : ""]
-      .filter(Boolean)
-      .join(" · ");
-    return (
-      <button
-        key={apt.id || index}
-        onClick={() => openAppointmentDetails(apt)}
-        className="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-slate-50 transition-colors"
-      >
-        <span className="w-24 flex-shrink-0 text-sm font-semibold text-slate-900 tabular-nums">
-          {apt.appointment_time}
-          {apt.appointment_time_end ? <span className="font-normal text-slate-400"> – {apt.appointment_time_end}</span> : null}
-        </span>
-        <span className={`w-1.5 self-stretch rounded-full flex-shrink-0 ${getProfessionalColor(apt.professional_id)}`} />
-        <span className="min-w-0 flex-1">
-          <span className={`block text-sm font-medium truncate ${apt.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
-            {getPatientName(apt.patient_id)}
-          </span>
-          <span className="block text-xs text-slate-500 truncate">{details}</span>
-        </span>
-        <span className={`status-badge flex-shrink-0 ${status.className}`}>{status.label}</span>
-      </button>
-    );
-  };
-
-  const renderMobileAppointment = (apt, index) => {
-    const serviceLabel = getServiceLabel(apt);
-    return (
-      <button
-        key={apt.id || index}
-        onClick={() => openAppointmentDetails(apt)}
-        className="w-full flex items-stretch gap-3 text-left bg-white border border-slate-200 rounded-lg p-3 active:bg-slate-50"
-      >
-        <span className={`w-1.5 rounded-full flex-shrink-0 ${getProfessionalColor(apt.professional_id)}`} />
-        <span className="w-16 flex-shrink-0 flex items-start gap-1.5 text-sm font-semibold text-slate-900 tabular-nums">
-          <span className={`mt-1.5 w-2.5 h-2.5 rounded-full flex-shrink-0 ${getStatusDot(apt)}`} title={STATUS_META[apt.status]?.label} />
-          {apt.appointment_time}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className={`block text-sm font-medium truncate ${apt.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
-            {getPatientName(apt.patient_id)}
-          </span>
-          <span className="block text-xs text-slate-500 truncate">
-            {getProfessionalName(apt.professional_id)}{serviceLabel ? ` · ${serviceLabel}` : ""}
-          </span>
-        </span>
-      </button>
-    );
-  };
-
   const monthDays = generateCalendarDays();
   const mobileSelectedDay = monthDays.some((d) => d.date === selectedDay)
     ? selectedDay
@@ -792,6 +790,19 @@ export default function CalendarPage() {
                   </button>
                 ))}
               </div>
+              <select
+                value={calendarDensity}
+                onChange={(e) => setCalendarDensity(e.target.value)}
+                className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10"
+                aria-label="Tamanho dos cards de agendamento"
+                title="Tamanho dos cards"
+              >
+                {DENSITY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
               <button
                 onClick={() => setShowMobileFilters((v) => !v)}
                 className={`md:hidden short:inline-flex h-9 px-3 inline-flex items-center gap-1.5 rounded-lg border text-sm font-medium ${
@@ -916,7 +927,7 @@ export default function CalendarPage() {
                 </div>
                 {mobileSelectedAppointments.length > 0 ? (
                   <div className="space-y-2">
-                    {mobileSelectedAppointments.map(renderMobileAppointment)}
+                    {mobileSelectedAppointments.map((apt, i) => renderAppointmentCard(apt, i, "mobile"))}
                   </div>
                 ) : (
                   <p className="text-sm text-slate-500 text-center py-6">Nenhum agendamento neste dia</p>
@@ -937,16 +948,16 @@ export default function CalendarPage() {
               <div className="grid grid-cols-7 gap-px bg-slate-200">
                 {monthCells.map((dayObj, index) => {
                   if (!dayObj.day) {
-                    return <div key={index} className="bg-slate-50 min-h-[92px] lg:min-h-[124px]" />;
+                    return <div key={index} className={`bg-slate-50 ${calendarLayout.monthEmptyCell}`} />;
                   }
                   const cellAppointments = getAppointmentsForDay(dayObj.date);
-                  const visible = cellAppointments.slice(0, MONTH_CELL_LIMIT);
+                  const visible = cellAppointments.slice(0, monthCellLimit);
                   const hidden = cellAppointments.length - visible.length;
                   return (
                     <div
                       key={index}
                       onDoubleClick={() => handleDayDoubleClick(dayObj.date)}
-                      className={`group min-h-[92px] lg:min-h-[124px] p-1.5 flex flex-col ${dayObj.isToday ? 'bg-[#f5f8ff]' : 'bg-white'}`}
+                      className={`group ${calendarLayout.monthCell} p-1.5 flex flex-col ${dayObj.isToday ? 'bg-[#f5f8ff]' : 'bg-white'}`}
                     >
                       <div className="flex items-center justify-between mb-1">
                         <button
@@ -967,23 +978,8 @@ export default function CalendarPage() {
                           <Plus className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                      <div className="space-y-0.5 min-w-0">
-                        {visible.map((apt, aptIndex) => (
-                          <button
-                            key={apt.id || aptIndex}
-                            onClick={() => openAppointmentDetails(apt)}
-                            title={getAppointmentTooltip(apt)}
-                            className={`relative overflow-hidden w-full flex items-center gap-1.5 rounded pl-2 pr-1.5 py-0.5 text-left text-xs hover:bg-slate-100 ${
-                              apt.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-800'
-                            }`}
-                          >
-                            <span className={`absolute inset-0 opacity-[0.12] ${getProfessionalColor(apt.professional_id)}`} />
-                            <span className={`absolute inset-y-0 left-0 w-[3px] ${getProfessionalColor(apt.professional_id)}`} />
-                            <span className={`relative w-2 h-2 rounded-full flex-shrink-0 ${getStatusDot(apt)}`} />
-                            <span className="relative font-semibold tabular-nums flex-shrink-0">{apt.appointment_time}</span>
-                            <span className="relative truncate">{getProfessionalName(apt.professional_id)}</span>
-                          </button>
-                        ))}
+                      <div className={`${calendarLayout.monthStack} min-w-0`}>
+                        {visible.map((apt, aptIndex) => renderAppointmentCard(apt, aptIndex, "month"))}
                         {hidden > 0 && (
                           <button
                             onClick={() => openDay(dayObj.date)}
@@ -1021,7 +1017,9 @@ export default function CalendarPage() {
                       </button>
                     </div>
                     {cellAppointments.length > 0 ? (
-                      <div className="space-y-2">{cellAppointments.map(renderMobileAppointment)}</div>
+                      <div className="space-y-2">
+                        {cellAppointments.map((apt, i) => renderAppointmentCard(apt, i, "mobile"))}
+                      </div>
                     ) : (
                       <p className="text-xs text-slate-400">Sem agendamentos</p>
                     )}
@@ -1039,7 +1037,7 @@ export default function CalendarPage() {
                   <div
                     key={index}
                     onDoubleClick={() => handleDayDoubleClick(dayObj.date)}
-                    className={`group flex flex-col min-h-[320px] lg:min-h-[440px] ${dayObj.isToday ? 'bg-[#f5f8ff]' : 'bg-white'}`}
+                    className={`group flex flex-col ${calendarLayout.weekColumn} ${dayObj.isToday ? 'bg-[#f5f8ff]' : 'bg-white'}`}
                   >
                     <div className="px-2 py-2 border-b border-slate-100 flex flex-col items-center">
                       <span className={`text-xs font-medium uppercase tracking-wide ${dayObj.isToday ? 'text-blue-600' : 'text-slate-500'}`}>
@@ -1055,28 +1053,8 @@ export default function CalendarPage() {
                         {dayObj.day}
                       </button>
                     </div>
-                    <div className="flex-1 p-1.5 space-y-1.5 min-w-0">
-                      {cellAppointments.map((apt, aptIndex) => (
-                        <button
-                          key={apt.id || aptIndex}
-                          onClick={() => openAppointmentDetails(apt)}
-                          title={getAppointmentTooltip(apt)}
-                          className="relative overflow-hidden w-full flex gap-2 text-left rounded-md border border-slate-200 bg-white p-2 hover:border-slate-300 hover:shadow-sm transition"
-                        >
-                          <span className={`absolute inset-0 opacity-[0.08] ${getProfessionalColor(apt.professional_id)}`} />
-                          <span className={`relative w-1.5 self-stretch rounded-full flex-shrink-0 ${getProfessionalColor(apt.professional_id)}`} />
-                          <span className="relative min-w-0">
-                            <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 tabular-nums">
-                              <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${getStatusDot(apt)}`} />
-                              {apt.appointment_time}
-                            </span>
-                            <span className={`block text-xs truncate ${apt.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
-                              {getPatientName(apt.patient_id)}
-                            </span>
-                            <span className="block text-[11px] text-slate-500 truncate">{getProfessionalName(apt.professional_id)}</span>
-                          </span>
-                        </button>
-                      ))}
+                    <div className={`flex-1 p-1.5 ${calendarLayout.weekStack} min-w-0`}>
+                      {cellAppointments.map((apt, aptIndex) => renderAppointmentCard(apt, aptIndex, "week"))}
                       <button
                         onClick={() => handleDayDoubleClick(dayObj.date)}
                         className="w-full opacity-0 group-hover:opacity-100 focus:opacity-100 py-1 inline-flex items-center justify-center gap-1 rounded-md text-xs font-medium text-slate-400 hover:bg-slate-100 hover:text-blue-600 transition-opacity"
@@ -1110,8 +1088,12 @@ export default function CalendarPage() {
               </div>
               {dayAppointments.length > 0 ? (
                 <>
-                  <div className="md:hidden space-y-2">{dayAppointments.map(renderMobileAppointment)}</div>
-                  <div className="hidden md:block divide-y divide-slate-100">{dayAppointments.map(renderDayRow)}</div>
+                  <div className="md:hidden space-y-2">
+                    {dayAppointments.map((apt, i) => renderAppointmentCard(apt, i, "mobile"))}
+                  </div>
+                  <div className="hidden md:block divide-y divide-slate-100">
+                    {dayAppointments.map((apt, i) => renderAppointmentCard(apt, i, "list"))}
+                  </div>
                 </>
               ) : (
                 <p className="text-sm text-slate-500 text-center py-12">Nenhum agendamento para este dia</p>
