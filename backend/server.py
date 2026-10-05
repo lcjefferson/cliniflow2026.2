@@ -1228,6 +1228,13 @@ class PatientUpdate(BaseModel):
     cpf: Optional[str] = None
     image_voice_consent: Optional[bool] = None
 
+    @field_validator('email', mode='before')
+    @classmethod
+    def empty_str_to_none(cls, v):
+        if v == '' or v is None:
+            return None
+        return v
+
 class BudgetTreatment(BaseModel):
     name: str
     value: float = 0.0
@@ -2630,7 +2637,7 @@ async def get_patients(
     if not use_aggregation:
         cursor = db.patients.find(
             search_query,
-            {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "birthdate": 1, "address": 1, "city": 1, "profession": 1, "cpf": 1, "created_at": 1},
+            {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "birthdate": 1, "address": 1, "city": 1, "profession": 1, "cpf": 1, "image_voice_consent": 1, "created_at": 1},
         ).sort(sort_field, sort_order).skip(skip).limit(page_size)
         patients = await cursor.to_list(page_size)
         for p in patients:
@@ -2653,7 +2660,7 @@ async def get_patients(
         if has_debt is True:
             pipeline.append({"$match": {"total_debt": {"$gt": 0}}})
         pipeline += [
-            {"$project": {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "birthdate": 1, "address": 1, "city": 1, "profession": 1, "cpf": 1, "created_at": 1, "total_debt": 1}},
+            {"$project": {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "birthdate": 1, "address": 1, "city": 1, "profession": 1, "cpf": 1, "image_voice_consent": 1, "created_at": 1, "total_debt": 1}},
             {"$sort": {sort_field: sort_order}},
             {"$skip": skip},
             {"$limit": page_size},

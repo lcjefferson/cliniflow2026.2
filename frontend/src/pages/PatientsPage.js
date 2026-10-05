@@ -47,6 +47,12 @@ const formatDate = (value) => {
   return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString("pt-BR") : "";
 };
 
+/** Valor YYYY-MM-DD para input type="date" (aceita ISO ou date-only do backend). */
+const birthdateToInputValue = (birthdate) => {
+  const m = String(birthdate || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : "";
+};
+
 const getBirthInfo = (birthdate) => {
   const m = String(birthdate || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return birthdate ? { label: String(birthdate), age: null } : null;
@@ -133,14 +139,25 @@ export default function PatientsPage() {
     }
   };
 
+  const buildPatientPayload = () => {
+    const email = formData.email?.trim();
+    const birthdate = birthdateToInputValue(formData.birthdate) || null;
+    return {
+      ...formData,
+      email: email || null,
+      birthdate: birthdate || null,
+    };
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const payload = buildPatientPayload();
     try {
       if (editingId) {
-        await api.put(`/patients/${editingId}`, formData);
+        await api.put(`/patients/${editingId}`, payload);
         toast.success("Paciente atualizado!");
       } else {
-        await api.post("/patients", formData);
+        await api.post("/patients", payload);
         toast.success("Paciente cadastrado!");
       }
       handleCloseDialog();
@@ -162,7 +179,7 @@ export default function PatientsPage() {
       name: patient.name || "",
       email: patient.email || "",
       phone: patient.phone || "",
-      birthdate: patient.birthdate || "",
+      birthdate: birthdateToInputValue(patient.birthdate),
       address: patient.address || "",
       city: patient.city || "",
       profession: patient.profession || "",
