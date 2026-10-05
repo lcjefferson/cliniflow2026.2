@@ -1000,6 +1000,10 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                       <p className="text-gray-900">{detailedPatient?.phone || "Não informado"}</p>
                     </div>
                     <div>
+                      <Label className="text-sm font-semibold text-gray-700">CPF</Label>
+                      <p className="tabular-nums text-gray-900">{detailedPatient?.cpf || "Não informado"}</p>
+                    </div>
+                    <div>
                       <Label className="text-sm font-semibold text-gray-700">Data de Nascimento</Label>
                       <p className="text-gray-900">{detailedPatient.birthdate ? formatDate(detailedPatient.birthdate.split("T")[0]) : "Não informado"}</p>
                     </div>
