@@ -24,13 +24,13 @@ export function readStoredDensity() {
 export function getMonthCellLimit(density) {
   switch (normalizeDensity(density)) {
     case "compact":
-      return 3;
+      return 6;
     case "comfortable":
-      return 2;
+      return 5;
     case "spacious":
-      return 2;
+      return 4;
     default:
-      return 2;
+      return 5;
   }
 }
 
@@ -39,23 +39,23 @@ export function getCalendarLayoutClasses(density) {
   const d = normalizeDensity(density);
   const layouts = {
     compact: {
-      monthCell: "min-h-[92px] lg:min-h-[124px]",
-      monthEmptyCell: "min-h-[92px] lg:min-h-[124px]",
-      weekColumn: "min-h-[320px] lg:min-h-[440px]",
+      monthCell: "min-h-[120px] lg:min-h-[168px]",
+      monthEmptyCell: "min-h-[120px] lg:min-h-[168px]",
+      weekColumn: "min-h-[360px] lg:min-h-[500px]",
       weekStack: "space-y-1.5",
-      monthStack: "space-y-0.5",
+      monthStack: "space-y-1",
     },
     comfortable: {
-      monthCell: "min-h-[116px] lg:min-h-[152px]",
-      monthEmptyCell: "min-h-[116px] lg:min-h-[152px]",
-      weekColumn: "min-h-[360px] lg:min-h-[500px]",
+      monthCell: "min-h-[150px] lg:min-h-[220px]",
+      monthEmptyCell: "min-h-[150px] lg:min-h-[220px]",
+      weekColumn: "min-h-[420px] lg:min-h-[580px]",
       weekStack: "space-y-2",
       monthStack: "space-y-1",
     },
     spacious: {
-      monthCell: "min-h-[136px] lg:min-h-[176px]",
-      monthEmptyCell: "min-h-[136px] lg:min-h-[176px]",
-      weekColumn: "min-h-[400px] lg:min-h-[560px]",
+      monthCell: "min-h-[170px] lg:min-h-[250px]",
+      monthEmptyCell: "min-h-[170px] lg:min-h-[250px]",
+      weekColumn: "min-h-[480px] lg:min-h-[660px]",
       weekStack: "space-y-2.5",
       monthStack: "space-y-1.5",
     },

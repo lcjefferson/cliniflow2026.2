@@ -14,7 +14,7 @@ import PatientCombobox from "../components/PatientCombobox";
 import PatientDetailDialog from "../components/PatientDetailDialog";
 import CalendarAppointmentCard from "../components/CalendarAppointmentCard";
 import { useAuth } from "../contexts/AuthContext";
-import { STATUS_META, getStatusDot } from "../lib/appointmentStatus";
+import { STATUS_META, getStatusDot, getAppointmentCardBackground } from "../lib/appointmentStatus";
 import {
   CALENDAR_DENSITY_KEY,
   DENSITY_OPTIONS,
@@ -505,8 +505,7 @@ export default function CalendarPage() {
         patientName={getAppointmentPatientName(apt)}
         professionalName={getProfessionalName(apt.professional_id)}
         serviceLabel={serviceLabel}
-        professionalColorClass={getProfessionalColor(apt.professional_id)}
-        statusDotClass={getStatusDot(apt)}
+        professionalColorClass={getAppointmentCardBackground(apt, getProfessionalColor(apt.professional_id))}
         statusLabel={status.label}
         statusBadgeClassName={status.className}
         tooltip={getAppointmentTooltip(apt)}
@@ -1091,7 +1090,7 @@ export default function CalendarPage() {
                   <div className="md:hidden space-y-2">
                     {dayAppointments.map((apt, i) => renderAppointmentCard(apt, i, "mobile"))}
                   </div>
-                  <div className="hidden md:block divide-y divide-slate-100">
+                  <div className="hidden md:block space-y-2 p-3 md:p-4">
                     {dayAppointments.map((apt, i) => renderAppointmentCard(apt, i, "list"))}
                   </div>
                 </>
@@ -1106,7 +1105,7 @@ export default function CalendarPage() {
         <div className="mt-4 bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3 flex flex-col gap-3 md:flex-row md:items-start md:gap-8">
           <div className="min-w-0">
             <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-2">
-              Profissionais <span className="normal-case tracking-normal text-slate-400">· cor da barra</span>
+              Profissionais <span className="normal-case tracking-normal text-slate-400">· cor do card (agendado)</span>
             </h3>
             <div className="flex flex-wrap gap-x-4 gap-y-1.5">
               {professionals.map((prof, index) => (
@@ -1119,7 +1118,7 @@ export default function CalendarPage() {
           </div>
           <div className="md:ml-auto md:border-l md:border-slate-200 md:pl-8 flex-shrink-0">
             <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-2">
-              Status <span className="normal-case tracking-normal text-slate-400">· cor da bolinha</span>
+              Status <span className="normal-case tracking-normal text-slate-400">· cor do card</span>
             </h3>
             <div className="flex flex-wrap gap-x-4 gap-y-1.5">
               {Object.values(STATUS_META).map((item) => (

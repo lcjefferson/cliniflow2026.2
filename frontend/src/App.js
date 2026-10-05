@@ -24,6 +24,7 @@ import SettingsPage from "./pages/SettingsPageV2";
 import WebhookTestPage from "./pages/WebhookTestPage";
 import NgrokWebhookPage from "./pages/NgrokWebhookPage";
 import WebhookMonitor from "./pages/WebhookMonitor";
+import CalendarLocalPreviewPage from "./pages/CalendarLocalPreviewPage";
 
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -46,6 +47,9 @@ function App() {
         <Toaster position="top-right" />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {process.env.NODE_ENV === "development" && (
+            <Route path="/calendar-preview" element={<CalendarLocalPreviewPage />} />
+          )}
           <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
           <Route path="/omnichannel" element={<PrivateRoute><OmnichannelPage /></PrivateRoute>} />
           <Route path="/calendar" element={<PrivateRoute><CalendarPage /></PrivateRoute>} />

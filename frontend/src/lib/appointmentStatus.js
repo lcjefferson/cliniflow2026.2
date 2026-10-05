@@ -9,3 +9,12 @@ export const STATUS_META = {
 export const getStatusMeta = (apt) => STATUS_META[apt?.status] || STATUS_META.scheduled;
 
 export const getStatusDot = (apt) => getStatusMeta(apt).dot;
+
+/** Fundo do card no calendário: profissional só em "agendado"; demais status usam a cor do status. */
+export function getAppointmentCardBackground(apt, professionalColorClass) {
+  const status = apt?.status;
+  if (status && status !== "scheduled") {
+    return getStatusMeta(apt).dot;
+  }
+  return professionalColorClass;
+}
