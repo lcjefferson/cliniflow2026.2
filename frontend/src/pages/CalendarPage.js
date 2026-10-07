@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -68,7 +69,8 @@ export default function CalendarPage() {
     cpf: "",
     address: "",
     city: "",
-    profession: ""
+    profession: "",
+    observations: ""
   });
   
   const [formData, setFormData] = useState({
@@ -85,7 +87,8 @@ export default function CalendarPage() {
     image_voice_consent: false,
     patient_profession: "",
     patient_address: "",
-    patient_city: ""
+    patient_city: "",
+    patient_observations: ""
   });
   const [conflicts, setConflicts] = useState(null);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
@@ -297,6 +300,7 @@ export default function CalendarPage() {
       delete payload.patient_profession;
       delete payload.patient_address;
       delete payload.patient_city;
+      delete payload.patient_observations;
       if (editingAppointment) {
         await api.put(`/appointments/${editingAppointment.id}`, payload);
         toast.success("Agendamento atualizado!");
@@ -309,7 +313,8 @@ export default function CalendarPage() {
           await api.put(`/patients/${formData.patient_id}`, {
             profession: formData.patient_profession ?? "",
             address: formData.patient_address ?? "",
-            city: formData.patient_city ?? ""
+            city: formData.patient_city ?? "",
+            observations: formData.patient_observations ?? ""
           });
         } catch (_) {}
       }
@@ -329,7 +334,8 @@ export default function CalendarPage() {
         image_voice_consent: false,
         patient_profession: "",
         patient_address: "",
-        patient_city: ""
+        patient_city: "",
+        patient_observations: ""
       });
       await loadMonthAppointments();
     } catch (error) {
@@ -354,7 +360,8 @@ export default function CalendarPage() {
       image_voice_consent: !!appointment.image_voice_consent,
       patient_profession: pat?.profession ?? "",
       patient_address: pat?.address ?? "",
-      patient_city: pat?.city ?? ""
+      patient_city: pat?.city ?? "",
+      patient_observations: pat?.observations ?? ""
     });
     setShowDetailsDialog(false);
     setShowDialog(true);
@@ -419,7 +426,8 @@ export default function CalendarPage() {
       image_voice_consent: false,
       patient_profession: "",
       patient_address: "",
-      patient_city: ""
+      patient_city: "",
+      patient_observations: ""
     });
   };
 
@@ -437,7 +445,8 @@ export default function CalendarPage() {
         cpf: "",
         address: "",
         city: "",
-        profession: ""
+        profession: "",
+        observations: ""
       });
       loadData();
       const p = response.data;
@@ -446,7 +455,8 @@ export default function CalendarPage() {
         patient_id: p.id,
         patient_profession: p.profession ?? "",
         patient_address: p.address ?? "",
-        patient_city: p.city ?? ""
+        patient_city: p.city ?? "",
+        patient_observations: p.observations ?? ""
       });
     } catch (error) {
       toast.error("Erro ao criar paciente");
@@ -1278,7 +1288,8 @@ export default function CalendarPage() {
                         patient_id: patientId,
                         patient_profession: p?.profession ?? "",
                         patient_address: p?.address ?? "",
-                        patient_city: p?.city ?? ""
+                        patient_city: p?.city ?? "",
+                        patient_observations: p?.observations ?? ""
                       });
                     }}
                     onCreateNew={() => setShowNewPatientDialog(true)}
@@ -1576,6 +1587,15 @@ export default function CalendarPage() {
                   value={newPatientData.profession}
                   onChange={(e) => setNewPatientData({...newPatientData, profession: e.target.value})}
                   placeholder="Profissão"
+                />
+              </div>
+              <div>
+                <Label>Observações</Label>
+                <Textarea
+                  value={newPatientData.observations}
+                  onChange={(e) => setNewPatientData({ ...newPatientData, observations: e.target.value })}
+                  placeholder="Informações relevantes sobre o paciente"
+                  rows={3}
                 />
               </div>
               <Button type="submit" className="w-full btn-primary">Adicionar Paciente</Button>

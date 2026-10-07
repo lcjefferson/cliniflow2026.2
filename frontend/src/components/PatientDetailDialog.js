@@ -109,6 +109,8 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
   const dragStartRef = useRef({ x: 0, y: 0 });
   const [attachmentFolders, setAttachmentFolders] = useState([]);
   const [selectedFolderId, setSelectedFolderId] = useState('ALL');
+  const [patientObservations, setPatientObservations] = useState("");
+  const [savingObservations, setSavingObservations] = useState(false);
 
   // Medical Record form state
   const [showMedicalRecordDialog, setShowMedicalRecordDialog] = useState(false);
@@ -211,6 +213,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
     if (!isOpen) {
       // Reset all states when dialog is closed for data integrity
       setDetailedPatient(null);
+      setPatientObservations("");
       setActiveTab('info');
       setMedicalRecords([]);
       setProfessionals([]);
@@ -280,6 +283,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       ]);
 
       setDetailedPatient(patientRes.data);
+      setPatientObservations(patientRes.data.observations || "");
       setAttachmentFolders(patientRes.data.attachment_folders || []);
       setMedicalRecords([]);
       
@@ -598,6 +602,21 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       URL.revokeObjectURL(blobUrl);
     } catch (error) {
       toast.error('Erro ao baixar o anexo.');
+    }
+  };
+
+  const handleSaveObservations = async () => {
+    if (!detailedPatient?.id) return;
+    try {
+      setSavingObservations(true);
+      await api.put(`/patients/${detailedPatient.id}`, { observations: patientObservations ?? "" });
+      toast.success("Observações salvas!");
+      const updatedPatient = await loadPatientData(detailedPatient.id);
+      onUpdate(updatedPatient);
+    } catch (error) {
+      toast.error("Erro ao salvar observações");
+    } finally {
+      setSavingObservations(false);
     }
   };
 
@@ -1018,6 +1037,26 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                     <div>
                       <Label className="text-sm font-semibold text-gray-700">Profissão</Label>
                       <p className="text-gray-900">{detailedPatient.profession || "Não informado"}</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Label className="text-sm font-semibold text-gray-700">Observações</Label>
+                      <textarea
+                        className="input-field mt-1"
+                        value={patientObservations}
+                        onChange={(e) => setPatientObservations(e.target.value)}
+                        placeholder="Informações relevantes sobre o paciente"
+                        rows={3}
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleSaveObservations}
+                        disabled={savingObservations}
+                        className="btn-primary mt-2"
+                        size="sm"
+                      >
+                        <Save className="w-4 h-4 mr-2" />
+                        {savingObservations ? "Salvando..." : "Salvar observações"}
+                      </Button>
                     </div>
                     <div className="sm:col-span-2">
                       <Label className="text-sm font-semibold text-gray-700">Autorização uso de imagem e voz</Label>

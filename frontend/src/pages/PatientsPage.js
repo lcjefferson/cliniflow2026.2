@@ -8,13 +8,14 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import PatientDetailDialog from "../components/PatientDetailDialog";
 import ContactAvatar from "../components/ContactAvatar";
 import { maskCpf, maskPhone } from "../lib/inputMasks";
 
 const EMPTY_FORM = {
-  name: "", email: "", phone: "", birthdate: "", address: "", city: "", profession: "", cpf: "", image_voice_consent: false,
+  name: "", email: "", phone: "", birthdate: "", address: "", city: "", profession: "", cpf: "", image_voice_consent: false, observations: "",
 };
 
 const SORT_OPTIONS = [
@@ -176,6 +177,7 @@ export default function PatientsPage() {
       profession: patient.profession || "",
       cpf: patient.cpf || "",
       image_voice_consent: !!patient.image_voice_consent,
+      observations: patient.observations || "",
     });
     setShowDialog(true);
   };
@@ -582,6 +584,16 @@ export default function PatientsPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="patient-profession">Profissão</Label>
                 <Input id="patient-profession" value={formData.profession} onChange={(e) => setFormData({ ...formData, profession: e.target.value })} />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="patient-observations">Observações</Label>
+                <Textarea
+                  id="patient-observations"
+                  rows={3}
+                  value={formData.observations}
+                  onChange={(e) => setFormData({ ...formData, observations: e.target.value })}
+                  placeholder="Informações relevantes sobre o paciente"
+                />
               </div>
               <label
                 htmlFor="patient_image_voice_consent"

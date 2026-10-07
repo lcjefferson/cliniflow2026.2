@@ -1197,6 +1197,7 @@ class Patient(BaseModel):
     professionals: List[str] = []
     anamnese: Optional[Anamnese] = None
     image_voice_consent: Optional[bool] = None  # Autorização uso de imagem e voz (institucional)
+    observations: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class PatientCreate(BaseModel):
@@ -1209,6 +1210,7 @@ class PatientCreate(BaseModel):
     profession: Optional[str] = None
     cpf: Optional[str] = None
     image_voice_consent: Optional[bool] = None
+    observations: Optional[str] = None
 
     @field_validator('email', mode='before')
     @classmethod
@@ -1227,6 +1229,7 @@ class PatientUpdate(BaseModel):
     profession: Optional[str] = None
     cpf: Optional[str] = None
     image_voice_consent: Optional[bool] = None
+    observations: Optional[str] = None
 
     @field_validator('email', mode='before')
     @classmethod
