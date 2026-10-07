@@ -22,6 +22,7 @@ import {
   getMonthCellLimit,
   getCalendarLayoutClasses,
 } from "../lib/calendarDensity";
+import { maskCpf, maskPhone } from "../lib/inputMasks";
 
 /** Data local YYYY-MM-DD (igual às células do calendário). */
 function toYMD(d) {
@@ -64,6 +65,7 @@ export default function CalendarPage() {
     email: "",
     phone: "",
     birthdate: "",
+    cpf: "",
     address: "",
     city: "",
     profession: ""
@@ -432,6 +434,7 @@ export default function CalendarPage() {
         email: "",
         phone: "",
         birthdate: "",
+        cpf: "",
         address: "",
         city: "",
         profession: ""
@@ -1527,7 +1530,9 @@ export default function CalendarPage() {
                   <Label>Telefone</Label>
                   <Input
                     value={newPatientData.phone}
-                    onChange={(e) => setNewPatientData({...newPatientData, phone: e.target.value})}
+                    onChange={(e) => setNewPatientData({ ...newPatientData, phone: maskPhone(e.target.value) })}
+                    placeholder="(11) 98765-4321"
+                    className="tabular-nums"
                   />
                 </div>
               </div>
@@ -1537,6 +1542,16 @@ export default function CalendarPage() {
                   type="date"
                   value={newPatientData.birthdate}
                   onChange={(e) => setNewPatientData({...newPatientData, birthdate: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label>CPF</Label>
+                <Input
+                  value={newPatientData.cpf}
+                  onChange={(e) => setNewPatientData({ ...newPatientData, cpf: maskCpf(e.target.value) })}
+                  placeholder="000.000.000-00"
+                  className="tabular-nums"
+                  inputMode="numeric"
                 />
               </div>
               <div>

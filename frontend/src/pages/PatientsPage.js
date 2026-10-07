@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import PatientDetailDialog from "../components/PatientDetailDialog";
 import ContactAvatar from "../components/ContactAvatar";
+import { maskCpf, maskPhone } from "../lib/inputMasks";
 
 const EMPTY_FORM = {
   name: "", email: "", phone: "", birthdate: "", address: "", city: "", profession: "", cpf: "", image_voice_consent: false,
@@ -28,16 +29,6 @@ const PAGE_SIZE = 50;
 
 const controlClass =
   "h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10";
-
-const maskPhone = (value) => {
-  const digits = (value || "").replace(/\D/g, "").slice(0, 11);
-  const part1 = digits.slice(0, 2);
-  const part2 = digits.slice(2, 7);
-  const part3 = digits.slice(7, 11);
-  if (digits.length <= 2) return part1 ? `(${part1}` : "";
-  if (digits.length <= 7) return `(${part1}) ${part2}`;
-  return `(${part1}) ${part2}-${part3}`;
-};
 
 const formatCurrency = (value) =>
   Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -571,7 +562,14 @@ export default function PatientsPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="patient-cpf">CPF</Label>
-                <Input id="patient-cpf" value={formData.cpf} onChange={(e) => setFormData({ ...formData, cpf: e.target.value })} placeholder="000.000.000-00" />
+                <Input
+                  id="patient-cpf"
+                  value={formData.cpf}
+                  onChange={(e) => setFormData({ ...formData, cpf: maskCpf(e.target.value) })}
+                  placeholder="000.000.000-00"
+                  className="tabular-nums"
+                  inputMode="numeric"
+                />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="patient-address">Endereço</Label>
