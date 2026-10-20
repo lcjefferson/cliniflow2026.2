@@ -6579,28 +6579,93 @@ async def generate_pdf(request: GeneratePdfRequest):
     right_margin = width - 72
     top_margin = 72
     bottom_margin = 72
+    content_width = right_margin - left_margin
     settings = await db.settings.find_one({"type": "clinic"}, {"_id": 0})
     logo_data = settings.get("logo") if settings else None
-    if logo_data and isinstance(logo_data, str):
-        try:
-            b64 = logo_data.split(",", 1)[1] if "," in logo_data else logo_data
-            img_bytes = base64.b64decode(b64)
-            img = ImageReader(io.BytesIO(img_bytes))
-            iw, ih = img.getSize()
-            target_w = 140
-            ratio = target_w / float(iw)
-            target_h = ih * ratio
-            x = (width - target_w) / 2
-            y_logo = height - top_margin - target_h
-            p.drawImage(img, x, y_logo, width=target_w, height=target_h, preserveAspectRatio=True, mask='auto')
-        except Exception:
-            pass
-    p.setFont("Helvetica-Bold", 18)
-    title = f"Prontuário de {request.patient_name}"
-    title_w = p.stringWidth(title, "Helvetica-Bold", 18)
-    p.drawString((width - title_w) / 2, height - top_margin - 60, title)
-    p.setFont("Helvetica", 12)
-    y = height - top_margin - 100
+
+    doc_titles = {
+        "receita": "RECEITUÁRIO",
+        "atestado": "ATESTADO MÉDICO",
+        "prontuario": "PRONTUÁRIO MÉDICO",
+    }
+    doc_title = doc_titles.get(record.get("record_type"), "PRONTUÁRIO MÉDICO")
+    filename_slugs = {
+        "receita": "receita",
+        "atestado": "atestado",
+        "prontuario": "prontuario",
+    }
+    filename_slug = filename_slugs.get(record.get("record_type"), "prontuario")
+
+    def draw_logo():
+        if logo_data and isinstance(logo_data, str):
+            try:
+                b64 = logo_data.split(",", 1)[1] if "," in logo_data else logo_data
+                img_bytes = base64.b64decode(b64)
+                img = ImageReader(io.BytesIO(img_bytes))
+                iw, ih = img.getSize()
+                target_w = 120
+                ratio = target_w / float(iw)
+                target_h = ih * ratio
+                x = (width - target_w) / 2
+                y_logo = height - top_margin - target_h
+                p.drawImage(img, x, y_logo, width=target_w, height=target_h, preserveAspectRatio=True, mask='auto')
+                return target_h
+            except Exception:
+                return 0
+        return 0
+
+    def draw_header():
+        """Draws clinic logo, document title and patient identification block.
+        Returns the y coordinate where body content should start."""
+        logo_h = draw_logo()
+        y_title = height - top_margin - (logo_h + 22 if logo_h else 10)
+        p.setFont("Helvetica-Bold", 16)
+        title_w = p.stringWidth(doc_title, "Helvetica-Bold", 16)
+        p.drawString((width - title_w) / 2, y_title, doc_title)
+
+        y_patient = y_title - 30
+        label = "Paciente: "
+        p.setFont("Helvetica-Bold", 11)
+        p.drawString(left_margin, y_patient, label)
+        label_w = p.stringWidth(label, "Helvetica-Bold", 11)
+        p.setFont("Helvetica", 11)
+        p.drawString(left_margin + label_w, y_patient, request.patient_name)
+
+        y_divider = y_patient - 16
+        p.setStrokeColorRGB(0.75, 0.75, 0.78)
+        p.setLineWidth(0.7)
+        p.line(left_margin, y_divider, right_margin, y_divider)
+
+        return y_divider - 28
+
+    def draw_footer():
+        p.setStrokeColorRGB(0.2, 0.5, 0.9)
+        p.setLineWidth(0.8)
+        p.line(left_margin, bottom_margin + 26, right_margin, bottom_margin + 26)
+        footer_parts = []
+        if settings and settings.get("clinic_name"):
+            footer_parts.append(settings.get("clinic_name"))
+        if settings and settings.get("address"):
+            footer_parts.append(settings.get("address"))
+        if settings and settings.get("phone"):
+            footer_parts.append(settings.get("phone"))
+        if settings and settings.get("email"):
+            footer_parts.append(settings.get("email"))
+        if settings and settings.get("website"):
+            footer_parts.append(settings.get("website"))
+        footer_text = " • ".join(footer_parts) if footer_parts else ""
+        p.setFont("Helvetica-Oblique", 9)
+        sig_text = "Documento assinado digitalmente"
+        sig_w = p.stringWidth(sig_text, "Helvetica-Oblique", 9)
+        p.drawString((width - sig_w) / 2, bottom_margin + 6, sig_text)
+        if footer_text:
+            p.setFont("Helvetica", 8.5)
+            fw = p.stringWidth(footer_text, "Helvetica", 8.5)
+            p.drawString((width - fw) / 2, bottom_margin - 8, footer_text)
+
+    y = draw_header()
+    p.setFont("Helvetica", 11)
+
     fields = [
         ("Data de Criação", record.get("created_at", "N/A")),
         ("Tipo de Registro", record.get("record_type", "N/A")),
@@ -6630,7 +6695,7 @@ async def generate_pdf(request: GeneratePdfRequest):
             cur = ""
             for w in words:
                 test = w if cur == "" else cur + " " + w
-                if p.stringWidth(test, "Helvetica", 12) <= max_width:
+                if p.stringWidth(test, "Helvetica", 11) <= max_width:
                     cur = test
                 else:
                     if cur:
@@ -6639,89 +6704,31 @@ async def generate_pdf(request: GeneratePdfRequest):
             if cur:
                 lines.append(cur)
         return lines
-    max_text_width = right_margin - left_margin
+
+    label_line_h = 17
+    value_line_h = 15
+    field_spacing = 12
     for label, value in fields:
-        value_lines = wrap_text(value, max_text_width)
-        needed = 18 + 16 * max(1, len(value_lines))
-        if y - needed < bottom_margin + 40:
-            p.setStrokeColorRGB(0.2, 0.5, 0.9)
-            p.setLineWidth(0.8)
-            p.line(left_margin, bottom_margin + 15, right_margin, bottom_margin + 15)
-            footer_parts = []
-            if settings and settings.get("clinic_name"):
-                footer_parts.append(settings.get("clinic_name"))
-            if settings and settings.get("address"):
-                footer_parts.append(settings.get("address"))
-            if settings and settings.get("phone"):
-                footer_parts.append(settings.get("phone"))
-            if settings and settings.get("email"):
-                footer_parts.append(settings.get("email"))
-            if settings and settings.get("website"):
-                footer_parts.append(settings.get("website"))
-            footer_text = " • ".join(footer_parts) if footer_parts else ""
-            p.setFont("Helvetica-Oblique", 9)
-            sig_text = "Documento assinado digitalmente"
-            sig_w = p.stringWidth(sig_text, "Helvetica-Oblique", 9)
-            p.drawString((width - sig_w) / 2, bottom_margin - 20, sig_text)
-            if footer_text:
-                p.setFont("Helvetica", 9)
-                fw = p.stringWidth(footer_text, "Helvetica", 9)
-                p.drawString((width - fw) / 2, bottom_margin - 5, footer_text)
-            p.setFont("Helvetica", 12)
+        value_lines = wrap_text(value, content_width)
+        needed = label_line_h + value_line_h * max(1, len(value_lines)) + field_spacing
+        if y - needed < bottom_margin + 60:
+            draw_footer()
             p.showPage()
-            if logo_data and isinstance(logo_data, str):
-                try:
-                    b64 = logo_data.split(",", 1)[1] if "," in logo_data else logo_data
-                    img_bytes = base64.b64decode(b64)
-                    img = ImageReader(io.BytesIO(img_bytes))
-                    iw, ih = img.getSize()
-                    target_w = 140
-                    ratio = target_w / float(iw)
-                    target_h = ih * ratio
-                    x = (width - target_w) / 2
-                    y_logo = height - top_margin - target_h
-                    p.drawImage(img, x, y_logo, width=target_w, height=target_h, preserveAspectRatio=True, mask='auto')
-                except Exception:
-                    pass
-            p.setFont("Helvetica-Bold", 18)
-            title_w = p.stringWidth(title, "Helvetica-Bold", 18)
-            p.drawString((width - title_w) / 2, height - top_margin - 60, title)
-            p.setFont("Helvetica", 12)
-            y = height - top_margin - 100
-        p.setFont("Helvetica-Bold", 12)
-        p.drawString(left_margin, y, f"{label}:")
-        y -= 18
-        p.setFont("Helvetica", 12)
+            y = draw_header()
+        p.setFont("Helvetica-Bold", 11)
+        p.drawString(left_margin, y, label)
+        y -= label_line_h
+        p.setFont("Helvetica", 11)
         for line in value_lines if value_lines else [""]:
             p.drawString(left_margin, y, line)
-            y -= 16
-    p.setStrokeColorRGB(0.2, 0.5, 0.9)
-    p.setLineWidth(0.8)
-    p.line(left_margin, bottom_margin + 15, right_margin, bottom_margin + 15)
-    footer_parts = []
-    if settings and settings.get("clinic_name"):
-        footer_parts.append(settings.get("clinic_name"))
-    if settings and settings.get("address"):
-        footer_parts.append(settings.get("address"))
-    if settings and settings.get("phone"):
-        footer_parts.append(settings.get("phone"))
-    if settings and settings.get("email"):
-        footer_parts.append(settings.get("email"))
-    if settings and settings.get("website"):
-        footer_parts.append(settings.get("website"))
-    footer_text = " • ".join(footer_parts) if footer_parts else ""
-    p.setFont("Helvetica-Oblique", 9)
-    sig_text = "Documento assinado digitalmente"
-    sig_w = p.stringWidth(sig_text, "Helvetica-Oblique", 9)
-    p.drawString((width - sig_w) / 2, bottom_margin - 20, sig_text)
-    if footer_text:
-        p.setFont("Helvetica", 9)
-        fw = p.stringWidth(footer_text, "Helvetica", 9)
-        p.drawString((width - fw) / 2, bottom_margin - 5, footer_text)
+            y -= value_line_h
+        y -= field_spacing
+
+    draw_footer()
     p.save()
     buffer.seek(0)
     return StreamingResponse(buffer, media_type="application/pdf", headers={
-        "Content-Disposition": f"attachment; filename=prontuario_{request.patient_name}.pdf"
+        "Content-Disposition": f"attachment; filename={filename_slug}_{request.patient_name}.pdf"
     })
 
 @api_router.delete("/medical-records/{record_id}")
