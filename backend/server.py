@@ -2785,10 +2785,16 @@ async def delete_patient(patient_id: str, current_user: dict = Depends(get_curre
 # Anamnese Routes
 @api_router.put("/patients/{patient_id}/anamnese")
 async def update_anamnese(patient_id: str, anamnese_data: Anamnese, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
     anamnese_data.last_updated = datetime.now(timezone.utc)
     update_data = {"anamnese": anamnese_data.model_dump()}
-    
-    result = await db.patients.update_one({"id": patient_id}, {"$set": update_data})
+
+    try:
+        result = await db.patients.update_one({"id": patient_id}, {"$set": update_data})
+    except PyMongoError as e:
+        logging.error(f"Erro ao salvar anamnese no banco: {e}")
+        raise HTTPException(status_code=503, detail="Não foi possível salvar a anamnese. Verifique sua conexão e tente novamente.")
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Patient not found")
     return {"message": "Anamnese updated successfully"}
@@ -2857,8 +2863,11 @@ async def create_appointment(
             raise HTTPException(status_code=409, detail="Já existe um agendamento para esta data e horário")
     except HTTPException:
         raise
-    except Exception:
-        pass
+    except PyMongoError as e:
+        # Falha na checagem preventiva de duplicidade (ex.: conexão instável). Não é um
+        # agendamento duplicado de verdade — registra o erro e segue; a proteção definitiva
+        # contra duplicidade de sala/horário é o índice único no banco, tratado abaixo.
+        logging.error(f"Erro ao checar duplicidade de agendamento: {e}")
     appointment = Appointment(**payload)
     doc = appointment.model_dump()
     if payload.get("service_ids") is not None:
@@ -2866,7 +2875,7 @@ async def create_appointment(
     doc['created_at'] = doc['created_at'].isoformat()
     try:
         await db.appointments.insert_one(doc)
-    except Exception:
+    except DuplicateKeyError:
         try:
             await db.audit_logs.insert_one({
                 "id": str(uuid.uuid4()),
@@ -2878,6 +2887,9 @@ async def create_appointment(
         except Exception:
             pass
         raise HTTPException(status_code=409, detail="Já existe um agendamento para esta data e horário")
+    except PyMongoError as e:
+        logging.error(f"Erro ao salvar agendamento no banco: {e}")
+        raise HTTPException(status_code=503, detail="Não foi possível salvar o agendamento. Verifique sua conexão e tente novamente.")
     background_tasks.add_task(trigger_appointment_rules_now, appointment.id, "appointment_created")
     if appointment.status == "completed":
         background_tasks.add_task(trigger_appointment_rules_now, appointment.id, "appointment_completed")
@@ -3046,10 +3058,14 @@ async def update_appointment(
             raise HTTPException(status_code=409, detail="Já existe um agendamento para esta data e horário")
     except HTTPException:
         raise
-    except Exception:
-        pass
+    except PyMongoError as e:
+        logging.error(f"Erro ao checar duplicidade de agendamento: {e}")
 
-    result = await db.appointments.update_one({"id": appointment_id}, {"$set": update_data})
+    try:
+        result = await db.appointments.update_one({"id": appointment_id}, {"$set": update_data})
+    except PyMongoError as e:
+        logging.error(f"Erro ao atualizar agendamento no banco: {e}")
+        raise HTTPException(status_code=503, detail="Não foi possível atualizar o agendamento. Verifique sua conexão e tente novamente.")
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Appointment not found")
     if status_trigger:
@@ -3155,7 +3171,13 @@ async def check_appointments_conflicts(
 
 @api_router.delete("/appointments/{appointment_id}")
 async def delete_appointment(appointment_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.appointments.delete_one({"id": appointment_id})
+    if db is None:
+        raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
+    try:
+        result = await db.appointments.delete_one({"id": appointment_id})
+    except PyMongoError as e:
+        logging.error(f"Erro ao remover agendamento no banco: {e}")
+        raise HTTPException(status_code=503, detail="Não foi possível remover o agendamento. Verifique sua conexão e tente novamente.")
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Appointment not found")
     return {"message": "Appointment deleted successfully"}
@@ -3163,10 +3185,16 @@ async def delete_appointment(appointment_id: str, current_user: dict = Depends(g
 # Transaction Routes
 @api_router.post("/transactions", response_model=Transaction)
 async def create_transaction(data: TransactionCreate, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
     transaction = Transaction(**data.model_dump())
     doc = transaction.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
-    await db.transactions.insert_one(doc)
+    try:
+        await db.transactions.insert_one(doc)
+    except PyMongoError as e:
+        logging.error(f"Erro ao salvar transação no banco: {e}")
+        raise HTTPException(status_code=503, detail="Não foi possível salvar o lançamento financeiro. Verifique sua conexão e tente novamente.")
     # If linked to an appointment and status is paid, mark appointment as paid
     try:
         if transaction.appointment_id and transaction.status == "paid":
