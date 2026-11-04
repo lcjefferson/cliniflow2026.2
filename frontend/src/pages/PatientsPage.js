@@ -97,6 +97,7 @@ export default function PatientsPage() {
   const [sortBy, setSortBy] = useState("created_at");
   const [order, setOrder] = useState("desc");
   const [filterDebt, setFilterDebt] = useState(false);
+  const [savingPatient, setSavingPatient] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -143,6 +144,8 @@ export default function PatientsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (savingPatient) return; // evita duplo envio (duplo clique) enquanto já está salvando
+    setSavingPatient(true);
     const payload = buildPatientPayload();
     try {
       if (editingId) {
@@ -155,7 +158,15 @@ export default function PatientsPage() {
       handleCloseDialog();
       loadPatients();
     } catch (err) {
-      toast.error(editingId ? "Erro ao atualizar paciente" : "Erro ao cadastrar paciente");
+      const backendMessage = err.response?.data?.detail;
+      const fallbackMessage = editingId ? "Erro ao atualizar paciente" : "Erro ao cadastrar paciente";
+      if (err.response) {
+        toast.error(backendMessage || fallbackMessage);
+      } else {
+        toast.error(`Falha de conexão com o servidor. Verifique sua internet e tente novamente — ${editingId ? "a atualização" : "o cadastro"} NÃO foi salvo.`);
+      }
+    } finally {
+      setSavingPatient(false);
     }
   };
 
@@ -611,8 +622,10 @@ export default function PatientsPage() {
                 </span>
               </label>
               <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
-                <Button type="button" variant="outline" onClick={handleCloseDialog}>Cancelar</Button>
-                <Button type="submit">{editingId ? "Salvar alterações" : "Cadastrar paciente"}</Button>
+                <Button type="button" variant="outline" onClick={handleCloseDialog} disabled={savingPatient}>Cancelar</Button>
+                <Button type="submit" disabled={savingPatient}>
+                  {savingPatient ? "Salvando..." : (editingId ? "Salvar alterações" : "Cadastrar paciente")}
+                </Button>
               </div>
             </form>
           </DialogContent>

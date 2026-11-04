@@ -614,7 +614,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       const updatedPatient = await loadPatientData(detailedPatient.id);
       onUpdate(updatedPatient);
     } catch (error) {
-      toast.error("Erro ao salvar observações");
+      toast.error(error.response?.data?.detail || "Erro ao salvar observações. As alterações NÃO foram salvas.");
     } finally {
       setSavingObservations(false);
     }

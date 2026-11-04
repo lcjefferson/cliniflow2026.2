@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from bson import ObjectId
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 import os
 import re
 import logging
@@ -2029,10 +2029,16 @@ async def delete_room(room_id: str, current_user: dict = Depends(get_current_use
 # Patient Routes
 @api_router.post("/patients", response_model=Patient)
 async def create_patient(data: PatientCreate, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
     patient = Patient(**data.model_dump())
     doc = patient.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
-    await db.patients.insert_one(doc)
+    try:
+        await db.patients.insert_one(doc)
+    except PyMongoError as e:
+        logging.error(f"Erro ao salvar paciente no banco: {e}")
+        raise HTTPException(status_code=503, detail="Não foi possível salvar o paciente. Verifique sua conexão e tente novamente.")
     return patient
 
 @api_router.post("/patients/{patient_id}/attachments", response_model=Attachment)
@@ -2745,11 +2751,17 @@ async def get_patient_professionals(patient_id: str, current_user: dict = Depend
 
 @api_router.put("/patients/{patient_id}")
 async def update_patient(patient_id: str, data: PatientUpdate, current_user: dict = Depends(get_current_user)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    result = await db.patients.update_one({"id": patient_id}, {"$set": update_data})
+    try:
+        result = await db.patients.update_one({"id": patient_id}, {"$set": update_data})
+    except PyMongoError as e:
+        logging.error(f"Erro ao atualizar paciente no banco: {e}")
+        raise HTTPException(status_code=503, detail="Não foi possível atualizar o paciente. Verifique sua conexão e tente novamente.")
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Patient not found")
     return {"message": "Patient updated successfully"}
@@ -2758,8 +2770,14 @@ async def update_patient(patient_id: str, data: PatientUpdate, current_user: dic
 async def delete_patient(patient_id: str, current_user: dict = Depends(get_current_user)):
     if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") in ["superuser", "consultor"]):
         raise HTTPException(status_code=403, detail="Not authorized")
-    
-    result = await db.patients.delete_one({"id": patient_id})
+    if db is None:
+        raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
+
+    try:
+        result = await db.patients.delete_one({"id": patient_id})
+    except PyMongoError as e:
+        logging.error(f"Erro ao remover paciente no banco: {e}")
+        raise HTTPException(status_code=503, detail="Não foi possível remover o paciente. Verifique sua conexão e tente novamente.")
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Patient not found")
     return {"message": "Patient deleted successfully"}

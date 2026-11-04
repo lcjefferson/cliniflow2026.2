@@ -26,9 +26,17 @@ api.interceptors.response.use(
       // Token inválido ou expirado
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      
+
       // Redirecionar para login apenas se não estiver já na página de login
       if (!window.location.pathname.includes('/login')) {
+        // Avisa o usuário (na própria tela de login, após o redirecionamento) de que a
+        // sessão expirou, já que dados ainda não salvos em formulários abertos serão perdidos.
+        try {
+          sessionStorage.setItem(
+            'sessionExpiredMessage',
+            'Sua sessão expirou. Faça login novamente — qualquer informação não salva em um formulário aberto foi perdida.'
+          );
+        } catch (_) {}
         window.location.href = '/login';
       }
     }

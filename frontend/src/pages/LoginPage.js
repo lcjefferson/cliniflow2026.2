@@ -53,6 +53,16 @@ export default function LoginPage() {
     loadVersion();
   }, []);
 
+  useEffect(() => {
+    try {
+      const expiredMessage = sessionStorage.getItem('sessionExpiredMessage');
+      if (expiredMessage) {
+        sessionStorage.removeItem('sessionExpiredMessage');
+        toast.warning(expiredMessage);
+      }
+    } catch (_) {}
+  }, []);
+
   const versionLabel = appVersion
     ? [
         `Versão ${appVersion.version || "3.0"}`,

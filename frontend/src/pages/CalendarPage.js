@@ -92,6 +92,8 @@ export default function CalendarPage() {
   });
   const [conflicts, setConflicts] = useState(null);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
+  const [savingAppointment, setSavingAppointment] = useState(false);
+  const [savingNewPatient, setSavingNewPatient] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [appointmentToDelete, setAppointmentToDelete] = useState(null);
   const [showPatientDialog, setShowPatientDialog] = useState(false);
@@ -287,15 +289,17 @@ export default function CalendarPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Verificar conflitos antes de salvar
-    const conflictData = await checkConflicts();
-    if (conflictData && (conflictData.duplicate || conflictData.has_conflicts)) {
-      toast.error("Já existe um agendamento para esta data e horário");
-      return;
-    }
-    
+    if (savingAppointment) return; // evita duplo envio (duplo clique) enquanto já está salvando
+    setSavingAppointment(true);
+
     try {
+      // Verificar conflitos antes de salvar
+      const conflictData = await checkConflicts();
+      if (conflictData && (conflictData.duplicate || conflictData.has_conflicts)) {
+        toast.error("Já existe um agendamento para esta data e horário");
+        return;
+      }
+
       const payload = { ...formData };
       delete payload.patient_profession;
       delete payload.patient_address;
@@ -316,7 +320,15 @@ export default function CalendarPage() {
             city: formData.patient_city ?? "",
             observations: formData.patient_observations ?? ""
           });
-        } catch (_) {}
+        } catch (patientUpdateError) {
+          // O agendamento foi salvo, mas os dados complementares do paciente não.
+          // Avisa o usuário em vez de falhar silenciosamente, para que ele saiba que
+          // precisa completar o cadastro do paciente novamente.
+          toast.warning(
+            patientUpdateError.response?.data?.detail ||
+              "Agendamento salvo, mas não foi possível atualizar os dados complementares do paciente. Complete o cadastro do paciente novamente."
+          );
+        }
       }
       setShowDialog(false);
       setEditingAppointment(null);
@@ -339,7 +351,15 @@ export default function CalendarPage() {
       });
       await loadMonthAppointments();
     } catch (error) {
-      toast.error(editingAppointment ? "Erro ao atualizar agendamento" : "Erro ao criar agendamento");
+      const backendMessage = error.response?.data?.detail;
+      const fallbackMessage = editingAppointment ? "Erro ao atualizar agendamento" : "Erro ao criar agendamento";
+      if (error.response) {
+        toast.error(backendMessage || fallbackMessage);
+      } else {
+        toast.error("Falha de conexão com o servidor. Verifique sua internet e tente novamente — o agendamento NÃO foi salvo.");
+      }
+    } finally {
+      setSavingAppointment(false);
     }
   };
 
@@ -433,6 +453,8 @@ export default function CalendarPage() {
 
   const handleNewPatientSubmit = async (e) => {
     e.preventDefault();
+    if (savingNewPatient) return; // evita duplo envio (duplo clique) enquanto já está salvando
+    setSavingNewPatient(true);
     try {
       const response = await api.post("/patients", newPatientData);
       toast.success("Paciente criado com sucesso!");
@@ -459,7 +481,14 @@ export default function CalendarPage() {
         patient_observations: p.observations ?? ""
       });
     } catch (error) {
-      toast.error("Erro ao criar paciente");
+      const backendMessage = error.response?.data?.detail;
+      if (error.response) {
+        toast.error(backendMessage || "Erro ao criar paciente. O cadastro NÃO foi salvo, tente novamente.");
+      } else {
+        toast.error("Falha de conexão com o servidor. Verifique sua internet e tente novamente — o paciente NÃO foi cadastrado.");
+      }
+    } finally {
+      setSavingNewPatient(false);
     }
   };
 
@@ -1506,8 +1535,8 @@ export default function CalendarPage() {
                   Autorizo o uso da minha imagem e voz para fins institucionais e de comunicação da instituição.
                 </Label>
               </div>
-              <Button type="submit" className="w-full btn-primary">
-                {editingAppointment ? "Salvar Alterações" : "Agendar"}
+              <Button type="submit" className="w-full btn-primary" disabled={savingAppointment}>
+                {savingAppointment ? "Salvando..." : (editingAppointment ? "Salvar Alterações" : "Agendar")}
               </Button>
             </form>
           </DialogContent>
@@ -1598,7 +1627,9 @@ export default function CalendarPage() {
                   rows={3}
                 />
               </div>
-              <Button type="submit" className="w-full btn-primary">Adicionar Paciente</Button>
+              <Button type="submit" className="w-full btn-primary" disabled={savingNewPatient}>
+                {savingNewPatient ? "Salvando..." : "Adicionar Paciente"}
+              </Button>
             </form>
           </DialogContent>
         </Dialog>
