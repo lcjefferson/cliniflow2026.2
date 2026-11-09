@@ -4034,6 +4034,12 @@ async def get_conversations(current_user: dict = Depends(get_current_user)):
             pass
     return conversations
 
+def _is_fortalabs_uazapi(url: Optional[str]) -> bool:
+    if not url:
+        return False
+    u = url.lower()
+    return "fortalabs" in u or "fortallabs" in u or "uazapi.com" in u
+
 async def send_whatsapp_message(to_phone: str, message_body: str):
     """
     Sends a WhatsApp message using the configured provider (Official Meta or UazApi).
@@ -4092,12 +4098,12 @@ async def send_whatsapp_message(to_phone: str, message_body: str):
                 
                 base_url = base_url.rstrip('/')
                 
-                # Special logic for FortaLabs (User specific request)
-                if "fortalabs.uazapi.com" in base_url:
+                # Special logic for FortaLabs / UazApi v2
+                if _is_fortalabs_uazapi(base_url):
                     url = f"{base_url}/send/text"
-                    # Query param authentication + simple payload
+                    # Query param + header authentication + simple payload
                     url_with_token = f"{url}?token={token}"
-                    headers = {"Content-Type": "application/json"}
+                    headers = {"Content-Type": "application/json", "token": token}
                     payload = {
                         "number": clean_phone,
                         "text": message_body
@@ -4163,9 +4169,10 @@ async def send_whatsapp_media(to_phone: str, media_type: str, media_data: str, c
                 if not base_url or not token:
                     return False
                 
-                if "fortalabs.uazapi.com" in base_url:
+                if _is_fortalabs_uazapi(base_url):
                     # FortaLabs Custom: /send/media
                     url = f"{base_url}/send/media?token={token}"
+                    headers = {"Content-Type": "application/json", "token": token}
                     
                     payload = {
                         "number": clean_phone,
@@ -4179,7 +4186,7 @@ async def send_whatsapp_media(to_phone: str, media_type: str, media_data: str, c
                         payload["text"] = caption
                     
                     # Try sending
-                    response = await client.post(url, json=payload, timeout=60)
+                    response = await client.post(url, json=payload, headers=headers, timeout=60)
                     if response.status_code not in [200, 201]:
                         logging.error(f"FortaLabs Media Error: {response.text}")
                         return False
@@ -4617,7 +4624,7 @@ async def debug_configure_uazapi():
                 results.append({"step": "Get Current Webhook", "error": str(e)})
 
             # 2.1 Check Current Webhook (Attempt C GET)
-            if "fortalabs" in base_url:
+            if _is_fortalabs_uazapi(base_url):
                 try:
                     url_find_c = f"{base_url}/webhook?token={uazapi_token}"
                     resp = await client.get(url_find_c, headers=headers, timeout=5)
@@ -4633,7 +4640,7 @@ async def debug_configure_uazapi():
             # 2.2 Connection State
             try:
                 url_state = f"{base_url}/instance/connectionState/{instance}"
-                if "fortalabs" in base_url:
+                if _is_fortalabs_uazapi(base_url):
                      url_state = f"{url_state}?token={uazapi_token}"
                 
                 resp = await client.get(url_state, headers=headers, timeout=5)
@@ -4662,7 +4669,7 @@ async def debug_configure_uazapi():
             url_set = f"{base_url}/webhook/set/{instance}"
             try:
                 # FortaLabs might need token in query param too
-                if "fortalabs" in base_url:
+                if _is_fortalabs_uazapi(base_url):
                     url_set = f"{url_set}?token={uazapi_token}"
                 
                 resp = await client.post(url_set, json=payload, headers=headers, timeout=10)
@@ -4676,7 +4683,7 @@ async def debug_configure_uazapi():
                 results.append({"step": "Set Webhook (Attempt A)", "error": str(e)})
 
             # Attempt B: FortaLabs Variation 1 (No instance in path)
-            if "fortalabs" in base_url:
+            if _is_fortalabs_uazapi(base_url):
                  try:
                      url_set_b = f"{base_url}/webhook/set?token={uazapi_token}"
                      resp = await client.post(url_set_b, json=payload, headers=headers, timeout=10)
@@ -4884,7 +4891,7 @@ async def play_audio_proxy(message_id: str):
              }
              
              # Special handling for FortaLabs (Token in Header)
-             if "fortalabs.uazapi.com" in uazapi_url:
+             if _is_fortalabs_uazapi(uazapi_url):
                  headers["token"] = uazapi_token
              else:
                  headers["apikey"] = uazapi_token
@@ -5291,7 +5298,7 @@ async def view_image_proxy(message_id: str):
                  "Accept": "application/json"
              }
              
-             if "fortalabs.uazapi.com" in uazapi_url:
+             if _is_fortalabs_uazapi(uazapi_url):
                  headers["token"] = uazapi_token
              else:
                  headers["apikey"] = uazapi_token
@@ -5458,7 +5465,7 @@ async def download_document_proxy(message_id: str):
                  "Accept": "application/json"
              }
              
-             if "fortalabs.uazapi.com" in uazapi_url:
+             if _is_fortalabs_uazapi(uazapi_url):
                  headers["token"] = uazapi_token
              else:
                  headers["apikey"] = uazapi_token
@@ -5663,6 +5670,10 @@ async def uazapi_webhook(request: Request):
                         
                 return {"status": "processed", "type": "FileDownloaded"}
 
+        # Ignore status/read receipt updates so they are never treated as outgoing messages
+        if payload.get("type") == "ReadReceipt" or payload.get("EventType") == "messages_update":
+            return {"status": "ignored", "reason": "status_update_or_read_receipt"}
+
         # Check if it's a message (incoming or outgoing/sent by secretary from cell)
         # Evolution: data.message. FortaLabs: payload.message (with optional payload.chat)
         message_data = payload.get("data", {}).get("message") or \
@@ -5847,7 +5858,7 @@ async def uazapi_webhook(request: Request):
                     if isinstance(d, list) and d:
                         return _find_text(d[0], depth + 1)
                     return None
-                body = _find_text(payload)
+                body = _find_text(message_data)
             # 4) Fallback placeholder and log to help debug provider format
             if not body:
                 logging.warning(
@@ -5907,7 +5918,7 @@ async def uazapi_webhook(request: Request):
                      uazapi_url = whatsapp.get("uazapi_url", "").rstrip('/')
                      uazapi_token = whatsapp.get("uazapi_token")
                      
-                     if uazapi_url and uazapi_token and "fortalabs.uazapi.com" in uazapi_url:
+                     if uazapi_url and uazapi_token and _is_fortalabs_uazapi(uazapi_url):
                           api_url = f"{uazapi_url}/chat/details"
                           headers = {"token": uazapi_token, "Content-Type": "application/json"}
                           api_payload = {"number": from_number, "preview": False}
@@ -6466,24 +6477,16 @@ async def save_whatsapp_settings(data: WhatsAppSettings, current_user: dict = De
                  webhook_url = f"{public_url}/api/webhook/uazapi"
                  
                  async with httpx.AsyncClient() as client:
-                     if "fortalabs.uazapi.com" in data.uazapi_url:
+                     if _is_fortalabs_uazapi(data.uazapi_url):
                          # FortaLabs specific webhook config
-                         # Assuming endpoint /webhook/set or similar based on Evolution API
-                         # We'll try standard Evolution endpoint first
-                         api_url = f"{data.uazapi_url.rstrip('/')}/webhook/set/{data.uazapi_instance or 'default'}"
+                         api_url = f"{data.uazapi_url.rstrip('/')}/webhook?token={data.uazapi_token}"
                          payload = {
                              "enabled": True,
                              "url": webhook_url,
                              "webhookByEvents": False,
-                             "events": ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE"]
+                             "events": ["messages", "messages_update", "send_message", "MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE"]
                          }
-                         headers = {"apikey": data.uazapi_token, "Content-Type": "application/json"}
-                         
-                         # Note: FortaLabs might use query param for token as seen before
-                         if "fortalabs" in data.uazapi_url:
-                              api_url = f"{data.uazapi_url.rstrip('/')}/webhook/set?token={data.uazapi_token}"
-                              headers = {"Content-Type": "application/json"}
-                              
+                         headers = {"token": data.uazapi_token, "apikey": data.uazapi_token, "Content-Type": "application/json"}
                          logging.info(f"Attempting to set UazApi webhook to {webhook_url}")
                          await client.post(api_url, json=payload, headers=headers, timeout=5)
                          
@@ -6547,18 +6550,30 @@ async def test_whatsapp_connection(settings: WhatsAppSettings, current_user: dic
                 base_url = settings.uazapi_url.rstrip('/')
                 instance = settings.uazapi_instance or 'default'
                 
-                # Special logic for FortaLabs
-                if "fortalabs.uazapi.com" in base_url:
+                # Special logic for FortaLabs / UazApi v2
+                if _is_fortalabs_uazapi(base_url):
+                    headers = {"token": settings.uazapi_token, "apikey": settings.uazapi_token}
                     url = f"{base_url}/status"
-                    # Try to call status endpoint
-                    response = await client.get(url, timeout=10)
+                    # Try to call status endpoint (or fallback to /instance/status and /webhook)
+                    response = await client.get(url, headers=headers, timeout=10)
                     if response.status_code == 200:
-                        data = response.json()
-                        # Extract status info if available
-                        status_info = data.get('status', {}).get('checked_instance', {}).get('connection_status', 'connected')
+                        data = response.json() if response.text else {}
+                        status_info = (
+                            data.get('status', {}).get('checked_instance', {}).get('connection_status', 'connected')
+                            if isinstance(data, dict) else 'connected'
+                        )
                         return {"success": True, "message": f"Connected to UazApi (FortaLabs). Status: {status_info}"}
-                    else:
-                         return {"success": False, "detail": f"UazApi Error: {response.status_code}"}
+                    
+                    # Fallback for UazApi v2 (/instance/status or /webhook?token=...)
+                    for fallback_url in (
+                        f"{base_url}/instance/status?token={settings.uazapi_token}",
+                        f"{base_url}/webhook?token={settings.uazapi_token}",
+                    ):
+                        fb_resp = await client.get(fallback_url, headers=headers, timeout=10)
+                        if fb_resp.status_code == 200:
+                            return {"success": True, "message": "Connected to UazApi (FortaLabs). Status: connected"}
+                    
+                    return {"success": False, "detail": f"UazApi Error: {response.status_code}"}
 
                 else:
                     # Check connection state (Evolution API style)

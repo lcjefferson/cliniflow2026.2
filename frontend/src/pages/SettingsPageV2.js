@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
-import api from "../services/api";
+import api, { API_BASE } from "../services/api";
 import {
   Building2, MessageCircle, Instagram, Facebook, MessageSquare, Activity, RefreshCw, Copy, ExternalLink,
   AlertTriangle, Info, Save, Eye, EyeOff, ImagePlus, ChevronDown, CheckCircle2,
@@ -337,7 +337,7 @@ export default function SettingsPageV2() {
     toast.success("Copiado para a área de transferência!");
   };
 
-  const webhookBaseUrl = process.env.REACT_APP_BACKEND_URL;
+  const webhookBaseUrl = (process.env.REACT_APP_BACKEND_URL || API_BASE || "").replace(/\/$/, "");
 
   const tabs = [
     { id: "clinic", label: "Clínica", icon: Building2 },
@@ -453,7 +453,9 @@ export default function SettingsPageV2() {
 
   const renderWhatsApp = () => {
     const isUaz = whatsappConfig.provider === "uazapi";
-    const webhookUrl = `${webhookBaseUrl}/api/webhooks/whatsapp`;
+    const webhookUrl = isUaz
+      ? `${webhookBaseUrl}/api/webhook/uazapi`
+      : `${webhookBaseUrl}/api/webhooks/whatsapp`;
     return (
       <div className="space-y-4">
         <ChannelStatus
@@ -523,6 +525,9 @@ export default function SettingsPageV2() {
                     value={whatsappConfig.uazapi_instance || ""}
                     onChange={(e) => setWhatsappConfig({ ...whatsappConfig, uazapi_instance: e.target.value })}
                   />
+                </Field>
+                <Field label="Webhook URL" hint="Use esta URL no painel do UAZ-API/FortalLabs (Webhook → URL de callback)" className="md:col-span-2">
+                  <CopyField value={webhookUrl} onCopy={copyToClipboard} />
                 </Field>
               </>
             ) : (
