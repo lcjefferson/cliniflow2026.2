@@ -1,0 +1,22 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Build deps for cryptography/Pillow/reportlab wheels that need to compile
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libjpeg62-turbo-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# Persisted outside the image by a Coolify volume mounted here
+RUN mkdir -p /app/media
+
+EXPOSE 8000
+
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
