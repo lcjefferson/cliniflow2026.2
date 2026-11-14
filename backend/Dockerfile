@@ -3,12 +3,13 @@ FROM python:3.13-slim
 WORKDIR /app
 
 # Build deps for cryptography/Pillow/reportlab wheels that need to compile,
-# plus curl for Coolify's in-container healthcheck probe
+# plus curl/wget for Coolify's in-container healthcheck probe
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libjpeg62-turbo-dev \
     zlib1g-dev \
     curl \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
