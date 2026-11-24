@@ -17,6 +17,7 @@ import ProfessionalsPage from "./pages/ProfessionalsPage";
 import ServicesPage from "./pages/ServicesPage";
 import RoomsPage from "./pages/RoomsPage";
 import PatientsPage from "./pages/PatientsPage";
+import TrashPage from "./pages/TrashPage";
 import MedicalRecordsPage from "./pages/MedicalRecordsPage";
 import ReportsPage from "./pages/ReportsPage";
 import RevenuePage from "./pages/RevenuePage";
@@ -67,6 +68,7 @@ function App() {
           <Route path="/services" element={<PrivateRoute><ServicesPage /></PrivateRoute>} />
           <Route path="/rooms" element={<PrivateRoute><RoomsPage /></PrivateRoute>} />
           <Route path="/patients" element={<PrivateRoute><PatientsPage /></PrivateRoute>} />
+          <Route path="/trash" element={<PrivateRoute><TrashPage /></PrivateRoute>} />
           <Route path="/medical-records" element={<PrivateRoute><MedicalRecordsPage /></PrivateRoute>} />
           <Route path="/reports" element={<PrivateRoute><ReportsPage /></PrivateRoute>} />
           <Route path="/revenue" element={<PrivateRoute><RevenuePage /></PrivateRoute>} />

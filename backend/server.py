@@ -109,7 +109,7 @@ def decrypt_whatsapp_media(enc_data: bytes, media_key: str, media_type: str):
 # MongoDB connection
 mongo_url = os.environ.get('MONGO_URL', '').strip()
 db_name = os.environ.get('DB_NAME', 'clinicflow').strip()
-allowed_origins_env = os.environ.get('ALLOWED_ORIGINS') or os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,https://cliniflow-frontend.onrender.com,https://clinicflow-lucj.onrender.com')
+allowed_origins_env = os.environ.get('ALLOWED_ORIGINS') or os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,https://rf.cliniflow.app.br')
 ALLOWED_ORIGINS = [o.strip() for o in allowed_origins_env.split(',') if o.strip()]
 client: Optional[AsyncIOMotorClient] = None
 db = None
@@ -2856,6 +2856,176 @@ async def delete_patient(patient_id: str, force: bool = False, current_user: dic
         raise HTTPException(status_code=404, detail="Patient not found")
     return {"message": "Patient deleted successfully"}
 
+# ---------------------------------------------------------------------------
+# Lixeira e histórico de alterações de pacientes (somente administradores)
+# ---------------------------------------------------------------------------
+PATIENT_REVERTIBLE_FIELDS = (
+    "name", "email", "phone", "birthdate", "address", "city", "profession", "cpf", "image_voice_consent", "observations",
+)
+
+def _require_patient_admin(current_user: dict):
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") in ["superuser", "consultor"]):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+@api_router.get("/admin/patients-trash")
+async def list_patients_trash(
+    page: int = 1,
+    page_size: int = 50,
+    search: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    _require_patient_admin(current_user)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
+    query: Dict[str, Any] = {"restored_at": {"$exists": False}}
+    if search and search.strip():
+        query["patient.name"] = {"$regex": re.escape(search.strip()), "$options": "i"}
+    page_size = max(1, min(page_size, 200))
+    skip = max(0, (max(page, 1) - 1) * page_size)
+    try:
+        total = await db.patients_trash.count_documents(query)
+        entries = await db.patients_trash.find(
+            query,
+            {
+                "patient_id": 1, "deleted_at": 1, "deleted_by_name": 1,
+                "patient.name": 1, "patient.phone": 1, "patient.cpf": 1, "patient.created_at": 1,
+                "patient.attachments.id": 1, "patient.treatments.id": 1,
+            },
+        ).sort("deleted_at", -1).skip(skip).limit(page_size).to_list(page_size)
+        items = []
+        for e in entries:
+            patient = e.get("patient") or {}
+            items.append({
+                "patient_id": e.get("patient_id"),
+                "name": patient.get("name"),
+                "phone": patient.get("phone"),
+                "cpf": patient.get("cpf"),
+                "created_at": patient.get("created_at"),
+                "deleted_at": e.get("deleted_at"),
+                "deleted_by_name": e.get("deleted_by_name"),
+                "attachments_count": len(patient.get("attachments") or []),
+                "treatments_count": len(patient.get("treatments") or []),
+                "appointments_count": await db.appointments.count_documents({"patient_id": e.get("patient_id")}),
+            })
+    except PyMongoError as e:
+        logging.error(f"Erro ao listar a lixeira de pacientes: {e}")
+        raise HTTPException(status_code=503, detail="Não foi possível carregar a lixeira. Tente novamente.")
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+@api_router.post("/admin/patients-trash/{patient_id}/restore")
+async def restore_patient_from_trash(patient_id: str, current_user: dict = Depends(get_current_user)):
+    _require_patient_admin(current_user)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
+    try:
+        entry = await db.patients_trash.find_one(
+            {"patient_id": patient_id, "restored_at": {"$exists": False}}, sort=[("deleted_at", -1)]
+        )
+        if not entry or not entry.get("patient"):
+            raise HTTPException(status_code=404, detail="Paciente não encontrado na lixeira")
+        if await db.patients.find_one({"id": patient_id}, {"_id": 1}):
+            raise HTTPException(status_code=409, detail="Já existe um paciente ativo com este cadastro.")
+        patient = dict(entry["patient"])
+        patient.pop("_id", None)
+        await db.patients.insert_one(patient)
+        await db.patients_trash.update_one(
+            {"_id": entry["_id"]},
+            {"$set": {
+                "restored_at": datetime.now(timezone.utc).isoformat(),
+                "restored_by": current_user.get("id"),
+                "restored_by_name": current_user.get("name"),
+            }},
+        )
+    except PyMongoError as e:
+        logging.error(f"Erro ao restaurar paciente {patient_id} da lixeira: {e}")
+        raise HTTPException(status_code=503, detail="Não foi possível restaurar o paciente. Tente novamente.")
+    return {"message": "Paciente restaurado", "patient_id": patient_id, "name": patient.get("name")}
+
+@api_router.get("/admin/patient-audit")
+async def list_patient_audit(
+    patient_id: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+    current_user: dict = Depends(get_current_user),
+):
+    _require_patient_admin(current_user)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
+    query: Dict[str, Any] = {}
+    if patient_id:
+        query["patient_id"] = patient_id
+    page_size = max(1, min(page_size, 200))
+    skip = max(0, (max(page, 1) - 1) * page_size)
+    try:
+        total = await db.patient_audit.count_documents(query)
+        entries = await db.patient_audit.find(query).sort("at", -1).skip(skip).limit(page_size).to_list(page_size)
+        ids = list({e.get("patient_id") for e in entries if e.get("patient_id")})
+        names: Dict[str, str] = {}
+        if ids:
+            for p in await db.patients.find({"id": {"$in": ids}}, {"id": 1, "name": 1, "_id": 0}).to_list(len(ids)):
+                names[p["id"]] = p.get("name")
+            missing = [i for i in ids if i not in names]
+            if missing:
+                for t in await db.patients_trash.find({"patient_id": {"$in": missing}}, {"patient_id": 1, "patient.name": 1}).to_list(len(missing)):
+                    names.setdefault(t["patient_id"], f"{(t.get('patient') or {}).get('name')} (excluído)")
+        items = [{
+            "id": str(e["_id"]),
+            "patient_id": e.get("patient_id"),
+            "patient_name": names.get(e.get("patient_id")),
+            "at": e.get("at"),
+            "user_name": e.get("user_name"),
+            "changes": e.get("changes") or {},
+            "reverted_at": e.get("reverted_at"),
+            "revert_of": e.get("revert_of"),
+        } for e in entries]
+    except PyMongoError as e:
+        logging.error(f"Erro ao listar o histórico de alterações: {e}")
+        raise HTTPException(status_code=503, detail="Não foi possível carregar o histórico. Tente novamente.")
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+@api_router.post("/admin/patient-audit/{audit_id}/revert")
+async def revert_patient_audit(audit_id: str, current_user: dict = Depends(get_current_user)):
+    """Desfaz uma alteração: devolve ao paciente os valores que existiam ANTES dela."""
+    _require_patient_admin(current_user)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
+    try:
+        oid = ObjectId(audit_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Identificador inválido")
+    try:
+        entry = await db.patient_audit.find_one({"_id": oid})
+        if not entry:
+            raise HTTPException(status_code=404, detail="Registro de alteração não encontrado")
+        if entry.get("reverted_at"):
+            raise HTTPException(status_code=409, detail="Esta alteração já foi desfeita.")
+        patient = await db.patients.find_one({"id": entry.get("patient_id")}, {"_id": 0})
+        if not patient:
+            raise HTTPException(status_code=404, detail="O paciente não existe mais. Restaure-o pela lixeira antes de desfazer alterações.")
+        updates = {
+            field: change.get("antes")
+            for field, change in (entry.get("changes") or {}).items()
+            if field in PATIENT_REVERTIBLE_FIELDS and isinstance(change, dict)
+        }
+        if not updates:
+            raise HTTPException(status_code=400, detail="Não há campos que possam ser desfeitos nesta alteração.")
+        now = datetime.now(timezone.utc).isoformat()
+        # O próprio desfazer também fica registrado, para que possa ser desfeito de novo.
+        await db.patient_audit.insert_one({
+            "patient_id": entry.get("patient_id"),
+            "user_id": current_user.get("id"),
+            "user_name": current_user.get("name"),
+            "at": now,
+            "revert_of": audit_id,
+            "changes": {f: {"antes": patient.get(f), "depois": v} for f, v in updates.items()},
+        })
+        await db.patients.update_one({"id": entry.get("patient_id")}, {"$set": updates})
+        await db.patient_audit.update_one({"_id": oid}, {"$set": {"reverted_at": now, "reverted_by_name": current_user.get("name")}})
+    except PyMongoError as e:
+        logging.error(f"Erro ao desfazer alteração {audit_id}: {e}")
+        raise HTTPException(status_code=503, detail="Não foi possível desfazer a alteração. Tente novamente.")
+    return {"message": "Alteração desfeita", "fields": sorted(updates.keys())}
+
 # Anamnese Routes
 @api_router.put("/patients/{patient_id}/anamnese")
 async def update_anamnese(patient_id: str, anamnese_data: Anamnese, current_user: dict = Depends(get_current_user)):
@@ -4631,14 +4801,18 @@ async def assign_conversation(conversation_id: str, current_user: dict = Depends
 WEBHOOK_LOGS = []
 
 @api_router.get("/webhook/logs")
-async def get_webhook_logs(limit: int = 10):
+async def get_webhook_logs(limit: int = 10, current_user: dict = Depends(get_current_user)):
+    # Os logs trazem o conteúdo das mensagens recebidas: só para usuários logados.
     return WEBHOOK_LOGS[-limit:]
 
 @api_router.get("/debug/configure-uazapi")
-async def debug_configure_uazapi():
+async def debug_configure_uazapi(current_user: dict = Depends(get_current_user)):
     """
     Diagnostic tool for UazApi connection and Webhook configuration.
+    Reconfigura o webhook do WhatsApp, então só administradores podem usar.
     """
+    if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") == "superuser"):
+        raise HTTPException(status_code=403, detail="Not authorized")
     try:
         settings = await db.settings.find_one({"type": "omnichannel"}, {"_id": 0})
         if not settings:
@@ -4658,8 +4832,11 @@ async def debug_configure_uazapi():
         # Ensure base URL format
         base_url = uazapi_url.rstrip('/')
         
-        # Target Webhook URL (Your Backend)
-        my_url = "https://clinicflow-lucj.onrender.com"
+        # Target Webhook URL (este backend). Vem da variável BACKEND_URL; nunca de um endereço fixo,
+        # para não apontar o WhatsApp para um servidor antigo (como o Render, já desativado).
+        my_url = (os.environ.get("BACKEND_URL") or "").strip().rstrip("/")
+        if not my_url:
+            return {"status": "error", "message": "Defina a variável BACKEND_URL (URL pública da API) para configurar o webhook"}
         webhook_target = f"{my_url}/api/webhook/uazapi"
         
         results = []

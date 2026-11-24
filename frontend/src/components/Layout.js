@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { 
   LayoutDashboard, MessageSquare, Calendar, Users, 
   ClipboardList, UserPlus, Briefcase, DoorOpen, 
-  FileText, DollarSign, LogOut, Activity, Settings, Menu, FileBarChart, X
+  FileText, DollarSign, LogOut, Activity, Settings, Menu, FileBarChart, X, ArchiveRestore
 } from "lucide-react";
 
 const MOBILE_QUERY = "(max-width: 1023px)";
@@ -54,6 +54,7 @@ export default function Layout({ children, fullHeight = false }) {
     { path: "/professionals", icon: Briefcase, label: "Profissionais", roles: ["admin", "consultor", "superuser"] },
     { path: "/services", icon: Activity, label: "Serviços", roles: ["admin", "consultor", "superuser"] },
     { path: "/rooms", icon: DoorOpen, label: "Salas", roles: ["admin", "consultor", "superuser"] },
+    { path: "/trash", icon: ArchiveRestore, label: "Lixeira", roles: ["admin", "consultor", "superuser"] },
     { path: "/reports", icon: FileBarChart, label: "Relatórios", roles: ["admin", "superuser"] },
     { path: "/revenue", icon: DollarSign, label: "Faturamento", roles: ["admin", "superuser", "profissional_admin"] },
     { path: "/users", icon: Users, label: "Usuários", roles: ["admin", "superuser"] },

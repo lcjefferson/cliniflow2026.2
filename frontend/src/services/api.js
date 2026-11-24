@@ -1,7 +1,14 @@
 import axios from 'axios';
 
 // Prefer explicit backend URL in development to avoid dev-server relative path issues
-export const API_BASE = process.env.REACT_APP_BACKEND_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://clinicflow-lucj.onrender.com');
+// Nunca usa um servidor "de reserva" em produção (o antigo apontava para o Render): se a variável faltar no
+// build, as chamadas falham de forma visível em vez de gravar dados no lugar errado.
+const BACKEND_FROM_ENV = process.env.REACT_APP_BACKEND_URL;
+if (!BACKEND_FROM_ENV && process.env.NODE_ENV !== 'development') {
+  // eslint-disable-next-line no-console
+  console.error('REACT_APP_BACKEND_URL não foi definida no build do frontend. Defina-a (Build Variable) e faça o deploy de novo.');
+}
+export const API_BASE = BACKEND_FROM_ENV || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : window.location.origin);
 export const MEDIA_BASE = API_BASE; // para URLs de mídia (ex: /media/...)
 const API_URL = `${API_BASE}/api`;
 

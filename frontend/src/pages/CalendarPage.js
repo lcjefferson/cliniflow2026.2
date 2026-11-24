@@ -1522,7 +1522,6 @@ export default function CalendarPage() {
                       setFormData({...formData, appointment_time: e.target.value});
                       setConflicts(null);
                     }}
-                    onBlur={checkConflicts}
                   />
                 </div>
                 <div>
@@ -1534,7 +1533,6 @@ export default function CalendarPage() {
                       setFormData({...formData, appointment_time_end: e.target.value});
                       setConflicts(null);
                     }}
-                    onBlur={checkConflicts}
                   />
                 </div>
               </div>
@@ -1577,11 +1575,11 @@ export default function CalendarPage() {
                 </div>
               )}
               
-              {checkingConflicts && (
-                <div className="text-center text-sm text-blue-600">
-                  Verificando disponibilidade...
-                </div>
-              )}
+              {/* Altura fixa: o texto aparece/some sem empurrar o botão "Agendar". Antes, ao clicar no botão o
+                  campo de hora perdia o foco, a linha surgia, o botão descia e o primeiro clique se perdia. */}
+              <div className="min-h-[1.25rem] text-center text-sm text-blue-600" aria-live="polite">
+                {checkingConflicts ? "Verificando disponibilidade..." : ""}
+              </div>
               <div>
                 <Label>Observações</Label>
                 <Input
