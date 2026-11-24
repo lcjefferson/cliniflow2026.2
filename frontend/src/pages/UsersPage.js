@@ -12,6 +12,7 @@ import ContactAvatar from "../components/ContactAvatar";
 import {
   PageHeader, SearchField, IconAction, EmptyState, ListSkeleton, ListPager, ConfirmDeleteDialog, usePagedList, normalizeText,
 } from "../components/ListKit";
+import { getErrorMessage } from "../utils/apiError";
 
 const USER_TYPES = {
   superuser: { label: "Super usuário", className: "bg-violet-50 text-violet-700 ring-violet-600/20" },
@@ -137,7 +138,7 @@ export default function UsersPage() {
       handleCloseDialog();
       loadUsers();
     } catch (error) {
-      const errorMsg = error.response?.data?.detail || (editingUser ? "Erro ao atualizar usuário" : "Erro ao criar usuário");
+      const errorMsg = getErrorMessage(error, editingUser ? "Erro ao atualizar usuário" : "Erro ao criar usuário");
       toast.error(errorMsg);
     }
   };

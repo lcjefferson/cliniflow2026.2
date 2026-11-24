@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import ContactAvatar from "../components/ContactAvatar";
 import { CHANNEL_META, formatPhone } from "../lib/contact";
+import { getErrorMessage } from "../utils/apiError";
 
 const LEAD_STATUS = {
   new: { label: "Novo", plural: "Novos", className: "bg-blue-50 text-blue-700 ring-blue-600/20" },
@@ -206,7 +207,7 @@ export default function LeadsPage() {
       loadLeads();
     } catch (error) {
       console.error("Error deleting lead:", error);
-      toast.error("Erro ao remover lead: " + (error.response?.data?.detail || error.message));
+      toast.error("Erro ao remover lead: " + getErrorMessage(error, "tente novamente"));
     }
   };
 
@@ -230,7 +231,7 @@ export default function LeadsPage() {
       setConvertingLead(null);
       loadLeads();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Erro ao converter lead");
+      toast.error(getErrorMessage(error, "Erro ao converter lead"));
     }
   };
 

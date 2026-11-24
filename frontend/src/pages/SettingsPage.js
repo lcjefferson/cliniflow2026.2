@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getErrorMessage } from "../utils/apiError";
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -135,7 +136,7 @@ export default function SettingsPage() {
       setUserForm({ name: "", email: "", password: "", is_admin: false });
       loadUsers();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Erro ao criar usuário");
+      toast.error(getErrorMessage(error, "Erro ao criar usuário"));
     }
   };
 

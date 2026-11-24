@@ -1,5 +1,6 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { Toaster } from "sonner";
 import "@/App.css";
@@ -40,11 +41,18 @@ const PrivateRoute = ({ children }) => {
   return user ? children : <Navigate to="/login" />;
 };
 
+// Isola falhas de renderização por página: o erro é limpo ao navegar para outra rota.
+const RouteBoundary = ({ children }) => {
+  const location = useLocation();
+  return <ErrorBoundary resetKey={location.pathname}>{children}</ErrorBoundary>;
+};
+
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Toaster position="top-right" />
+        <RouteBoundary>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           {process.env.NODE_ENV === "development" && (
@@ -68,6 +76,7 @@ function App() {
           <Route path="/tunnel-webhook" element={<PrivateRoute><NgrokWebhookPage /></PrivateRoute>} />
           <Route path="/webhook-monitor" element={<PrivateRoute><WebhookMonitor /></PrivateRoute>} />
         </Routes>
+        </RouteBoundary>
       </BrowserRouter>
     </AuthProvider>
   );

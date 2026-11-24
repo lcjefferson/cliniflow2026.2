@@ -117,15 +117,17 @@ if mongo_url:
     client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
     try:
         db = client.get_database(db_name)
-        # Force connection test
-        client.admin.command('ping') 
-        print("MongoDB connection successful")
+        # O ping real (com await) é feito no lifespan; o driver reconecta sozinho se o Mongo cair.
+        print("MongoDB client configured")
     except Exception as e:
-        print(f"Error connecting to MongoDB: {e}")
+        print(f"Error configuring MongoDB client: {e}")
         client = None
         db = None
 
-DEMO_MODE = db is None
+# Modo demonstração (dados só em memória) só existe quando NÃO há MONGO_URL configurada.
+# Com MONGO_URL definida, uma falha de conexão devolve erro 503 em vez de gravar dados
+# em memória que se perderiam no próximo restart.
+DEMO_MODE = not mongo_url
 mem = {
     "users": [],
     "professionals": [],
@@ -655,35 +657,19 @@ async def normalize_all_thumbnails():
 async def lifespan(app: FastAPI):
     global db, DEMO_MODE, client
     
-    # Tentativa de reconexão se db for None mas mongo_url existir
-    if db is None and mongo_url:
+    # Valida a conexão com o Mongo na subida. Nunca cai para "modo demonstração" (dados em memória)
+    # quando há MONGO_URL: o driver reconecta sozinho e, enquanto isso, a API responde 503.
+    if mongo_url:
         try:
-            print("Attempting to connect to MongoDB in lifespan...")
-            client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
-            await client.admin.command('ping')
-            db = client.get_database(db_name)
+            if client is None:
+                client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
+            if db is None:
+                db = client.get_database(db_name)
             DEMO_MODE = False
+            await client.admin.command('ping')
             print("MongoDB connection successful in lifespan")
         except Exception as e:
-            print(f"MongoDB connection failed in lifespan: {e}. Switching to DEMO MODE.")
-            db = None
-            DEMO_MODE = True
-    elif db is not None:
-        # Se já estava "conectado" globalmente, valida a conexão
-        try:
-            await client.admin.command('ping')
-        except Exception:
-            print("MongoDB connection check failed. Retrying...")
-            try:
-                # Retry once
-                client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
-                await client.admin.command('ping')
-                db = client.get_database(db_name)
-                print("MongoDB re-connected successfully.")
-            except Exception as e:
-                print(f"MongoDB connection failed finally: {e}. Switching to DEMO MODE.")
-                db = None
-                DEMO_MODE = True
+            logging.error(f"MongoDB indisponível na subida: {e}. A API responderá 503 até o banco voltar.")
 
     if scheduler and CronTrigger:
         try:
@@ -876,12 +862,15 @@ api_router = APIRouter(prefix="/api")
 async def health_check():
     db_connected = False
     try:
-        if client is not None:
+        if client is not None and not DEMO_MODE:
             await client.admin.command('ping')
             db_connected = True
     except Exception:
         db_connected = False
-    return {"status": "ok", "db_connected": db_connected}
+    # 503 quando o banco não responde (ou o servidor está em modo demonstração), para que o
+    # Coolify/monitoramento perceba o problema em vez de achar que está tudo certo.
+    body = {"status": "ok" if db_connected else "degraded", "db_connected": db_connected, "demo_mode": DEMO_MODE}
+    return JSONResponse(body, status_code=200 if db_connected else 503)
 
 @api_router.get("/version")
 async def get_version():
@@ -1198,9 +1187,11 @@ class Patient(BaseModel):
     anamnese: Optional[Anamnese] = None
     image_voice_consent: Optional[bool] = None  # Autorização uso de imagem e voz (institucional)
     observations: Optional[str] = None
+    client_request_id: Optional[str] = None  # Idempotência: evita cadastro duplicado se o envio for repetido
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class PatientCreate(BaseModel):
+    client_request_id: Optional[str] = None
     name: str  # Obrigatório
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
@@ -2031,6 +2022,17 @@ async def delete_room(room_id: str, current_user: dict = Depends(get_current_use
 async def create_patient(data: PatientCreate, current_user: dict = Depends(get_current_user)):
     if db is None:
         raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
+    request_id = (data.client_request_id or "").strip() or None
+    if request_id:
+        # Se o navegador repetiu o envio (timeout, conexão instável), devolve o paciente já salvo
+        # em vez de criar um duplicado.
+        try:
+            existing = await db.patients.find_one({"client_request_id": request_id}, {"_id": 0})
+        except PyMongoError as e:
+            logging.error(f"Erro ao verificar cadastro repetido: {e}")
+            existing = None
+        if existing:
+            return Patient(**existing)
     patient = Patient(**data.model_dump())
     doc = patient.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
@@ -2090,20 +2092,40 @@ async def add_patient_attachment(patient_id: str, attachment_data: Attachment, c
                         pass
                 except Exception:
                     pass
-        except Exception:
-            pass
+        except binascii.Error:
+            raise HTTPException(status_code=400, detail="Arquivo inválido ou corrompido. O documento NÃO foi salvo.")
+        except Exception as e:
+            # Antes a falha era engolida e o documento parecia salvo sem estar. Agora é reportada.
+            logging.error(f"Falha ao gravar documento do paciente {patient_id} no GridFS: {e}")
+            raise HTTPException(status_code=503, detail="Não foi possível salvar o documento. Ele NÃO foi salvo; tente novamente.")
 
     attachment_doc = attachment_data.model_dump()
     attachment_doc['upload_date'] = attachment_data.upload_date.isoformat()
 
-    result = await db.patients.update_one(
-        {"id": patient_id},
-        {"$push": {"attachments": attachment_doc}}
-    )
-    
+    async def _discard_uploaded_files():
+        # Evita arquivos órfãos no GridFS se o vínculo com o paciente não for concluído.
+        try:
+            fs_cleanup = AsyncIOMotorGridFSBucket(db)
+            for gid in (attachment_data.gridfs_id, attachment_data.thumbnail_gridfs_id, attachment_data.thumbnail_webp_gridfs_id):
+                if gid:
+                    await fs_cleanup.delete(ObjectId(gid))
+        except Exception as cleanup_err:
+            logging.warning(f"Falha ao limpar arquivos órfãos do GridFS: {cleanup_err}")
+
+    try:
+        result = await db.patients.update_one(
+            {"id": patient_id},
+            {"$push": {"attachments": attachment_doc}}
+        )
+    except PyMongoError as e:
+        logging.error(f"Erro ao vincular documento ao paciente {patient_id}: {e}")
+        await _discard_uploaded_files()
+        raise HTTPException(status_code=503, detail="Não foi possível salvar o documento. Ele NÃO foi salvo; tente novamente.")
+
     if result.matched_count == 0:
+        await _discard_uploaded_files()
         raise HTTPException(status_code=404, detail="Patient not found")
-    
+
     return attachment_data
 
 @api_router.post("/patients/{patient_id}/attachment-folders", response_model=dict)
@@ -2750,12 +2772,33 @@ async def get_patient_professionals(patient_id: str, current_user: dict = Depend
 
 
 @api_router.put("/patients/{patient_id}")
-async def update_patient(patient_id: str, data: PatientUpdate, current_user: dict = Depends(get_current_user)):
+async def update_patient(patient_id: str, data: PatientUpdate, allow_clear: bool = False, current_user: dict = Depends(get_current_user)):
     if db is None:
         raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
     update_data = data.model_dump(exclude_unset=True)
+    if not allow_clear:
+        # Proteção contra perda de dados: sem pedido explícito (allow_clear=true), um valor vazio
+        # nunca substitui uma informação já cadastrada.
+        update_data = {k: v for k, v in update_data.items() if v is not None and v != ""}
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
+
+    # Trilha de auditoria: guarda o valor anterior de tudo que será alterado, para que qualquer
+    # informação sobrescrita por engano possa ser recuperada.
+    try:
+        before = await db.patients.find_one({"id": patient_id}, {"_id": 0, **{k: 1 for k in update_data}})
+        if before is not None:
+            changes = {k: {"antes": before.get(k), "depois": v} for k, v in update_data.items() if before.get(k) != v}
+            if changes:
+                await db.patient_audit.insert_one({
+                    "patient_id": patient_id,
+                    "user_id": current_user.get("id"),
+                    "user_name": current_user.get("name"),
+                    "at": datetime.now(timezone.utc).isoformat(),
+                    "changes": changes,
+                })
+    except Exception as e:
+        logging.warning(f"Falha ao registrar auditoria do paciente {patient_id}: {e}")
 
     try:
         result = await db.patients.update_one({"id": patient_id}, {"$set": update_data})
@@ -2774,6 +2817,19 @@ async def delete_patient(patient_id: str, current_user: dict = Depends(get_curre
         raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
 
     try:
+        # Lixeira: guarda uma cópia completa antes de apagar, para permitir recuperação.
+        try:
+            snapshot = await db.patients.find_one({"id": patient_id}, {"_id": 0})
+            if snapshot is not None:
+                await db.patients_trash.insert_one({
+                    "patient_id": patient_id,
+                    "deleted_at": datetime.now(timezone.utc).isoformat(),
+                    "deleted_by": current_user.get("id"),
+                    "deleted_by_name": current_user.get("name"),
+                    "patient": snapshot,
+                })
+        except Exception as e:
+            logging.error(f"Falha ao copiar paciente {patient_id} para a lixeira antes de remover: {e}")
         result = await db.patients.delete_one({"id": patient_id})
     except PyMongoError as e:
         logging.error(f"Erro ao remover paciente no banco: {e}")

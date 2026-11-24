@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "../components/ListKit";
+import { detailToText, getErrorMessage } from "../utils/apiError";
 
 const CHANNEL_META = {
   whatsapp: { label: "WhatsApp", icon: MessageCircle, iconClass: "bg-green-50 text-green-600", switchClass: "data-[state=checked]:bg-green-600" },
@@ -322,11 +323,11 @@ export default function SettingsPageV2() {
       if (response.data.success) {
         toast.success(`Conexão com ${channel} testada com sucesso!`);
       } else {
-        toast.error(response.data.detail || `Falha ao conectar com ${channel}`);
+        toast.error(detailToText(response.data.detail) || `Falha ao conectar com ${channel}`);
       }
     } catch (error) {
       console.error(error);
-      toast.error(error.response?.data?.detail || "Erro ao testar conexão");
+      toast.error(getErrorMessage(error, "Erro ao testar conexão"));
     } finally {
       setLoading(false);
     }

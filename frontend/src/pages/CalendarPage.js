@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
+import { getErrorMessage, isNetworkError } from "../utils/apiError";
+import { loadDraft, saveDraft, clearDraft, newRequestId } from "../utils/formDraft";
 import { Plus, ChevronLeft, ChevronRight, X, ChevronDown, Search, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -94,6 +96,56 @@ export default function CalendarPage() {
   const [checkingConflicts, setCheckingConflicts] = useState(false);
   const [savingAppointment, setSavingAppointment] = useState(false);
   const [savingNewPatient, setSavingNewPatient] = useState(false);
+  // Campos do paciente (profissão/endereço/cidade) que o usuário realmente digitou neste agendamento.
+  // Só estes são enviados ao paciente; o que não foi tocado nunca é regravado.
+  const touchedPatientFieldsRef = useRef(new Set());
+  const newPatientRequestIdRef = useRef(null);
+
+  const touchPatientField = (field) => {
+    touchedPatientFieldsRef.current.add(field);
+  };
+
+  // Preenche os campos do paciente a partir do registro COMPLETO no servidor (a lista do calendário
+  // é um resumo e não traz tudo), sem sobrescrever o que o usuário já tenha digitado.
+  const prefillPatientFields = async (patientId) => {
+    if (!patientId) return;
+    try {
+      const res = await api.get(`/patients/${patientId}`);
+      const full = res.data || {};
+      setFormData((prev) => {
+        if (String(prev.patient_id) !== String(patientId)) return prev;
+        const touched = touchedPatientFieldsRef.current;
+        return {
+          ...prev,
+          patient_profession: touched.has("patient_profession") ? prev.patient_profession : (full.profession ?? ""),
+          patient_address: touched.has("patient_address") ? prev.patient_address : (full.address ?? ""),
+          patient_city: touched.has("patient_city") ? prev.patient_city : (full.city ?? ""),
+          patient_observations: full.observations ?? "",
+        };
+      });
+    } catch (err) {
+      console.warn("Não foi possível carregar os dados completos do paciente", err);
+    }
+  };
+
+  // Rascunho do cadastro rápido de paciente (protege contra queda de internet / tela recarregada).
+  useEffect(() => {
+    if (showNewPatientDialog) {
+      saveDraft("calendar-new-patient", { data: newPatientData, requestId: newPatientRequestIdRef.current });
+    }
+  }, [showNewPatientDialog, newPatientData]);
+
+  const openNewPatientDialog = () => {
+    const draft = loadDraft("calendar-new-patient");
+    if (draft && draft.data && ["name", "phone", "cpf", "address", "city", "profession"].some((k) => draft.data[k])) {
+      setNewPatientData((prev) => ({ ...prev, ...draft.data }));
+      newPatientRequestIdRef.current = draft.requestId || newRequestId();
+      toast.info("Rascunho do cadastro anterior restaurado.");
+    } else {
+      newPatientRequestIdRef.current = newRequestId();
+    }
+    setShowNewPatientDialog(true);
+  };
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [appointmentToDelete, setAppointmentToDelete] = useState(null);
   const [showPatientDialog, setShowPatientDialog] = useState(false);
@@ -312,24 +364,31 @@ export default function CalendarPage() {
         await api.post("/appointments", payload);
         toast.success("Agendamento criado!");
       }
-      if (formData.patient_id) {
-        try {
-          await api.put(`/patients/${formData.patient_id}`, {
-            profession: formData.patient_profession ?? "",
-            address: formData.patient_address ?? "",
-            city: formData.patient_city ?? "",
-            observations: formData.patient_observations ?? ""
-          });
-        } catch (patientUpdateError) {
-          // O agendamento foi salvo, mas os dados complementares do paciente não.
-          // Avisa o usuário em vez de falhar silenciosamente, para que ele saiba que
-          // precisa completar o cadastro do paciente novamente.
-          toast.warning(
-            patientUpdateError.response?.data?.detail ||
-              "Agendamento salvo, mas não foi possível atualizar os dados complementares do paciente. Complete o cadastro do paciente novamente."
-          );
+      // Atualiza o cadastro do paciente SOMENTE com os campos que o usuário digitou aqui.
+      // (Antes, todo agendamento regravava profissão/endereço/cidade/observações com o que estivesse
+      // no formulário, apagando dados existentes quando a lista de pacientes estava incompleta.)
+      if (formData.patient_id && touchedPatientFieldsRef.current.size > 0) {
+        const fieldMap = {
+          patient_profession: "profession",
+          patient_address: "address",
+          patient_city: "city",
+        };
+        const patientUpdate = {};
+        touchedPatientFieldsRef.current.forEach((field) => {
+          if (fieldMap[field]) patientUpdate[fieldMap[field]] = formData[field] ?? "";
+        });
+        if (Object.keys(patientUpdate).length > 0) {
+          try {
+            await api.put(`/patients/${formData.patient_id}`, patientUpdate, { params: { allow_clear: true } });
+          } catch (patientUpdateError) {
+            // O agendamento foi salvo, mas os dados complementares do paciente não.
+            toast.warning(
+              `${getErrorMessage(patientUpdateError, "Não foi possível atualizar os dados complementares do paciente.")} O agendamento foi salvo; complete o cadastro do paciente novamente.`
+            );
+          }
         }
       }
+      touchedPatientFieldsRef.current = new Set();
       setShowDialog(false);
       setEditingAppointment(null);
       setConflicts(null);
@@ -351,10 +410,9 @@ export default function CalendarPage() {
       });
       await loadMonthAppointments();
     } catch (error) {
-      const backendMessage = error.response?.data?.detail;
       const fallbackMessage = editingAppointment ? "Erro ao atualizar agendamento" : "Erro ao criar agendamento";
       if (error.response) {
-        toast.error(backendMessage || fallbackMessage);
+        toast.error(getErrorMessage(error, fallbackMessage));
       } else {
         toast.error("Falha de conexão com o servidor. Verifique sua internet e tente novamente — o agendamento NÃO foi salvo.");
       }
@@ -383,8 +441,11 @@ export default function CalendarPage() {
       patient_city: pat?.city ?? "",
       patient_observations: pat?.observations ?? ""
     });
+    touchedPatientFieldsRef.current = new Set();
     setShowDetailsDialog(false);
     setShowDialog(true);
+    // Garante que os campos do paciente venham do registro completo, mesmo se a lista ainda não carregou.
+    prefillPatientFields(appointment.patient_id);
   };
 
   const handleDeleteAppointment = async (appointment) => {
@@ -433,6 +494,7 @@ export default function CalendarPage() {
     setShowDialog(false);
     setEditingAppointment(null);
     setConflicts(null);
+    touchedPatientFieldsRef.current = new Set();
     setFormData({
       patient_id: "",
       professional_id: "",
@@ -456,8 +518,11 @@ export default function CalendarPage() {
     if (savingNewPatient) return; // evita duplo envio (duplo clique) enquanto já está salvando
     setSavingNewPatient(true);
     try {
-      const response = await api.post("/patients", newPatientData);
+      if (!newPatientRequestIdRef.current) newPatientRequestIdRef.current = newRequestId();
+      const response = await api.post("/patients", { ...newPatientData, client_request_id: newPatientRequestIdRef.current });
       toast.success("Paciente criado com sucesso!");
+      clearDraft("calendar-new-patient");
+      newPatientRequestIdRef.current = null;
       setShowNewPatientDialog(false);
       setNewPatientData({
         name: "",
@@ -481,11 +546,10 @@ export default function CalendarPage() {
         patient_observations: p.observations ?? ""
       });
     } catch (error) {
-      const backendMessage = error.response?.data?.detail;
       if (error.response) {
-        toast.error(backendMessage || "Erro ao criar paciente. O cadastro NÃO foi salvo, tente novamente.");
+        toast.error(getErrorMessage(error, "Erro ao criar paciente. O cadastro NÃO foi salvo, tente novamente."));
       } else {
-        toast.error("Falha de conexão com o servidor. Verifique sua internet e tente novamente — o paciente NÃO foi cadastrado.");
+        toast.error(`${getErrorMessage(error)} O cadastro NÃO foi confirmado — o que você digitou foi mantido; clique em salvar de novo. Se o paciente já tiver sido salvo, ele não será duplicado.`);
       }
     } finally {
       setSavingNewPatient(false);
@@ -1312,6 +1376,7 @@ export default function CalendarPage() {
                     value={formData.patient_id}
                     onChange={(patientId) => {
                       const p = patients.find((x) => String(x.id) === String(patientId));
+                      touchedPatientFieldsRef.current = new Set();
                       setFormData({
                         ...formData,
                         patient_id: patientId,
@@ -1320,8 +1385,9 @@ export default function CalendarPage() {
                         patient_city: p?.city ?? "",
                         patient_observations: p?.observations ?? ""
                       });
+                      prefillPatientFields(patientId);
                     }}
-                    onCreateNew={() => setShowNewPatientDialog(true)}
+                    onCreateNew={openNewPatientDialog}
                     placeholder="Busque ou selecione um paciente..."
                   />
                 </div>
@@ -1400,7 +1466,7 @@ export default function CalendarPage() {
                   <Label>Profissão</Label>
                   <Input
                     value={formData.patient_profession}
-                    onChange={(e) => setFormData({...formData, patient_profession: e.target.value})}
+                    onChange={(e) => { touchPatientField("patient_profession"); setFormData({...formData, patient_profession: e.target.value}); }}
                     placeholder="Profissão do paciente"
                   />
                 </div>
@@ -1408,7 +1474,7 @@ export default function CalendarPage() {
                   <Label>Endereço</Label>
                   <Input
                     value={formData.patient_address}
-                    onChange={(e) => setFormData({...formData, patient_address: e.target.value})}
+                    onChange={(e) => { touchPatientField("patient_address"); setFormData({...formData, patient_address: e.target.value}); }}
                     placeholder="Endereço do paciente"
                   />
                 </div>
@@ -1416,7 +1482,7 @@ export default function CalendarPage() {
                   <Label>Cidade</Label>
                   <Input
                     value={formData.patient_city}
-                    onChange={(e) => setFormData({...formData, patient_city: e.target.value})}
+                    onChange={(e) => { touchPatientField("patient_city"); setFormData({...formData, patient_city: e.target.value}); }}
                     placeholder="Cidade do paciente"
                   />
                 </div>

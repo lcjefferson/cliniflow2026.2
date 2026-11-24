@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Layout from "../components/Layout";
 import api from "../services/api";
 import {
@@ -13,10 +13,14 @@ import { Label } from "@/components/ui/label";
 import PatientDetailDialog from "../components/PatientDetailDialog";
 import ContactAvatar from "../components/ContactAvatar";
 import { maskCpf, maskPhone } from "../lib/inputMasks";
+import { getErrorMessage, isNetworkError } from "../utils/apiError";
+import { loadDraft, saveDraft, clearDraft, newRequestId } from "../utils/formDraft";
 
 const EMPTY_FORM = {
   name: "", email: "", phone: "", birthdate: "", address: "", city: "", profession: "", cpf: "", image_voice_consent: false, observations: "",
 };
+
+const DRAFT_KEY = "new-patient";
 
 const SORT_OPTIONS = [
   { value: "created_at:desc", label: "Mais recentes" },
@@ -102,6 +106,18 @@ export default function PatientsPage() {
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [patientToDelete, setPatientToDelete] = useState(null);
+  const [openingEditId, setOpeningEditId] = useState(null);
+  // Registro como estava no banco ao abrir a edição: só os campos alterados são enviados.
+  const originalPayloadRef = useRef(null);
+  // Identificador do cadastro em andamento: se o envio for repetido, o servidor não duplica.
+  const requestIdRef = useRef(null);
+
+  // Guarda o rascunho do cadastro novo enquanto o formulário está aberto.
+  useEffect(() => {
+    if (showDialog && !editingId) {
+      saveDraft(DRAFT_KEY, { data: formData, requestId: requestIdRef.current });
+    }
+  }, [showDialog, editingId, formData]);
 
   useEffect(() => {
     const term = searchTerm.trim();
@@ -149,21 +165,35 @@ export default function PatientsPage() {
     const payload = buildPatientPayload();
     try {
       if (editingId) {
-        await api.put(`/patients/${editingId}`, payload);
-        toast.success("Paciente atualizado!");
+        // Envia SOMENTE o que o usuário alterou, nunca o formulário inteiro.
+        const original = originalPayloadRef.current || {};
+        const changed = {};
+        Object.keys(payload).forEach((key) => {
+          if (JSON.stringify(payload[key] ?? null) !== JSON.stringify(original[key] ?? null)) changed[key] = payload[key];
+        });
+        if (Object.keys(changed).length === 0) {
+          toast.info("Nenhuma alteração para salvar.");
+        } else {
+          // allow_clear: aqui o usuário pode ter apagado um campo de propósito.
+          await api.put(`/patients/${editingId}`, changed, { params: { allow_clear: true } });
+          toast.success("Paciente atualizado!");
+        }
       } else {
-        await api.post("/patients", payload);
+        if (!requestIdRef.current) requestIdRef.current = newRequestId();
+        await api.post("/patients", { ...payload, client_request_id: requestIdRef.current });
         toast.success("Paciente cadastrado!");
+        clearDraft(DRAFT_KEY);
+        requestIdRef.current = null;
       }
       handleCloseDialog();
       loadPatients();
     } catch (err) {
-      const backendMessage = err.response?.data?.detail;
+      // O formulário continua aberto e preenchido: nada digitado é perdido.
       const fallbackMessage = editingId ? "Erro ao atualizar paciente" : "Erro ao cadastrar paciente";
-      if (err.response) {
-        toast.error(backendMessage || fallbackMessage);
+      if (isNetworkError(err)) {
+        toast.error(`${getErrorMessage(err)} ${editingId ? "A atualização" : "O cadastro"} NÃO foi confirmado — o que você digitou foi mantido; clique em salvar de novo. Se o paciente já tiver sido salvo, ele não será duplicado.`);
       } else {
-        toast.error(`Falha de conexão com o servidor. Verifique sua internet e tente novamente — ${editingId ? "a atualização" : "o cadastro"} NÃO foi salvo.`);
+        toast.error(getErrorMessage(err, fallbackMessage));
       }
     } finally {
       setSavingPatient(false);
@@ -172,25 +202,56 @@ export default function PatientsPage() {
 
   const openNewPatient = () => {
     setEditingId(null);
-    setFormData(EMPTY_FORM);
+    originalPayloadRef.current = null;
+    const draft = loadDraft(DRAFT_KEY);
+    if (draft && draft.data && Object.keys(EMPTY_FORM).some((k) => draft.data[k] && draft.data[k] !== EMPTY_FORM[k])) {
+      setFormData({ ...EMPTY_FORM, ...draft.data });
+      requestIdRef.current = draft.requestId || newRequestId();
+      toast.info("Rascunho do cadastro anterior restaurado.");
+    } else {
+      setFormData(EMPTY_FORM);
+      requestIdRef.current = newRequestId();
+    }
     setShowDialog(true);
   };
 
-  const handleEdit = (patient) => {
-    setEditingId(patient.id);
-    setFormData({
-      name: patient.name || "",
-      email: patient.email || "",
-      phone: patient.phone || "",
-      birthdate: birthdateToInputValue(patient.birthdate),
-      address: patient.address || "",
-      city: patient.city || "",
-      profession: patient.profession || "",
-      cpf: patient.cpf || "",
-      image_voice_consent: !!patient.image_voice_consent,
-      observations: patient.observations || "",
-    });
-    setShowDialog(true);
+  const recordToForm = (record) => ({
+    name: record.name || "",
+    email: record.email || "",
+    phone: record.phone || "",
+    birthdate: birthdateToInputValue(record.birthdate),
+    address: record.address || "",
+    city: record.city || "",
+    profession: record.profession || "",
+    cpf: record.cpf || "",
+    image_voice_consent: !!record.image_voice_consent,
+    observations: record.observations || "",
+  });
+
+  const formToPayload = (form) => ({
+    ...form,
+    email: form.email?.trim() || null,
+    birthdate: birthdateToInputValue(form.birthdate) || null,
+  });
+
+  const handleEdit = async (patient) => {
+    if (openingEditId) return;
+    setOpeningEditId(patient.id);
+    try {
+      // A lista traz só um resumo (sem observações, por exemplo). Para editar, busca o registro
+      // COMPLETO; assim o formulário nunca abre com campos em branco que já existem no banco.
+      const res = await api.get(`/patients/${patient.id}`);
+      const full = res.data || {};
+      const form = recordToForm(full);
+      originalPayloadRef.current = formToPayload(form);
+      setEditingId(patient.id);
+      setFormData(form);
+      setShowDialog(true);
+    } catch (err) {
+      toast.error(`${getErrorMessage(err, "Não foi possível abrir o cadastro do paciente.")} Para evitar perda de dados, a edição não foi aberta; tente novamente.`);
+    } finally {
+      setOpeningEditId(null);
+    }
   };
 
   const handleCloseDialog = () => {

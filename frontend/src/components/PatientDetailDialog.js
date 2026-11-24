@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import api from "../services/api";
+import api, { UPLOAD_TIMEOUT_MS } from "../services/api";
+import { getErrorMessage } from "../utils/apiError";
 import OdontogramSelector from "./OdontogramSelector";
 import FaceHarmonizationSelector, { faceRegions } from "./FaceHarmonizationSelector";
 import { 
@@ -356,30 +357,47 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
     const originalToast = toast.loading("Enviando arquivo...");
 
-    try {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const base64 = event.target.result.split(',')[1];
-        
-        const attachment = {
-          filename: file.name,
-          file_data: base64,
-          file_type: file.type,
-          size_bytes: file.size
-        };
+    // Lê o arquivo como Promise para que QUALQUER falha (leitura ou envio) caia no catch.
+    // Antes, os erros ocorriam dentro de reader.onload, fora do try/catch: o aviso "Enviando..."
+    // ficava para sempre na tela e o usuário achava que o documento tinha sido salvo.
+    const readAsBase64 = (f) =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => resolve(String(event.target.result || "").split(",")[1] || "");
+        reader.onerror = () => reject(new Error("Não foi possível ler o arquivo selecionado."));
+        reader.readAsDataURL(f);
+      });
 
-        await api.post(`/patients/${detailedPatient.id}/attachments`, attachment);
-        toast.success("Arquivo anexado com sucesso!", { id: originalToast });
-        
-        // Reload data inside modal and refresh parent list
-        const updatedPatient = await loadPatientData(patient.id);
-        onUpdate(updatedPatient);
+    try {
+      const base64 = await readAsBase64(file);
+      if (!base64) throw new Error("O arquivo está vazio ou não pôde ser lido.");
+
+      const attachment = {
+        filename: file.name,
+        file_data: base64,
+        file_type: file.type || "application/octet-stream",
+        size_bytes: file.size
       };
-      reader.readAsDataURL(file);
+
+      await api.post(`/patients/${detailedPatient.id}/attachments`, attachment, { timeout: UPLOAD_TIMEOUT_MS });
+      toast.success("Arquivo anexado com sucesso!", { id: originalToast });
     } catch (error) {
       console.error("Erro ao anexar arquivo:", error);
-      const errorMessage = error.response?.data?.detail || "Falha no upload. Tente novamente.";
-      toast.error(errorMessage, { id: originalToast });
+      toast.error(`${getErrorMessage(error, "Falha no upload.")} O documento NÃO foi salvo.`, { id: originalToast });
+      if (e.target) e.target.value = "";
+      return;
+    }
+
+    // O documento já está salvo; falha ao atualizar a lista não deve parecer falha de upload.
+    try {
+      const updatedPatient = await loadPatientData(patient.id);
+      onUpdate(updatedPatient);
+    } catch (reloadError) {
+      console.error("Documento salvo, mas a lista não atualizou:", reloadError);
+      toast.warning("Documento salvo. Reabra o paciente para ver a lista atualizada.");
+    } finally {
+      // Permite selecionar o mesmo arquivo de novo após uma falha.
+      if (e.target) e.target.value = "";
     }
   };
 
@@ -614,7 +632,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       const updatedPatient = await loadPatientData(detailedPatient.id);
       onUpdate(updatedPatient);
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Erro ao salvar observações. As alterações NÃO foram salvas.");
+      toast.error(getErrorMessage(error, "Erro ao salvar observações. As alterações NÃO foram salvas."));
     } finally {
       setSavingObservations(false);
     }
@@ -839,7 +857,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
           });
           toast.success("Documento enviado via WhatsApp!");
         } catch (error) {
-          const errorMessage = error.response?.data?.detail || "Erro ao enviar via WhatsApp. O documento foi salvo, mas o envio falhou.";
+          const errorMessage = getErrorMessage(error, "Erro ao enviar via WhatsApp. O documento foi salvo, mas o envio falhou.");
           toast.error(errorMessage);
         }
       }
@@ -862,7 +880,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       const updated = await loadPatientData(detailedPatient.id);
       onUpdate(updated);
     } catch (error) {
-      const errorMessage = error.response?.data?.detail || (editingRecord ? "Erro ao atualizar documento" : "Erro ao criar documento");
+      const errorMessage = getErrorMessage(error, editingRecord ? "Erro ao atualizar documento" : "Erro ao criar documento");
       toast.error(errorMessage);
     }
   };
@@ -1085,7 +1103,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
                           <div className="mt-3 space-y-2">
                             {debts.unpaid_appointments.slice(0, 3).map((app) => (
                               <div key={app.id} className="text-sm text-red-800 flex justify-between">
-                                <span>{new Date(app.appointment_date).toLocaleDateString('pt-BR')} às {app.appointment_time}</span>
+                                <span>{formatDate(app.appointment_date)} às {app.appointment_time}</span>
                                 <span className="font-semibold">R$ {app.amount?.toFixed(2) || "0.00"}</span>
                               </div>
                             ))}

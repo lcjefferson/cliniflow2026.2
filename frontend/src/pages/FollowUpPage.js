@@ -14,6 +14,7 @@ import { useAuth } from "../contexts/AuthContext";
 import LeadCombobox from "../components/LeadCombobox";
 import PatientCombobox from "../components/PatientCombobox";
 import SearchableSelect from "../components/SearchableSelect";
+import { getErrorMessage } from "../utils/apiError";
 
 function getEmptyFollowUpForm() {
   return {
@@ -480,7 +481,7 @@ export default function FollowUpPage() {
       });
       toast.success("Mídia anexada.");
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Erro ao enviar mídia.");
+      toast.error(getErrorMessage(err, "Erro ao enviar mídia."));
     } finally {
       setCampaignUploadingMedia(false);
       e.target.value = "";
@@ -717,7 +718,7 @@ export default function FollowUpPage() {
       });
       toast.success("Mídia anexada.");
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Erro ao enviar mídia.");
+      toast.error(getErrorMessage(err, "Erro ao enviar mídia."));
     } finally {
       setUploadingMedia(false);
       e.target.value = "";

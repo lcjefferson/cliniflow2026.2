@@ -4,6 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
 import { Eye, EyeOff, Mail, Lock, Loader2, CalendarDays, MessageSquare, BellRing } from "lucide-react";
 import api from "../services/api";
+import { getErrorMessage } from "../utils/apiError";
 
 const FEATURES = [
   { icon: CalendarDays, title: "Agenda inteligente", text: "Profissionais, salas e serviços organizados em um só lugar." },
@@ -34,7 +35,7 @@ export default function LoginPage() {
       const msg =
         error.message === 'timeout'
           ? 'Tempo de conexão esgotado. Verifique o backend.'
-          : (error.response?.data?.detail || (error.request && !error.response ? 'Falha de conexão com o backend (CORS/rede).' : 'Erro ao processar requisição'));
+          : getErrorMessage(error, 'Erro ao processar requisição');
       toast.error(msg);
     } finally {
       setLoading(false);
