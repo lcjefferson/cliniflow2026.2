@@ -106,6 +106,8 @@ export default function PatientsPage() {
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [patientToDelete, setPatientToDelete] = useState(null);
+  // Quantidade de agendamentos vinculados ao paciente que está sendo excluído (aviso extra).
+  const [deleteLinkedCount, setDeleteLinkedCount] = useState(0);
   const [openingEditId, setOpeningEditId] = useState(null);
   // Registro como estava no banco ao abrir a edição: só os campos alterados são enviados.
   const originalPayloadRef = useRef(null);
@@ -260,23 +262,36 @@ export default function PatientsPage() {
     setFormData(EMPTY_FORM);
   };
 
+  const closeDeleteDialog = () => {
+    setShowDeleteDialog(false);
+    setPatientToDelete(null);
+    setDeleteLinkedCount(0);
+  };
+
   const handleDelete = (patient) => {
     setPatientToDelete(patient);
+    setDeleteLinkedCount(0);
     setShowDeleteDialog(true);
   };
 
   const confirmDelete = async () => {
     if (!patientToDelete) return;
     try {
-      await api.delete(`/patients/${patientToDelete.id}`);
+      // Na 1ª tentativa o servidor avisa (409) se o paciente tem agendamentos; só exclui com o 2º clique.
+      await api.delete(`/patients/${patientToDelete.id}`, { params: deleteLinkedCount > 0 ? { force: true } : {} });
       toast.success("Paciente removido!");
+      closeDeleteDialog();
       loadPatients();
     } catch (err) {
+      const detail = err.response?.data?.detail;
+      if (err.response?.status === 409 && detail && detail.code === "patient_has_appointments") {
+        // Mantém o diálogo aberto e pede confirmação extra.
+        setDeleteLinkedCount(Number(detail.count) || 1);
+        return;
+      }
       console.error("Error deleting patient:", err);
-      toast.error("Erro ao remover paciente");
-    } finally {
-      setShowDeleteDialog(false);
-      setPatientToDelete(null);
+      toast.error(getErrorMessage(err, "Erro ao remover paciente"));
+      closeDeleteDialog();
     }
   };
 
@@ -700,7 +715,7 @@ export default function PatientsPage() {
         />
 
         {/* Confirmação de exclusão */}
-        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <Dialog open={showDeleteDialog} onOpenChange={(open) => { if (!open) closeDeleteDialog(); }}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Excluir paciente</DialogTitle>
@@ -709,18 +724,18 @@ export default function PatientsPage() {
                 pode ser desfeita e remove todos os dados associados.
               </DialogDescription>
             </DialogHeader>
+            {deleteLinkedCount > 0 && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                Atenção: este paciente tem <strong>{deleteLinkedCount}</strong> agendamento(s). Se você excluir, esses agendamentos
+                ficarão sem paciente no calendário. Confirme só se tiver certeza (por exemplo, um cadastro duplicado).
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowDeleteDialog(false);
-                  setPatientToDelete(null);
-                }}
-              >
+              <Button variant="outline" onClick={closeDeleteDialog}>
                 Cancelar
               </Button>
               <Button onClick={confirmDelete} className="bg-red-600 text-white hover:bg-red-700">
-                Excluir paciente
+                {deleteLinkedCount > 0 ? "Excluir mesmo assim" : "Excluir paciente"}
               </Button>
             </div>
           </DialogContent>

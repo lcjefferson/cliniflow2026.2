@@ -834,6 +834,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
 
 
   const handleAddMedicalRecord = async (sendWhatsApp = false) => {
+    let recordSaved = false;
     try {
       let recordId;
       
@@ -847,6 +848,7 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
         recordId = response.data.id;
         toast.success("Documento criado com sucesso!");
       }
+      recordSaved = true;
 
       if (sendWhatsApp && detailedPatient.phone) {
         try {
@@ -880,8 +882,15 @@ export default function PatientDetailDialog({ patient, isOpen, onClose, onUpdate
       const updated = await loadPatientData(detailedPatient.id);
       onUpdate(updated);
     } catch (error) {
+      if (recordSaved) {
+        // O documento já foi gravado; só a atualização da lista falhou.
+        console.error("Documento salvo, mas a lista não atualizou:", error);
+        toast.warning("Documento salvo. Reabra o paciente para ver a lista atualizada.");
+        return;
+      }
+      // O formulário continua aberto e preenchido para tentar de novo.
       const errorMessage = getErrorMessage(error, editingRecord ? "Erro ao atualizar documento" : "Erro ao criar documento");
-      toast.error(errorMessage);
+      toast.error(`${errorMessage} O documento NÃO foi salvo; o que você digitou foi mantido, tente novamente.`);
     }
   };
   

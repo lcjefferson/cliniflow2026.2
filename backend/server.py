@@ -2810,11 +2810,29 @@ async def update_patient(patient_id: str, data: PatientUpdate, allow_clear: bool
     return {"message": "Patient updated successfully"}
 
 @api_router.delete("/patients/{patient_id}")
-async def delete_patient(patient_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_patient(patient_id: str, force: bool = False, current_user: dict = Depends(get_current_user)):
     if not (current_user.get("role", {}).get("is_admin", False) or current_user.get("user_type") in ["superuser", "consultor"]):
         raise HTTPException(status_code=403, detail="Not authorized")
     if db is None:
         raise HTTPException(status_code=503, detail="Banco de dados indisponível no momento. Tente novamente em alguns instantes.")
+
+    # Excluir um paciente NÃO apaga os agendamentos dele: eles ficariam sem paciente no calendário.
+    # Por isso exige confirmação extra (force=true) quando há agendamentos vinculados.
+    if not force:
+        try:
+            linked = await db.appointments.count_documents({"patient_id": patient_id})
+        except PyMongoError as e:
+            logging.error(f"Erro ao contar agendamentos do paciente {patient_id}: {e}")
+            raise HTTPException(status_code=503, detail="Não foi possível verificar os agendamentos do paciente. Tente novamente.")
+        if linked > 0:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "patient_has_appointments",
+                    "count": linked,
+                    "message": f"Este paciente tem {linked} agendamento(s). Se for excluído, eles ficarão sem paciente no calendário.",
+                },
+            )
 
     try:
         # Lixeira: guarda uma cópia completa antes de apagar, para permitir recuperação.
